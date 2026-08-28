@@ -39,6 +39,13 @@ body {
   animation: rr-breathe 2.8s ease-in-out infinite;
 }
 
+/* While a list is moving, its marks hold still. A layer that repaints during a scroll
+   is what leaves a trail across a sticky heading, and a pulse is unreadable at speed. */
+.rr-scrolling .rr-breathe {
+  animation-play-state: paused;
+  opacity: 0.85;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .rr-breathe {
     animation: none;

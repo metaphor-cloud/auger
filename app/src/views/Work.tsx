@@ -23,7 +23,7 @@ import {
   SheetTitle,
   Textarea,
 } from "@metaphor-cloud/ui";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   addNote,
@@ -368,6 +368,22 @@ export default function Work({
     await load();
   }
 
+  // A breathing mark is a compositor layer, and a compositor layer that repaints while
+  // the list moves is what smeared the sticky heading. Hold them still while it moves.
+  // Nobody reads a pulse during a fast scroll anyway.
+  const list = useRef<HTMLDivElement>(null);
+  const settling = useRef<number | undefined>(undefined);
+
+  const settle = useCallback(() => {
+    const element = list.current;
+    if (!element) return;
+    element.classList.add("rr-scrolling");
+    window.clearTimeout(settling.current);
+    settling.current = window.setTimeout(() => element.classList.remove("rr-scrolling"), 160);
+  }, []);
+
+  useEffect(() => () => window.clearTimeout(settling.current), []);
+
   const unread = shown.filter((one) => one.opened_at === null).length;
   const run = chosen ? runs.find((one) => one.id === chosen.run_id) : undefined;
   const quiet = repositories.length - groups.length;
@@ -443,7 +459,7 @@ export default function Work({
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-auto overscroll-none">
+      <div ref={list} className="min-h-0 flex-1 overflow-auto overscroll-none" onScroll={settle}>
         {groups.length === 0 && (
           <p className="px-4 py-8 text-center text-xs text-text-tertiary">
             {repositories.length === 0
@@ -452,8 +468,8 @@ export default function Work({
           </p>
         )}
         {groups.map((group) => (
-          <section key={group.path}>
-            <header className="flex items-baseline gap-2 border-b border-border-subtle bg-bg px-4 py-1.5">
+          <section key={group.path} className="isolate">
+            <header className="sticky top-0 z-20 flex items-baseline gap-2 border-b border-border-subtle bg-bg px-4 py-1.5">
               <button
                 className="flex items-baseline gap-2 text-left"
                 onClick={() =>
