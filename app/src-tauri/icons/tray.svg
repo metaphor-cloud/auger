@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="44" height="44">
+  <!-- The menu bar draws this as a template: the shape is taken from the alpha and
+       macOS colours it, so it must be one solid black silhouette with no background.
+       Fewer turns than the bundle icon, because this is read at 22 points. -->
+  <g stroke="#000" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M25 10 L39 10" stroke-width="5.5"/>
+    <path d="M32 10 L32 42" stroke-width="5"/>
+    <path d="M32 15 C 15 18.5, 15 24.5, 32 28" stroke-width="5.5"/>
+    <path d="M32 23 C 47 26.5, 46 32, 32 35" stroke-width="5"/>
+  </g>
+  <path d="M32 34 L40 44 L32 57 L24 44 Z" fill="#000"/>
+</svg>

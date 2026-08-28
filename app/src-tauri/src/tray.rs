@@ -3,6 +3,7 @@
 //! The rig runs all day, so the tray is the primary surface. The window is secondary and
 //! stays hidden until the user asks for it.
 
+use tauri::image::Image;
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
@@ -19,10 +20,22 @@ pub const ACTION: &str = "tray://action";
 
 /// The two items whose words change with the engine's state.
 ///
+/// The rig runs whatever is queued, a review or a scan or an audit, so the words say
+/// whether it is working rather than naming one kind of work.
+///
 /// A tray icon gives no way to read its own menu back, so the handles are kept here.
 pub struct Actions<R: Runtime> {
     reviewing: MenuItem<R>,
     unload: MenuItem<R>,
+}
+
+/// The auger, as one black silhouette.
+///
+/// The menu bar draws a template from the alpha and colours it itself, so this is the
+/// shape and nothing else. It is compiled in, which keeps it out of the bundle's
+/// resource paths and out of reach of a missing file at runtime.
+fn mark() -> Image<'static> {
+    Image::from_bytes(include_bytes!("../icons/tray.png")).expect("the tray mark is valid PNG")
 }
 
 pub fn build<R: Runtime>(app: &AppHandle<R>, status: &str) -> tauri::Result<()> {
@@ -30,7 +43,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>, status: &str) -> tauri::Result<()> 
     let open_item = MenuItem::with_id(app, OPEN, "Open Auger", true, None::<&str>)?;
     // Both start disabled. The window turns them on once it knows what the engine is
     // doing, so the menu never offers an action that would do nothing.
-    let reviewing_item = MenuItem::with_id(app, REVIEWING, "Start reviewing", false, None::<&str>)?;
+    let reviewing_item = MenuItem::with_id(app, REVIEWING, "Start", false, None::<&str>)?;
     let unload_item = MenuItem::with_id(app, UNLOAD, "Unload models", false, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, QUIT, "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(
@@ -53,7 +66,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>, status: &str) -> tauri::Result<()> 
     });
 
     TrayIconBuilder::with_id(TRAY_ID)
-        .icon(app.default_window_icon().cloned().expect("bundled icon"))
+        .icon(mark())
         .icon_as_template(true)
         .tooltip("Auger")
         .menu(&menu)
@@ -84,11 +97,9 @@ pub fn set_actions<R: Runtime>(app: &AppHandle<R>, reviewing: bool, ready: bool,
     let Some(actions) = app.try_state::<Actions<R>>() else {
         return;
     };
-    let _ = actions.reviewing.set_text(if reviewing {
-        "Pause reviewing"
-    } else {
-        "Start reviewing"
-    });
+    let _ = actions
+        .reviewing
+        .set_text(if reviewing { "Pause" } else { "Start" });
     let _ = actions.reviewing.set_enabled(ready);
     let _ = actions.unload.set_enabled(loaded);
 }

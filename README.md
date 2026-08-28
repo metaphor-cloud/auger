@@ -21,7 +21,7 @@ an allowlist that logs every request.
 - Runs Semgrep in the sandbox and asks a model which of its findings are real.
 - Audits a whole repository on a slower timer, for the problems a diff cannot show.
 - Waits when another coding agent is working in a repository.
-- Opens stopped. Nothing reviews until you press play, so the machine stays yours.
+- Opens stopped. Nothing runs until you press Start, so the machine stays yours.
 - Gives the memory back. `auger stop` releases the model servers even with nothing
   running, and the tray does it while the window is closed.
 - Keeps the work items for each repository, and lets your agent search and write them

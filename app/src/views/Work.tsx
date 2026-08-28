@@ -480,7 +480,7 @@ export default function Work({
                 className="ml-auto h-6"
                 onClick={() => void requestReview(group.path)}
               >
-                Review now
+                Run now
               </Button>
               <Button
                 size="sm"
@@ -599,7 +599,7 @@ export default function Work({
                     variant="secondary"
                     onClick={() => void requestReview(chosen.repo_path)}
                   >
-                    Review this repository now
+                    Run this repository now
                   </Button>
                 </div>
               </div>

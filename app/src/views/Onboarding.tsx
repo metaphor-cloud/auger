@@ -18,6 +18,7 @@ import {
   setupModels,
 } from "../engine";
 import type { Catalog, ModelChoice, Onboarding, SetupProgress } from "../types";
+import Logo from "../Logo";
 import { Mono } from "../ui";
 
 type Step = { key: string; title: string; blurb: string };
@@ -144,6 +145,10 @@ export default function OnboardingView({
           ))}
         </div>
 
+        <div className="mb-5 flex items-center gap-2 text-accent">
+          <Logo size={22} />
+          <span className="text-base font-semibold tracking-tight text-text-primary">Auger</span>
+        </div>
         <h1 className="text-xl font-semibold tracking-tight">{STEPS[step].title}</h1>
         <p className="mt-2 text-sm leading-relaxed text-text-secondary">{STEPS[step].blurb}</p>
 
@@ -216,7 +221,7 @@ export default function OnboardingView({
               Settings holds the rest: which repositories to skip, what to look for, your
               forges, and the tools an agent may call.
             </p>
-            <Button onClick={() => void done()}>Start reviewing</Button>
+            <Button onClick={() => void done()}>Open Auger</Button>
           </div>
         )}
 

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="1024" height="1024">
+  <!-- The bundle icon. An auger bores past the surface to bring up what is under it,
+       which is what a review does to a diff. The shank at the top says tool; the
+       flighting tightens as it goes down; the point is where it bites. -->
+  <defs>
+    <!-- User space, not the object bounding box. A straight stroke has a box with no
+         area, and a gradient defined against that box is undefined, so the renderer
+         drops the shaft and the shank entirely. -->
+    <linearGradient id="ground" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="64">
+      <stop offset="0%" stop-color="#141b25"/>
+      <stop offset="100%" stop-color="#080b0f"/>
+    </linearGradient>
+    <linearGradient id="steel" gradientUnits="userSpaceOnUse" x1="14" y1="8" x2="44" y2="59">
+      <stop offset="0%" stop-color="#8cc4ff"/>
+      <stop offset="100%" stop-color="#2f7fd4"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#ground)"/>
+  <g stroke="url(#steel)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M25 10 L39 10" stroke-width="5"/>
+    <path d="M32 10 L32 42" stroke-width="4.5"/>
+    <path d="M32 15 C 15 18.5, 15 24.5, 32 28" stroke-width="5"/>
+    <path d="M32 23 C 47 26.5, 46 32, 32 35" stroke-width="4.6"/>
+    <path d="M32 31 C 20 34, 20.5 38.5, 32 41" stroke-width="4.2"/>
+  </g>
+  <path d="M32 39.5 L39 48 L32 59 L25 48 Z" fill="url(#steel)"/>
+</svg>

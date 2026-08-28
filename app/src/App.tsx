@@ -12,6 +12,7 @@ import {
   resumeQueue,
   stopModels,
 } from "./engine";
+import Logo from "./Logo";
 import { notify, onTrayAction, setTray, setTrayActions, type TrayAction } from "./host";
 import type { Queue, SetupProgress, System } from "./types";
 import Work from "./views/Work";
@@ -192,8 +193,9 @@ export default function App() {
   return (
     <div className="flex h-full bg-bg text-text-primary">
       <aside className="flex w-[13.5rem] shrink-0 flex-col border-r border-border bg-bg-elevated">
-        <div className="flex items-center gap-2 px-4 py-3">
-          <span className="text-sm font-semibold tracking-tight">Auger</span>
+        <div className="flex items-center gap-2 px-4 py-3 text-accent">
+          <Logo size={17} />
+          <span className="text-sm font-semibold tracking-tight text-text-primary">Auger</span>
         </div>
 
         <nav className="flex flex-1 flex-col gap-0.5 px-2">
@@ -233,7 +235,7 @@ export default function App() {
                 queue.models_ready === false
                   ? (queue.models_reason ?? "no model answers yet")
                   : queue.paused
-                    ? "Start reviewing. Nothing runs until you do."
+                    ? "Start. Nothing runs until you press this."
                     : "Finish what is running, then stop pulling work."
               }
               onClick={() => void togglePause()}
@@ -241,7 +243,7 @@ export default function App() {
               <span className="w-3 text-center">
                 {queue.paused ? <PlayMark /> : <PauseMark />}
               </span>
-              {queue.paused ? "Start reviewing" : "Reviewing"}
+              {queue.paused ? "Start" : "Working"}
               {queue.pending > 0 && (
                 <Badge variant="outline" className="ml-auto">
                   {queue.pending}
