@@ -156,3 +156,26 @@ async def test_a_repeat_skip_shares_one_row(
         ("recent_write", 1),
         ("agent_running", 5),
     ]
+
+
+async def test_a_security_scan_can_be_asked_for_by_hand(
+    http: httpx.AsyncClient, token: str, rig: Rig, tree: Path
+) -> None:
+    async with http:
+        await call(http, token, "POST", "/scan")
+        body = await call(http, token, "POST", "/scan/security", json={"path": str(tree / "alpha")})
+    assert body["pending"] >= 1
+
+
+async def test_a_dismissed_finding_can_still_be_asked_for(
+    http: httpx.AsyncClient, token: str, rig: Rig, tree: Path
+) -> None:
+    from reviewrig.store.findings import set_triage
+
+    finding = seed(rig, tree / "alpha")
+    set_triage(rig.store, finding.fingerprint, "false", "not affected")
+    async with http:
+        hidden = await call(http, token, "GET", "/findings")
+        shown = await call(http, token, "GET", "/findings?include_dismissed=true")
+    assert hidden["findings"] == []
+    assert len(shown["findings"]) == 1

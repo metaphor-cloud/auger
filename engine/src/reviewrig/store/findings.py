@@ -161,7 +161,13 @@ def list_findings(
     repo_path: str | Path | None = None,
     statuses: Iterable[str] = ("open",),
     limit: int = 500,
+    include_dismissed: bool = False,
 ) -> list[Finding]:
+    """Open findings, most severe first.
+
+    A finding the model judged false stays in the database and out of the list. Deleting
+    it would bring it back on the next scan; hiding it keeps the list worth reading.
+    """
     clauses = []
     parameters: list[object] = []
     wanted = list(statuses)
@@ -171,6 +177,8 @@ def list_findings(
     if repo_path is not None:
         clauses.append("repo_path = ?")
         parameters.append(str(repo_path))
+    if not include_dismissed:
+        clauses.append("(triage IS NULL OR triage != 'false')")
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     parameters.append(limit)
     rows = store.query(
@@ -198,9 +206,23 @@ def set_status(store: Store, fingerprints: Sequence[str], status: Status) -> int
     return cursor.rowcount
 
 
+def set_triage(store: Store, fingerprint: str, verdict: str, reason: str = "") -> None:
+    """Record what the model decided about a static finding.
+
+    The reason goes into the detail, so a dismissed finding says why it was dismissed.
+    """
+    with store.write() as connection:
+        connection.execute(
+            "UPDATE findings SET triage = ?, detail = "
+            "CASE WHEN ? = '' THEN detail ELSE detail || char(10) || char(10) || "
+            "'Triage: ' || ? END WHERE fingerprint = ?",
+            (verdict, reason, reason, fingerprint),
+        )
+
+
 def counts(store: Store, repo_path: str | Path | None = None) -> dict[str, int]:
     """Open findings per severity, plus a total. The tray shows this."""
-    where = "WHERE status = 'open'"
+    where = "WHERE status = 'open' AND (triage IS NULL OR triage != 'false')"
     parameters: list[object] = []
     if repo_path is not None:
         where += " AND repo_path = ?"

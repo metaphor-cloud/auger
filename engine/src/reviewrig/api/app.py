@@ -330,10 +330,16 @@ def create_app(rig: Rig) -> FastAPI:
 
     @router.get("/findings")
     async def findings(
-        repo: str | None = None, status: str = "open", limit: int = 500
+        repo: str | None = None,
+        status: str = "open",
+        limit: int = 500,
+        include_dismissed: bool = False,
     ) -> FindingList:
+        """Open findings. A finding the model judged false is hidden unless asked for."""
         statuses = [part for part in status.split(",") if part]
-        rows = await asyncio.to_thread(list_findings, rig.store, repo, statuses, limit)
+        rows = await asyncio.to_thread(
+            list_findings, rig.store, repo, statuses, limit, include_dismissed
+        )
         return FindingList(
             findings=[FindingOut.of(finding) for finding in rows],
             counts=await asyncio.to_thread(counts, rig.store, repo),
@@ -369,6 +375,16 @@ def create_app(rig: Rig) -> FastAPI:
     async def resume() -> QueueOut:
         rig.scheduler.resume()
         rig.publish("queue.resumed", pending=rig.scheduler.pending)
+        return _queue_out(rig)
+
+    @router.post("/scan/security")
+    async def request_scan(request: ReviewRequest) -> QueueOut:
+        """Queue a Semgrep scan and its triage for one repository."""
+        repository = rig.find_repository(request.path)
+        if repository is None:
+            raise HTTPException(status_code=404, detail=f"no repository at {request.path}")
+        rig.submit_scan(repository)
+        rig.publish("queue.changed", pending=rig.scheduler.pending)
         return _queue_out(rig)
 
     @router.post("/review")

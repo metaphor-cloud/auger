@@ -62,9 +62,14 @@ export async function startModels(): Promise<BackendList> {
   return request("/models/start", { method: "POST" });
 }
 
-export async function getFindings(repo?: string, status = "open"): Promise<FindingList> {
+export async function getFindings(
+  repo?: string,
+  status = "open",
+  includeDismissed = false,
+): Promise<FindingList> {
   const query = new URLSearchParams({ status });
   if (repo) query.set("repo", repo);
+  if (includeDismissed) query.set("include_dismissed", "true");
   return request(`/findings?${query}`);
 }
 
@@ -93,6 +98,14 @@ export async function pauseQueue(): Promise<Queue> {
 
 export async function resumeQueue(): Promise<Queue> {
   return request("/queue/resume", { method: "POST" });
+}
+
+export async function requestScan(path: string): Promise<Queue> {
+  return request("/scan/security", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
 }
 
 export async function requestReview(path: string, target = "HEAD"): Promise<Queue> {

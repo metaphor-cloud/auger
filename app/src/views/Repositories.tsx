@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { getRepositories, rescan } from "../engine";
+import { getRepositories, requestScan, rescan } from "../engine";
 import type { Mode, Repository } from "../types";
 
 const MODE_LABEL: Record<Mode, string> = {
@@ -74,6 +74,7 @@ export default function Repositories({ scanning }: { scanning: boolean }) {
               <th>Mode</th>
               <th className="numeric">Priority</th>
               <th>Path</th>
+              <th />
             </tr>
           </thead>
           <tbody>
@@ -89,6 +90,15 @@ export default function Repositories({ scanning }: { scanning: boolean }) {
                 <td className="numeric">{repository.policy.priority}</td>
                 <td className="muted path" title={repository.path}>
                   {repository.path}
+                </td>
+                <td>
+                  <button
+                    className="tab"
+                    title="Run a security scan on this repository"
+                    onClick={() => void requestScan(repository.path)}
+                  >
+                    Scan
+                  </button>
                 </td>
               </tr>
             ))}

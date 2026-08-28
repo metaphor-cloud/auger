@@ -28,6 +28,17 @@ RUN python3 -m venv /opt/venv \
         "tree-sitter-language-pack==0.4.0"
 ENV PATH="/opt/venv/bin:${PATH}"
 
+# The rules are vendored here. A scan runs with no network, so it cannot fetch them,
+# and a scan that reaches a rule registry would also tell that registry what you scan.
+RUN git clone --depth 1 https://github.com/semgrep/semgrep-rules /opt/semgrep-rules \
+    && rm -rf /opt/semgrep-rules/.git /opt/semgrep-rules/stats \
+    && chmod -R a+rX /opt/semgrep-rules
+
+# Semgrep writes a cache and a settings file. Both go to scratch, which is a tmpfs.
+ENV SEMGREP_SETTINGS_FILE=/scratch/semgrep-settings.yml \
+    XDG_CACHE_HOME=/scratch/cache \
+    HOME=/scratch
+
 # The repository arrives read only. Scratch is a tmpfs that the run throws away.
 RUN mkdir -p /work /scratch && chmod 0777 /scratch
 WORKDIR /work

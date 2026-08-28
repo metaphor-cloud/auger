@@ -14,6 +14,7 @@ from reviewrig.forge.github import GitHub
 from reviewrig.llm import Gateway
 from reviewrig.mcp import McpRegistry
 from reviewrig.models import Remote, Repository, RepositoryView
+from reviewrig.sandbox import select
 from reviewrig.schedule import Scheduler, poll_pull_requests
 from reviewrig.store import Store
 from reviewrig.store.runs import Run, finish, start
@@ -29,6 +30,7 @@ class StubRig:
         self.config = config
         self.forges = registry
         self.tools = McpRegistry(config)
+        self.selection = select()
         self.gateway: Gateway = None  # type: ignore[assignment]
         self.policy = policy
         self.events: list[tuple[str, dict[str, object]]] = []

@@ -13,6 +13,7 @@ from reviewrig.forge import Registry
 from reviewrig.llm import Gateway
 from reviewrig.mcp import McpRegistry
 from reviewrig.models import RepositoryView
+from reviewrig.sandbox import Selection
 from reviewrig.store import Store
 
 
@@ -22,6 +23,7 @@ class RigLike(Protocol):
     config: Config
     forges: Registry
     tools: McpRegistry
+    selection: Selection
 
     def publish(self, event: str, **data: object) -> None: ...
 

@@ -18,6 +18,7 @@ from reviewrig.llm import Gateway
 from reviewrig.mcp import McpRegistry
 from reviewrig.models import Remote, Repository, RepositoryView
 from reviewrig.net import Allowlist
+from reviewrig.sandbox import select
 from reviewrig.schedule import Scheduler, Task
 from reviewrig.store import Store
 from reviewrig.store.runs import list_runs
@@ -37,6 +38,7 @@ class StubRig:
         self.config = config
         self.forges = Registry(config, gateway.client)
         self.tools = McpRegistry(config)
+        self.selection = select()
         self.events: list[tuple[str, dict[str, object]]] = []
 
     def publish(self, event: str, **data: object) -> None:

@@ -76,6 +76,9 @@ class Rig:
             Task.review(repository, self.policy_for(repository), base=base, target=target)
         )
 
+    def submit_scan(self, repository: Repository) -> bool:
+        return self.scheduler.submit(Task.for_scan(repository, self.policy_for(repository)))
+
     def find_repository(self, path: str) -> Repository | None:
         wanted = Path(path).expanduser().absolute()
         for view in self.repositories():
