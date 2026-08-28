@@ -20,33 +20,29 @@ body {
   font-size: 13px;
 }
 
-/* A finding nobody has opened. It breathes until the user reads it, and then it stops.
-   The animation is short and low contrast, because this runs all day. */
-@keyframes rr-twinkle {
+/* A leaf nobody has opened. It breathes until the user reads it, and then it stops.
+   The animation is slow and low contrast, because this window is open all day. */
+@keyframes rr-breathe {
   0%,
   100% {
-    opacity: 0.25;
-    transform: scale(0.7);
+    opacity: 0.18;
+    transform: scale(0.82);
   }
   50% {
-    opacity: 1;
-    transform: scale(1.15);
+    opacity: 0.7;
+    transform: scale(1.25);
   }
 }
 
-.rr-twinkle {
-  animation: rr-twinkle 2.4s ease-in-out infinite;
-  box-shadow: 0 0 8px 1px var(--accent-glow-strong);
+.rr-breathe {
+  animation: rr-breathe 2.8s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rr-twinkle {
+  .rr-breathe {
     animation: none;
-    opacity: 1;
+    opacity: 0.6;
   }
-}
-
-/* The map draws its own surface, so the library's default background is turned off. */
-.react-flow__attribution {
-  display: none;
 }

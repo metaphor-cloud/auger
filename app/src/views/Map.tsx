@@ -23,17 +23,6 @@ import {
   SheetTitle,
   Textarea,
 } from "@metaphor-cloud/ui";
-import {
-  Background,
-  BackgroundVariant,
-  Controls,
-  ReactFlow,
-  type Edge,
-  type Node,
-  useEdgesState,
-  useNodesState,
-} from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
@@ -47,9 +36,9 @@ import {
   requestReview,
   setFindingStatus,
 } from "../engine";
-import { layout } from "../map/layout";
-import { NODE_TYPES } from "../map/nodes";
 import { CATEGORY, SEVERITY_RANK, categoryOf, severityOf, STATES } from "../map/palette";
+import TreeView from "../map/TreeView";
+import { grow, type BranchInput } from "../map/tree";
 import type { Finding, Note, Repository, Run } from "../types";
 import { Mono } from "../ui";
 
@@ -220,8 +209,6 @@ export default function MapView({
   const [dismissed, setDismissed] = useState(false);
   const [chosen, setChosen] = useState<Finding | null>(null);
   const [recording, setRecording] = useState(false);
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
   const load = useCallback(async () => {
     const [repoBody, findingBody, runBody] = await Promise.all([
@@ -253,98 +240,60 @@ export default function MapView({
     [findings, categories, states, dismissed],
   );
 
-  useEffect(() => {
+  const tree = useMemo(() => {
     const byRepo = new Map<string, Finding[]>();
     for (const one of shown) {
       const list = byRepo.get(one.repo_path) ?? [];
       list.push(one);
       byRepo.set(one.repo_path, list);
     }
-
-    const built: Node[] = [];
-    const links: Edge[] = [];
-    for (const repository of repositories) {
+    // The worst grows at the top, and a repository with nothing open sits at the foot.
+    // The eye starts at the top of a tree, so that is where the trouble belongs.
+    const ordered = [...repositories].sort((first, second) => {
+      const left = byRepo.get(first.path) ?? [];
+      const right = byRepo.get(second.path) ?? [];
+      if (left.length === 0 || right.length === 0) return left.length ? -1 : right.length ? 1 : 0;
+      const worst = (list: Finding[]) =>
+        Math.min(...list.map((one) => SEVERITY_RANK[one.severity] ?? 5));
+      return worst(left) - worst(right) || right.length - left.length;
+    });
+    const input: BranchInput[] = ordered.map((repository) => {
       const mine = (byRepo.get(repository.path) ?? []).sort(
         (a, b) => (SEVERITY_RANK[a.severity] ?? 5) - (SEVERITY_RANK[b.severity] ?? 5),
       );
-      const open = expanded.has(repository.path);
-      built.push({
+      const drawn = mine.slice(0, PER_REPO);
+      return {
         id: repository.path,
-        type: "repo",
-        position: { x: 0, y: 0 },
-        data: {
-          name: repoName(repository.path),
-          path: repository.path,
-          open: mine.length,
-          worst: mine[0]?.severity ?? "info",
-          expanded: open,
-          enabled: repository.policy.enabled,
-          unread: mine.filter((one) => one.opened_at === null).length,
-        },
-      });
-      if (!open) continue;
-      for (const finding of mine.slice(0, PER_REPO)) {
-        built.push({
+        label: repoName(repository.path),
+        enabled: repository.policy.enabled,
+        worst: mine[0]?.severity ?? "info",
+        hidden: mine.length - drawn.length,
+        expanded: expanded.has(repository.path),
+        leaves: drawn.map((finding) => ({
           id: finding.fingerprint,
-          type: "finding",
-          position: { x: 0, y: 0 },
-          data: {
-            title: finding.title,
-            severity: finding.severity,
-            category: finding.category,
-            status: finding.status,
-            file: finding.line ? `${finding.file}:${finding.line}` : finding.file,
-            unread: finding.opened_at === null,
-            notes: 0,
-          },
-        });
-        links.push({
-          id: `${repository.path}->${finding.fingerprint}`,
-          source: repository.path,
-          target: finding.fingerprint,
-          animated: finding.opened_at === null,
-          style: { stroke: severityOf(finding.severity).colour, strokeWidth: 1.2, opacity: 0.5 },
-        });
-      }
-      if (mine.length > PER_REPO) {
-        const id = `${repository.path}#more`;
-        built.push({
-          id,
-          type: "finding",
-          position: { x: 0, y: 0 },
-          data: {
-            title: `${mine.length - PER_REPO} more, not drawn`,
-            severity: "info",
-            category: "quality",
-            status: "open",
-            file: "narrow the filters to see them",
-            unread: false,
-            notes: 0,
-          },
-        });
-        links.push({
-          id: `${repository.path}->more`,
-          source: repository.path,
-          target: id,
-          style: { stroke: "var(--color-border)", strokeWidth: 1, opacity: 0.4 },
-        });
-      }
-    }
-    setNodes(layout(built, links));
-    setEdges(links);
-  }, [repositories, shown, expanded, setNodes, setEdges]);
+          label: finding.title,
+          detail: finding.line ? `${finding.file}:${finding.line}` : finding.file,
+          severity: finding.severity,
+          category: finding.category,
+          unread: finding.opened_at === null,
+          closed: finding.status === "resolved" || finding.status === "suppressed",
+        })),
+      };
+    });
+    return grow(input);
+  }, [repositories, shown, expanded]);
 
-  async function onNodeClick(_: unknown, node: Node) {
-    if (node.type === "repo") {
-      setExpanded((current) => {
-        const next = new Set(current);
-        if (next.has(node.id)) next.delete(node.id);
-        else next.add(node.id);
-        return next;
-      });
-      return;
-    }
-    const finding = findings.find((one) => one.fingerprint === node.id);
+  function toggle(path: string) {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }
+
+  async function pick(fingerprint: string) {
+    const finding = findings.find((one) => one.fingerprint === fingerprint);
     if (!finding) return;
     setChosen(finding);
     if (finding.opened_at === null) {
@@ -431,20 +380,12 @@ export default function MapView({
       </header>
 
       <div className="relative min-h-0 flex-1">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onNodeClick={(event, node) => void onNodeClick(event, node)}
-          nodeTypes={NODE_TYPES}
-          fitView
-          minZoom={0.15}
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="var(--color-border-subtle)" />
-          <Controls showInteractive={false} className="!bg-bg-card !shadow-none" />
-        </ReactFlow>
+        <TreeView
+          tree={tree}
+          chosen={chosen?.fingerprint ?? null}
+          onToggle={toggle}
+          onPick={(id: string) => void pick(id)}
+        />
         {repositories.length === 0 && (
           <div className="pointer-events-none absolute inset-0 grid place-items-center">
             <p className="text-xs text-text-secondary">
