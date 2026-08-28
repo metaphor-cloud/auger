@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import stat
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -156,3 +158,69 @@ def _fake_server(directory: Path) -> Path:
     path.write_text("#!/bin/sh\nsleep 300\n", encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     return path
+
+
+@dataclass
+class FakeProcess:
+    """One entry from `psutil.process_iter`, as the supervisor reads it."""
+
+    pid: int
+    exe: str
+    port: str
+
+    @property
+    def info(self) -> dict[str, object]:
+        return {"exe": self.exe, "cmdline": ["llama-server", "--port", self.port]}
+
+
+def test_a_server_this_process_did_not_start_can_still_be_stopped(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """A quit or a crash leaves a model server holding tens of gigabytes. The window
+    has to be able to end it, or the only way back is a restart."""
+    home = tmp_path / "home"
+    (home / "models").mkdir(parents=True)
+    supervisor = Supervisor(home / "models")
+    backend = Backend(url="http://127.0.0.1:1337/v1")
+
+    left = FakeProcess(4321, str(home / "runtime" / "b1" / "llama-server"), "1337")
+
+    monkeypatch.setattr("psutil.process_iter", lambda attrs=None: [left])
+    assert supervisor.adopt(backend) == 4321
+
+    ended: list[int] = []
+
+    def record(pid: int) -> bool:
+        ended.append(pid)
+        return True
+
+    monkeypatch.setattr(supervisor, "end", record)
+    assert supervisor.stop("local-review", backend) is True
+    assert ended == [4321]
+
+
+def test_a_server_the_user_runs_themselves_is_left_alone(tmp_path: Path, monkeypatch: Any) -> None:
+    """Their own build, on the same port, is theirs. The rig never ends it."""
+    home = tmp_path / "home"
+    (home / "models").mkdir(parents=True)
+    supervisor = Supervisor(home / "models")
+    backend = Backend(url="http://127.0.0.1:1337/v1")
+
+    theirs = FakeProcess(999, "/opt/homebrew/bin/llama-server", "1337")
+
+    monkeypatch.setattr("psutil.process_iter", lambda attrs=None: [theirs])
+    assert supervisor.adopt(backend) is None
+    assert supervisor.stop("local-review", backend) is False
+
+
+def test_a_server_on_another_port_is_not_confused_for_this_one(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    home = tmp_path / "home"
+    (home / "models").mkdir(parents=True)
+    supervisor = Supervisor(home / "models")
+
+    other = FakeProcess(5, str(home / "runtime" / "b1" / "llama-server"), "1338")
+
+    monkeypatch.setattr("psutil.process_iter", lambda attrs=None: [other])
+    assert supervisor.adopt(Backend(url="http://127.0.0.1:1337/v1")) is None

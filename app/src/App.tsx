@@ -7,6 +7,7 @@ import type { Queue, SetupProgress, System } from "./types";
 import Work from "./views/Work";
 import OnboardingView from "./views/Onboarding";
 import Runs from "./views/Runs";
+import TranscriptView from "./views/Transcript";
 import SettingsView from "./views/Settings";
 
 type Status =
@@ -14,11 +15,11 @@ type Status =
   | { state: "ready"; version: string }
   | { state: "failed"; reason: string };
 
-const VIEWS = ["Work", "Runs", "Settings"] as const;
+const VIEWS = ["Work", "Transcript", "Runs", "Settings"] as const;
 type View = (typeof VIEWS)[number];
 
 /** One mark per view. A sidebar is read by shape before it is read by word. */
-const MARK: Record<View, string> = { Work: "◈", Runs: "≡", Settings: "⚙" };
+const MARK: Record<View, string> = { Work: "◈", Transcript: "❝", Runs: "≡", Settings: "⚙" };
 
 function PlayMark() {
   return (
@@ -214,6 +215,7 @@ export default function App() {
         {view === "Work" && (
           <Work version={version} onCounts={setTray} onOpenRuns={() => setView("Runs")} />
         )}
+        {view === "Transcript" && <TranscriptView version={version} />}
         {view === "Runs" && (
           <div className="h-full overflow-auto px-5 py-5">
             <Runs version={version} />

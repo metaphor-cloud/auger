@@ -360,7 +360,7 @@ class Rig:
         if name is None:
             self.supervisor.stop_all()
         else:
-            self.supervisor.stop(name)
+            self.supervisor.stop(name, self.config.backend.get(name))
         self.publish("models.stopped", backend=name or "all")
 
     async def check_models(self) -> dict[str, Health]:

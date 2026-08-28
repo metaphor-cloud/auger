@@ -271,6 +271,7 @@ export default function Work({
   const [search, setSearch] = useState("");
   const [chosen, setChosen] = useState<Finding | null>(null);
   const [recording, setRecording] = useState(false);
+  const [closed, setClosed] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     const [repoBody, findingBody, runBody] = await Promise.all([
@@ -308,8 +309,14 @@ export default function Work({
 
   /** Grouped by repository, worst first, and inside a group the same rule again. */
   const groups = useMemo(() => {
+    // An excluded repository is one the user has said they do not want to see. Its
+    // findings stay in the database, and they stay out of this list.
+    const watched = new Set(
+      repositories.filter((one) => one.policy.enabled).map((one) => one.path),
+    );
     const byRepo = new Map<string, Finding[]>();
     for (const one of shown) {
+      if (!watched.has(one.repo_path)) continue;
       const list = byRepo.get(one.repo_path) ?? [];
       list.push(one);
       byRepo.set(one.repo_path, list);
@@ -334,7 +341,7 @@ export default function Work({
           second.findings.length - first.findings.length ||
           first.name.localeCompare(second.name),
       );
-  }, [shown]);
+  }, [shown, repositories]);
 
   async function pick(finding: Finding) {
     setChosen(finding);
@@ -447,11 +454,26 @@ export default function Work({
         {groups.map((group) => (
           <section key={group.path}>
             <header className="sticky top-0 z-10 flex items-baseline gap-2 border-b border-border-subtle bg-bg px-4 py-1.5">
-              <span className="text-xs font-medium text-text-primary">{group.name}</span>
-              <span className="text-[11px] text-text-tertiary">
-                {group.findings.length}
-                {group.unread > 0 ? ` · ${group.unread} new` : ""}
-              </span>
+              <button
+                className="flex items-baseline gap-2 text-left"
+                onClick={() =>
+                  setClosed((current) => {
+                    const next = new Set(current);
+                    if (next.has(group.path)) next.delete(group.path);
+                    else next.add(group.path);
+                    return next;
+                  })
+                }
+              >
+                <span className="w-2 text-[10px] text-text-tertiary">
+                  {closed.has(group.path) ? "▸" : "▾"}
+                </span>
+                <span className="text-xs font-medium text-text-primary">{group.name}</span>
+                <span className="text-[11px] text-text-tertiary">
+                  {group.findings.length}
+                  {group.unread > 0 ? ` · ${group.unread} new` : ""}
+                </span>
+              </button>
               <Button
                 size="sm"
                 variant="ghost"
@@ -470,7 +492,11 @@ export default function Work({
                 Exclude
               </Button>
             </header>
-            <ul className="divide-y divide-border-subtle/60">
+            <ul
+              className={`divide-y divide-border-subtle/60 ${
+                closed.has(group.path) ? "hidden" : ""
+              }`}
+            >
               {group.findings.slice(0, PER_REPO).map((finding) => (
                 <li key={finding.fingerprint}>
                   <Row

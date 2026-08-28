@@ -65,6 +65,8 @@ from auger.api.models import (
     SystemOut,
     ToolList,
     ToolOut,
+    TranscriptOut,
+    TurnOut,
 )
 from auger.config.schema import JobClass
 from auger.events import Event
@@ -280,7 +282,7 @@ def _backend_out(rig: Rig, name: str) -> BackendOut:
         up=bool(health and health.up),
         hosted=backend.hosted,
         managed=backend.managed,
-        ours=name in rig.supervisor.running,
+        ours=name in rig.supervisor.running or rig.supervisor.adopt(backend) is not None,
         models_served=list(health.models) if health else [],
         reason=health.reason if health else "not checked yet",
         requests=usage.requests if usage else 0,
@@ -433,10 +435,12 @@ def create_app(rig: Rig) -> FastAPI:
 
     @router.post("/models/stop")
     async def stop_models(name: str | None = None) -> BackendList:
-        """Stop a managed model server, and give its memory back.
+        """Stop a model server, and give its memory back.
 
-        A review model holds tens of gigabytes. Nothing starts it again until a review
-        needs it, or until you press Start.
+        A review model holds tens of gigabytes. This covers a server an earlier run
+        left behind as well as one this process started, because a server nobody can
+        stop is memory nobody gets back until a restart. Nothing starts it again until
+        a review needs it, or until you press Start.
         """
         await asyncio.to_thread(rig.stop_models, name)
         await rig.check_models()
@@ -679,6 +683,37 @@ def create_app(rig: Rig) -> FastAPI:
         return FindingList(
             findings=[FindingOut.of(finding) for finding in rows],
             counts=await asyncio.to_thread(counts, rig.store, None),
+        )
+
+    @router.get("/transcript")
+    async def transcript(after: int = 0, limit: int = 60) -> TranscriptOut:
+        """What the rig has said to the models, and what came back.
+
+        In memory only. It holds the code under review, so it never reaches the disk,
+        and a restart starts it empty.
+        """
+        turns = rig.gateway.transcript.since(after, limit)
+        return TranscriptOut(
+            turns=[
+                TurnOut(
+                    id=turn.id,
+                    at=turn.at,
+                    backend=turn.backend,
+                    model=turn.model,
+                    job_class=turn.job_class,
+                    repo=turn.repo,
+                    prompt=turn.prompt,
+                    answer=turn.answer,
+                    prompt_tokens=turn.prompt_tokens,
+                    completion_tokens=turn.completion_tokens,
+                    duration_ms=turn.duration_ms,
+                    error=turn.error,
+                    clipped=turn.clipped,
+                )
+                for turn in turns
+            ],
+            latest=max((turn.id for turn in rig.gateway.transcript), default=0),
+            depth=len(rig.gateway.transcript),
         )
 
     @router.get("/onboarding")

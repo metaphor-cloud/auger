@@ -220,6 +220,31 @@ class NoteRequest(BaseModel):
     text: str
 
 
+class TurnOut(BaseModel):
+    """One exchange with a model."""
+
+    id: int
+    at: float
+    backend: str
+    model: str
+    job_class: str
+    repo: str
+    prompt: str
+    answer: str
+    prompt_tokens: int
+    completion_tokens: int
+    duration_ms: int
+    error: str | None
+    clipped: bool
+
+
+class TranscriptOut(BaseModel):
+    turns: list[TurnOut]
+    #: The highest id so far. Ask for what came after it to follow along.
+    latest: int
+    depth: int
+
+
 class OnboardingOut(BaseModel):
     """What the first run still has to settle."""
 

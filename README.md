@@ -56,6 +56,10 @@ appeared. Widen the window to three days when you want the shape of a week inste
 Time is the axis where a rig that runs all day actually varies, so that is where the
 drawing goes. A run that fails sits at the top of its column, where the eye lands.
 
+**Transcript** is every exchange with a model as it happens: what was asked, what came
+back, how long it took, and what it cost. It is held in memory only, because it carries
+your code, so a restart starts it empty.
+
 **Runs** is every attempt, including the ones that were skipped and why.
 
 **Settings** holds the rest, in the order a first run needs it: where to look, models,

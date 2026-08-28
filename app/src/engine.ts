@@ -16,6 +16,7 @@ import type {
   Recorded,
   RunList,
   Settings,
+  TranscriptList,
   System,
   ToolList,
 } from "./types";
@@ -105,6 +106,10 @@ export async function stopModels(name?: string): Promise<BackendList> {
 
 export async function markOpened(fingerprint: string): Promise<FindingList> {
   return request(`/findings/${fingerprint}/opened`, { method: "POST" });
+}
+
+export async function getTranscript(after = 0, limit = 60): Promise<TranscriptList> {
+  return request(`/transcript?after=${after}&limit=${limit}`);
 }
 
 export async function getOnboarding(): Promise<Onboarding> {

@@ -10,12 +10,14 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
 
 from auger.config.schema import Backend, Config, JobClass, Profile, ProfileEntry
+from auger.llm.transcript import Transcript
 from auger.log import Logger, create_logger
 from auger.net import Allowlist, EgressRefused, guarded_client
 
@@ -71,6 +73,11 @@ class Message:
         return body
 
 
+def _as_text(messages: list[Message]) -> str:
+    """The prompt as the model sees it, for a person to read."""
+    return "\n\n".join(f"[{message.role}]\n{message.content}" for message in messages)
+
+
 @dataclass(frozen=True)
 class Completion:
     text: str
@@ -116,6 +123,10 @@ class Gateway:
         self._client = client or guarded_client(allowlist, self.log)
         self._limits: dict[str, asyncio.Semaphore] = {}
         self.usage: dict[str, Usage] = {}
+        #: Every exchange, so the window can show the work as it happens.
+        self.transcript = Transcript()
+        #: What the current job is about, for the transcript to label a turn with.
+        self.subject = ""
 
     @property
     def client(self) -> httpx.AsyncClient:
@@ -244,8 +255,34 @@ class Gateway:
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
-        body = await self._post(resolved, "/chat/completions", payload)
-        return _completion(body, resolved, self.usage[resolved.name])
+        started = time.monotonic()
+        try:
+            body = await self._post(resolved, "/chat/completions", payload)
+        except ModelError as error:
+            self.transcript.add(
+                backend=resolved.name,
+                model=resolved.backend.model,
+                job_class=job_class.value,
+                prompt=_as_text(messages),
+                answer="",
+                duration_ms=int((time.monotonic() - started) * 1000),
+                repo=self.subject,
+                error=str(error),
+            )
+            raise
+        completion = _completion(body, resolved, self.usage[resolved.name])
+        self.transcript.add(
+            backend=resolved.name,
+            model=resolved.backend.model,
+            job_class=job_class.value,
+            prompt=_as_text(messages),
+            answer=completion.text,
+            prompt_tokens=completion.prompt_tokens,
+            completion_tokens=completion.completion_tokens,
+            duration_ms=int((time.monotonic() - started) * 1000),
+            repo=self.subject,
+        )
+        return completion
 
     async def embed(self, texts: list[str], profile: str = "balanced") -> list[list[float]]:
         if not texts:

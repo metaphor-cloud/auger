@@ -285,6 +285,8 @@ class Scheduler:
 
         self._in_flight.add(path)
         self._queued.discard(self.key(task))
+        # The transcript labels each exchange with the work it belongs to.
+        rig.gateway.subject = task.repository.slug
         rig.publish("run.started", repo=str(path), slug=task.repository.slug, kind=task.kind)
         try:
             outcome = await self._execute(task)

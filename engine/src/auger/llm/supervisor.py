@@ -8,6 +8,8 @@ answers, and it says plainly why when it cannot.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import os
 import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -25,6 +27,9 @@ START_TIMEOUT = 180.0
 POLL_SECONDS = 1.0
 #: Where an OpenAI-compatible server usually listens. `llama-server` and
 #: `mlx-openai-server` both default into this range.
+#: How long a server gets to stop politely before it is ended.
+ADOPT_TIMEOUT = 8.0
+
 COMMON_PORTS = (1337, 1338, 1339, 8080, 8081, 8082, 8083, 1234, 11434, 8000)
 SERVERS = ("llama-server", "mlx_lm.server", "mlx-openai-server")
 
@@ -126,6 +131,83 @@ class Supervisor:
     def model_path(self, backend: Backend) -> Path | None:
         return self.models_dir / backend.model_file if backend.model_file else None
 
+    def home(self) -> Path:
+        """The auger home. Everything the rig installed lives under it."""
+        return self.models_dir.parent
+
+    def end(self, pid: int) -> bool:
+        """Ask a server to stop, and insist if it does not.
+
+        A server that ignores the polite signal still holds the memory, so waiting
+        politely for ever is the same as never stopping it at all.
+        """
+        import signal
+
+        import psutil
+
+        try:
+            process = psutil.Process(pid)
+            process.terminate()
+            process.wait(timeout=ADOPT_TIMEOUT)
+        except psutil.TimeoutExpired:
+            with contextlib.suppress(OSError, psutil.Error):
+                os.kill(pid, signal.SIGKILL)
+            self.log.warn("server ignored the stop signal", reason="killed", pid=pid)
+        except psutil.NoSuchProcess:
+            return True
+        except (OSError, psutil.Error) as error:
+            self.log.warn("could not stop a server", reason="stop_failed", pid=pid, error=error)
+            return False
+        return True
+
+    def adopt_all(self) -> list[int]:
+        """Every model server that came out of the auger home, on any port.
+
+        A config change moves a backend's port, and a server started before the change
+        keeps the old one. Unload all has to mean all of them, or the memory only comes
+        back on a restart.
+        """
+        import psutil
+
+        mine = str(self.home())
+        found: list[int] = []
+        for process in psutil.process_iter(["exe"]):
+            try:
+                if (process.info["exe"] or "").startswith(mine):
+                    found.append(int(process.pid))
+            except psutil.Error:
+                continue
+        return found
+
+    def adopt(self, backend: Backend) -> int | None:
+        """The process id of a server on this backend's port that auger left behind.
+
+        A quit, a crash, or a restart leaves a model server holding tens of gigabytes
+        with nothing to stop it. The window has to be able to end it, so the rig looks
+        for one on the backend's port.
+
+        Only a process started from the auger home counts. A `llama-server` the user
+        runs themselves, from their own build, is theirs, and the rig never ends it.
+        """
+        import psutil
+
+        wanted = str(port_of(backend.url))
+        mine = str(self.home())
+        for process in psutil.process_iter(["exe", "cmdline"]):
+            try:
+                exe = process.info["exe"] or ""
+                command = process.info["cmdline"] or []
+                if not exe.startswith(mine):
+                    continue
+                if "--port" not in command:
+                    continue
+                if command[command.index("--port") + 1] != wanted:
+                    continue
+            except (psutil.Error, IndexError, ValueError):
+                continue
+            return int(process.pid)
+        return None
+
     def arguments(self, backend: Backend, server: str, model_path: Path) -> list[str]:
         return [
             server,
@@ -222,21 +304,35 @@ class Supervisor:
             )
         return health
 
-    def stop(self, name: str) -> bool:
+    def stop(self, name: str, backend: Backend | None = None) -> bool:
         """Stop one managed server, and give its memory back.
 
         A review model holds tens of gigabytes. A user who wants that memory for
-        something else must be able to take it back without quitting the rig.
+        something else must be able to take it back without quitting the rig, and that
+        has to work for a server an earlier run left behind as well as one this process
+        started.
         """
         managed = self.running.pop(name, None)
-        if managed is None:
+        if managed is not None:
+            managed.stop()
+            self.log.info("managed server stopped", backend=name)
+            return True
+        if backend is None:
             return False
-        managed.stop()
-        self.log.info("managed server stopped", backend=name)
+        pid = self.adopt(backend)
+        if pid is None:
+            return False
+        if not self.end(pid):
+            return False
+        self.log.info("adopted server stopped", backend=name, pid=pid)
         return True
 
     def stop_all(self) -> None:
+        """Stop every server this rig started, and every one it left behind before."""
         for managed in list(self.running.values()):
             managed.stop()
             self.log.info("managed server stopped", backend=managed.name)
         self.running.clear()
+        for pid in self.adopt_all():
+            if self.end(pid):
+                self.log.info("adopted server stopped", pid=pid)

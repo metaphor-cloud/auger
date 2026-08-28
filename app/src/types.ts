@@ -106,6 +106,24 @@ export type Finding = {
   run_id: string | null;
 };
 
+export type Turn = {
+  id: number;
+  at: number;
+  backend: string;
+  model: string;
+  job_class: string;
+  repo: string;
+  prompt: string;
+  answer: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  duration_ms: number;
+  error: string | null;
+  clipped: boolean;
+};
+
+export type TranscriptList = { turns: Turn[]; latest: number; depth: number };
+
 export type Onboarding = {
   done: boolean;
   roots: number;
