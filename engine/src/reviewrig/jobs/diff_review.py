@@ -14,6 +14,7 @@ from pathlib import Path
 
 from reviewrig.config import Policy
 from reviewrig.config.schema import JobClass
+from reviewrig.context import ReviewContext, context_for_diff, reindex
 from reviewrig.jobs.parse import RawFinding, parse_findings
 from reviewrig.jobs.prompt import review_messages
 from reviewrig.llm import Gateway, ModelError
@@ -35,6 +36,7 @@ class ReviewOutcome:
     run: Run
     findings: list[Finding]
     problems: list[str]
+    context: ReviewContext | None = None
 
 
 def snippet_for(diff: str, file: str, line: int | None) -> str:
@@ -125,6 +127,13 @@ async def review(
         log.info("review skipped", reason="empty_diff")
         return ReviewOutcome(finish(store, run), [], [])
 
+    # The index must match the code under review, so it is brought up to date first.
+    # A commit that touched one file costs one file.
+    await reindex(store, gateway, repository.path, policy.model_profile, log)
+    context = await context_for_diff(
+        store, gateway, str(repository.path), diff_text, policy.model_profile, log=log
+    )
+
     messages = review_messages(
         slug=repository.slug,
         branch=branch,
@@ -132,6 +141,7 @@ async def review(
         subject=subject,
         diff=diff_text,
         hints=policy.hints,
+        context=context.as_text(),
     )
     try:
         completion = await gateway.complete(JobClass.REVIEW, messages, profile=policy.model_profile)
@@ -159,8 +169,10 @@ async def review(
         backend=completion.backend,
         prompt_tokens=completion.prompt_tokens,
         completion_tokens=completion.completion_tokens,
+        context_chunks=len(context.hits),
+        reranked=context.reranked,
     )
-    return ReviewOutcome(finish(store, run), findings, problems)
+    return ReviewOutcome(finish(store, run), findings, problems, context)
 
 
 def _failed(

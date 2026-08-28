@@ -1,0 +1,173 @@
+"""A diff hides what the changed code is part of and who calls it."""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from pathlib import Path
+
+import pytest
+
+from reviewrig.config.schema import Backend, Config, ProfileEntry
+from reviewrig.context import reindex
+from reviewrig.context.retrieve import changed_ranges, context_for_diff, symbol_names
+from reviewrig.llm import Gateway
+from reviewrig.net import Allowlist
+from reviewrig.store import Store
+from reviewrig.store.index import Hit
+from reviewrig.watch import git
+from tests.helpers import FakeModelServer, git_commit, git_init
+
+Serve = Callable[[object], Awaitable[str]]
+
+READER = "def read(path):\n    handle = open(path)\n    return handle.read()\n"
+WRITER = "def write(path, body):\n    read(path)\n    return body\n"
+UNRELATED = "def colours():\n    return ['red', 'green']\n"
+
+DIFF = """\
+diff --git a/reader.py b/reader.py
+index 1111111..2222222 100644
+--- a/reader.py
++++ b/reader.py
+@@ -1,3 +1,3 @@
+ def read(path):
+-    handle = open(path)
++    handle = open(path, encoding="utf-8")
+     return handle.read()
+"""
+
+
+@pytest.fixture
+def store(tmp_path: Path) -> Iterator[Store]:
+    store = Store.open(tmp_path / "db")
+    yield store
+    store.close()
+
+
+@pytest.fixture
+def repository(tmp_path: Path) -> Path:
+    path = git_init(tmp_path / "repo")
+    git_commit(
+        path,
+        {"reader.py": READER, "writer.py": WRITER, "colours.py": UNRELATED},
+        "start",
+    )
+    return path
+
+
+@pytest.fixture
+def fake() -> FakeModelServer:
+    return FakeModelServer()
+
+
+@pytest.fixture
+async def gateway(fake: FakeModelServer, serve: Serve) -> AsyncIterator[Gateway]:
+    base = await serve(fake.app())
+    config = Config(
+        backend={
+            "embed": Backend(url=f"{base}/v1", model="embed-model"),
+            "rerank": Backend(url=f"{base}/v1", model="rerank-model"),
+        }
+    )
+    config.profile["balanced"].embed = ProfileEntry(backend="embed")
+    config.profile["balanced"].rerank = ProfileEntry(backend="rerank")
+    gateway = Gateway(config, Allowlist.from_values([base]))
+    yield gateway
+    await gateway.aclose()
+
+
+def test_it_reads_the_changed_lines_of_a_diff() -> None:
+    changes = changed_ranges(DIFF)
+    assert [change.path for change in changes] == ["reader.py"]
+    assert changes[0].ranges == [(1, 3)]
+
+
+def test_a_diff_that_adds_a_file_still_names_it() -> None:
+    diff = "diff --git a/new.py b/new.py\n--- /dev/null\n+++ b/new.py\n@@ -0,0 +1,2 @@\n+x = 1\n"
+    assert [change.path for change in changed_ranges(diff)] == ["new.py"]
+
+
+def test_a_deleted_file_is_not_searched_for() -> None:
+    diff = "diff --git a/old.py b/old.py\n--- a/old.py\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-x = 1\n"
+    assert changed_ranges(diff) == []
+
+
+def test_symbol_names_take_the_leaf() -> None:
+    hits = [Hit(1, "a.py", "Gateway.complete", 1, 2, ""), Hit(2, "a.py", "read part 2", 3, 4, "")]
+    assert symbol_names(hits) == ["complete", "read"]
+
+
+async def test_it_finds_the_caller_of_a_changed_function(store: Store, repository: Path) -> None:
+    """`write` calls `read`. A reviewer needs to see that."""
+    await reindex(store, None, repository)
+    context = await context_for_diff(store, None, str(repository), DIFF)
+    assert "read" in context.symbols
+    assert "writer.py" in {hit.path for hit in context.hits}
+
+
+async def test_it_does_not_return_the_changed_code_itself(store: Store, repository: Path) -> None:
+    """That code is already in the diff. Related code is what the diff is missing."""
+    await reindex(store, None, repository)
+    context = await context_for_diff(store, None, str(repository), DIFF)
+    assert all(hit.path != "reader.py" for hit in context.hits)
+
+
+async def test_a_diff_that_matches_nothing_returns_nothing(store: Store, repository: Path) -> None:
+    await reindex(store, None, repository)
+    assert await context_for_diff(store, None, str(repository), "") == context_empty()
+
+
+def context_empty() -> object:
+    from reviewrig.context.retrieve import ReviewContext
+
+    return ReviewContext()
+
+
+async def test_it_uses_the_reranker_when_there_is_a_choice(
+    store: Store, repository: Path, gateway: Gateway, fake: FakeModelServer
+) -> None:
+    await reindex(store, gateway, repository)
+    context = await context_for_diff(store, gateway, str(repository), DIFF, limit=1)
+    paths = [request["path"] for request in fake.requests]
+    assert "/v1/embeddings" in paths
+    assert context.hits
+
+
+async def test_retrieval_still_works_when_the_embedding_model_is_down(
+    store: Store, repository: Path, gateway: Gateway
+) -> None:
+    """Keyword search alone must still find the caller."""
+    await reindex(store, None, repository)
+    gateway.config.backend["embed"].url = "http://127.0.0.1:1/v1"
+    gateway.config.egress.allow.append("http://127.0.0.1:1")
+    context = await context_for_diff(store, gateway, str(repository), DIFF)
+    assert "writer.py" in {hit.path for hit in context.hits}
+
+
+async def test_the_context_text_respects_its_budget(store: Store, repository: Path) -> None:
+    await reindex(store, None, repository)
+    context = await context_for_diff(store, None, str(repository), DIFF)
+    assert len(context.as_text(budget=40)) <= 40
+
+
+async def test_the_review_prompt_carries_the_related_code(store: Store, repository: Path) -> None:
+    await reindex(store, None, repository)
+    context = await context_for_diff(store, None, str(repository), DIFF)
+    text = context.as_text()
+    assert "writer.py" in text
+    assert "read(path)" in text
+
+
+async def test_an_index_that_is_empty_returns_nothing(store: Store, repository: Path) -> None:
+    context = await context_for_diff(store, None, str(repository), DIFF)
+    assert context.hits == []
+
+
+async def test_a_real_repository_diff_finds_related_code(store: Store) -> None:
+    """Against this repository, not a fixture."""
+    here = Path(__file__).resolve().parents[2]
+    if not (here / ".git").exists():
+        pytest.skip("not running inside a checkout")
+    await reindex(store, None, here)
+    diff = git.diff(here, None, "HEAD")
+    context = await context_for_diff(store, None, str(here), diff)
+    assert isinstance(context.hits, list)

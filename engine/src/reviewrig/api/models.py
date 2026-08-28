@@ -62,12 +62,20 @@ class EgressOut(BaseModel):
     recently_refused: list[str]
 
 
+class IndexOut(BaseModel):
+    files: int
+    chunks: int
+    vectors: bool
+    embedded: int
+
+
 class SystemOut(BaseModel):
     """What the UI shows about the rig itself, including what it must warn about."""
 
     version: str
     sandbox: SandboxOut
     egress: EgressOut
+    index: IndexOut
     image: str
 
 

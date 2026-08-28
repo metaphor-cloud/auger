@@ -5,8 +5,11 @@ Git runs on the host, not in the sandbox, and that is a deliberate choice.
 `git diff` can run a command through a `textconv` or an external diff driver, but a
 driver's command comes from a config file, and `clone` never brings a config file with
 it. A hostile repository's `.gitattributes` can name a driver and cannot define one. The
-flags below close the remaining paths: no system or global config, no hooks, no external
-diff, no textconv.
+flags below close the remaining paths: no system or global config, and no hooks. Every
+command that produces a patch also passes `--no-ext-diff` and `--no-textconv`.
+
+`-c diff.external=` is not among them. An empty value is a command, and git tries to run
+it, so it breaks every diff instead of hardening one.
 
 Everything that does run repository-provided code, a build, a dependency install, or a
 linter that loads repository rules, runs in the sandbox instead.
@@ -30,8 +33,6 @@ HARDENING = (
     "core.hooksPath=/dev/null",
     "-c",
     "core.fsmonitor=false",
-    "-c",
-    "diff.external=",
     "-c",
     "core.attributesFile=/dev/null",
     "-c",
@@ -170,3 +171,20 @@ def _cap(text: str, max_bytes: int) -> str:
         return text
     kept = encoded[:max_bytes].decode("utf-8", "ignore")
     return f"{kept}\n\n[diff truncated at {max_bytes} bytes]\n"
+
+
+def tracked_blobs(repository: Path) -> dict[str, str]:
+    """Every tracked file and the sha of its content, straight from the index.
+
+    This is what makes an incremental re-index cheap: a file whose sha did not move
+    needs no read, no parse, and no embedding.
+    """
+    blobs: dict[str, str] = {}
+    for line in run(repository, ["ls-files", "--stage", "-z"]).split("\0"):
+        if not line:
+            continue
+        meta, _, path = line.partition("\t")
+        parts = meta.split()
+        if len(parts) >= 2 and path:
+            blobs[path] = parts[1]
+    return blobs

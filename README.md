@@ -102,6 +102,22 @@ Hosted providers take two switches: `hosted = true` on the backend, and
 `allow_hosted = true` under `[egress]`. Neither alone is enough, because turning one on
 sends your code off the machine.
 
+## What the reviewer sees
+
+A diff hides the two things a reviewer needs most: what the changed code is part of, and
+who calls it. The rig keeps a code index and answers both.
+
+- tree-sitter maps every file to its symbols, in 19 languages.
+- Chunks follow symbol boundaries, so a retrieved piece is a whole function.
+- Three searches run together: by overlap with the changed lines, by keyword over the
+  changed symbol names, and by meaning over embeddings. A reranker orders the survivors.
+
+Only a file whose git blob sha moved is read again. On this repository, a full index is
+145 files and 762 chunks in about 100 ms, and a re-index with no change costs 11 ms.
+
+Search by meaning needs `sqlite-vec` and an embedding backend. Without either, keyword
+search still finds callers, and the rig says so in the System view.
+
 ## Other agents
 
 A review that runs while a coding agent edits the same tree reads a half finished state.

@@ -3,7 +3,7 @@ import type { System } from "../types";
 export default function SystemView({ system }: { system: System | null }) {
   if (system === null) return <p className="muted">Loading</p>;
 
-  const { sandbox, egress } = system;
+  const { sandbox, egress, index } = system;
   return (
     <section>
       <header className="view-header">
@@ -21,6 +21,20 @@ export default function SystemView({ system }: { system: System | null }) {
         <dd className="mono">{system.image}</dd>
         <dt>Network</dt>
         <dd>None. A review step cannot reach anything.</dd>
+      </dl>
+
+      <h3>Code index</h3>
+      <dl className="facts">
+        <dt>Indexed</dt>
+        <dd>
+          {index.files} files, {index.chunks} chunks
+        </dd>
+        <dt>Search by meaning</dt>
+        <dd>
+          {index.vectors
+            ? `${index.embedded} chunks embedded`
+            : "unavailable, keyword search only"}
+        </dd>
       </dl>
 
       <h3>Egress</h3>

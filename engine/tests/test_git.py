@@ -98,12 +98,19 @@ def test_every_path_from_repository_content_to_a_command_is_closed() -> None:
     assert "--no-optional-locks" in line
     for flag in (
         "core.hooksPath=/dev/null",
-        "diff.external=",
         "core.attributesFile=/dev/null",
         "protocol.ext.allow=never",
         "core.fsmonitor=false",
     ):
         assert flag in line, flag
+    # An empty `diff.external` is a command that git tries to run, so it must not be set.
+    assert "diff.external=" not in line
+
+
+def test_a_plain_diff_command_still_works(repository: Path) -> None:
+    """A hardening flag that breaks every diff is not hardening."""
+    git_commit(repository, {"a.py": "def one():\n    return 5\n"}, "change")
+    assert "return 5" in git.run(repository, ["diff", "HEAD~1", "HEAD"])
 
 
 def test_the_environment_carries_no_user_or_system_config() -> None:

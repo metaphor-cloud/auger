@@ -82,6 +82,42 @@ MIGRATIONS: tuple[str, ...] = (
     """
     ALTER TABLE runs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 1;
     """,
+    """
+    CREATE TABLE indexed_files (
+        repo_path  TEXT NOT NULL,
+        path       TEXT NOT NULL,
+        blob_sha   TEXT NOT NULL,
+        chunk_count INTEGER NOT NULL DEFAULT 0,
+        indexed_at TEXT NOT NULL,
+        PRIMARY KEY (repo_path, path)
+    );
+
+    CREATE TABLE chunks (
+        id         INTEGER PRIMARY KEY,
+        repo_path  TEXT NOT NULL,
+        path       TEXT NOT NULL,
+        symbol     TEXT NOT NULL DEFAULT '',
+        kind       TEXT NOT NULL DEFAULT '',
+        start_line INTEGER NOT NULL,
+        end_line   INTEGER NOT NULL,
+        text       TEXT NOT NULL
+    );
+    CREATE INDEX chunks_file ON chunks (repo_path, path);
+    CREATE INDEX chunks_symbol ON chunks (repo_path, symbol);
+
+    CREATE VIRTUAL TABLE chunks_fts USING fts5(
+        text, symbol, content='chunks', content_rowid='id'
+    );
+    CREATE TRIGGER chunks_after_insert AFTER INSERT ON chunks BEGIN
+        INSERT INTO chunks_fts (rowid, text, symbol) VALUES (new.id, new.text, new.symbol);
+    END;
+    CREATE TRIGGER chunks_after_delete AFTER DELETE ON chunks BEGIN
+        INSERT INTO chunks_fts (chunks_fts, rowid, text, symbol)
+        VALUES ('delete', old.id, old.text, old.symbol);
+    END;
+
+    CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    """,
 )
 
 
@@ -94,6 +130,7 @@ class Store:
         self._lock = threading.RLock()
         self._connection = sqlite3.connect(path, check_same_thread=False)
         self._connection.row_factory = sqlite3.Row
+        self.vectors = _load_vector_extension(self._connection)
         with self._lock:
             self._connection.execute("PRAGMA journal_mode = WAL")
             self._connection.execute("PRAGMA foreign_keys = ON")
@@ -135,3 +172,32 @@ class Store:
     def query(self, sql: str, parameters: Sequence[Any] = ()) -> list[sqlite3.Row]:
         with self._lock:
             return self._connection.execute(sql, parameters).fetchall()
+
+    def get_meta(self, key: str) -> str | None:
+        rows = self.query("SELECT value FROM meta WHERE key = ?", (key,))
+        return str(rows[0]["value"]) if rows else None
+
+    def set_meta(self, key: str, value: str) -> None:
+        with self.write() as connection:
+            connection.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
+
+
+def _load_vector_extension(connection: sqlite3.Connection) -> bool:
+    """Load `sqlite-vec`. Returns False when it will not load.
+
+    Retrieval by meaning needs it. Everything else works without it, so a machine where
+    the extension refuses to load still reviews code, with keyword search only.
+    """
+    try:
+        import sqlite_vec
+
+        connection.enable_load_extension(True)
+        sqlite_vec.load(connection)
+        connection.enable_load_extension(False)
+    except Exception:
+        return False
+    return True

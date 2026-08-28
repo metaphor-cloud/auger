@@ -44,10 +44,18 @@ export type Egress = {
   recently_refused: string[];
 };
 
+export type Index = {
+  files: number;
+  chunks: number;
+  vectors: boolean;
+  embedded: number;
+};
+
 export type System = {
   version: string;
   sandbox: Sandbox;
   egress: Egress;
+  index: Index;
   image: string;
 };
 

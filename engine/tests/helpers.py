@@ -41,6 +41,8 @@ class FakeModelServer:
         self.delay_seconds = 0.0
         #: What the assistant answers. None gives the default echo.
         self.reply: str | None = None
+        #: Length of the vector returned per input. 0 turns embedding off.
+        self.dimension = 8
         self.concurrent = 0
         self.peak_concurrent = 0
 
@@ -70,7 +72,7 @@ class FakeModelServer:
             if (early := self._failure()) is not None:
                 return early
             rows = [
-                {"index": index, "embedding": [float(index), 0.5]}
+                {"index": index, "embedding": [float(index)] + [0.5] * (self.dimension - 1)}
                 for index, _ in enumerate(body["input"])
             ]
             # Out of order on purpose. The gateway must sort by index.

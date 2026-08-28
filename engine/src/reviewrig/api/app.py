@@ -28,6 +28,7 @@ from reviewrig.api.models import (
     EgressOut,
     FindingList,
     FindingOut,
+    IndexOut,
     QueueOut,
     RepositoryList,
     ReviewRequest,
@@ -42,6 +43,7 @@ from reviewrig.events import Event
 from reviewrig.log import Logger
 from reviewrig.rig import Rig
 from reviewrig.store.findings import counts, list_findings, set_status
+from reviewrig.store.index import chunk_count
 from reviewrig.store.runs import list_runs
 
 BEARER = "bearer "
@@ -102,6 +104,22 @@ async def _boot(rig: Rig) -> None:
     """
     await asyncio.to_thread(rig.scan)
     await rig.start_background()
+
+
+def _index_out(rig: Rig) -> IndexOut:
+    files = int(rig.store.query("SELECT COUNT(*) AS n FROM indexed_files")[0]["n"])
+    embedded = 0
+    if rig.store.vectors:
+        try:
+            embedded = int(rig.store.query("SELECT COUNT(*) AS n FROM chunk_vectors")[0]["n"])
+        except Exception:
+            embedded = 0
+    return IndexOut(
+        files=files,
+        chunks=chunk_count(rig.store),
+        vectors=rig.store.vectors,
+        embedded=embedded,
+    )
 
 
 def _queue_out(rig: Rig) -> QueueOut:
@@ -191,6 +209,7 @@ def create_app(rig: Rig) -> FastAPI:
                 failed_requests=stats.failed,
                 recently_refused=list(stats.refused_hosts),
             ),
+            index=await asyncio.to_thread(_index_out, rig),
             image=rig.config.image,
         )
 
