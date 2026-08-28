@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import signal
 import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -144,20 +145,17 @@ class Supervisor:
         """The auger home. Everything the rig installed lives under it."""
         return self.models_dir.parent
 
-    def end(self, pid: int) -> bool:
-        """Ask a server to stop, and insist if it does not.
+    def wait_for(self, pid: int, timeout: float = ADOPT_TIMEOUT) -> bool:
+        """Wait for a process to go, and insist when it will not.
 
         A server that ignores the polite signal still holds the memory, so waiting
-        politely for ever is the same as never stopping it at all.
+        politely for ever is the same as never stopping it at all. It holds no state
+        that a kill could spoil.
         """
-        import signal
-
         import psutil
 
         try:
-            process = psutil.Process(pid)
-            process.terminate()
-            process.wait(timeout=ADOPT_TIMEOUT)
+            psutil.Process(pid).wait(timeout=timeout)
         except psutil.TimeoutExpired:
             with contextlib.suppress(OSError, psutil.Error):
                 os.kill(pid, signal.SIGKILL)
@@ -168,6 +166,17 @@ class Supervisor:
             self.log.warn("could not stop a server", reason="stop_failed", pid=pid, error=error)
             return False
         return True
+
+    def end(self, pid: int) -> bool:
+        """Ask one server to stop, and wait for it."""
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return True
+        except OSError as error:
+            self.log.warn("could not stop a server", reason="stop_failed", pid=pid, error=error)
+            return False
+        return self.wait_for(pid)
 
     def adopt_all(self) -> list[int]:
         """Every model server that came out of the auger home, on any port.
@@ -349,6 +358,12 @@ class Supervisor:
             one.wait()
             self.log.info("managed server stopped", backend=one.name)
         self.running.clear()
-        for pid in self.adopt_all():
-            if self.end(pid):
+        # The same shape as above: ask them all, then wait. One after the other would
+        # take as long as the sum of them, and the application is quitting.
+        left = self.adopt_all()
+        for pid in left:
+            with contextlib.suppress(OSError):
+                os.kill(pid, signal.SIGTERM)
+        for pid in left:
+            if self.wait_for(pid):
                 self.log.info("adopted server stopped", pid=pid)

@@ -265,6 +265,7 @@ def _queue_out(rig: Rig) -> QueueOut:
         pending=rig.scheduler.pending,
         in_flight=rig.scheduler.in_flight,
         paused=rig.scheduler.paused,
+        ready=rig.scheduler.running,
         workers=rig.config.schedule.max_concurrent_reviews,
         models_ready=ready,
         models_reason=reason,

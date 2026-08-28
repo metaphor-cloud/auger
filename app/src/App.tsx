@@ -1,8 +1,18 @@
 import { Badge, Button, useThemeContext } from "@metaphor-cloud/ui";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { getOnboarding, getQueue, getSystem, health, pauseQueue, readEvents, resumeQueue } from "./engine";
-import { notify, setTray } from "./host";
+import {
+  getModels,
+  getOnboarding,
+  getQueue,
+  getSystem,
+  health,
+  pauseQueue,
+  readEvents,
+  resumeQueue,
+  stopModels,
+} from "./engine";
+import { notify, onTrayAction, setTray, setTrayActions, type TrayAction } from "./host";
 import type { Queue, SetupProgress, System } from "./types";
 import Work from "./views/Work";
 import OnboardingView from "./views/Onboarding";
@@ -58,6 +68,14 @@ export default function App() {
     }
   }, []);
 
+  // Boot runs in the background, so the queue becomes ready a moment after health
+  // answers. Ask again until it does, then stop.
+  useEffect(() => {
+    if (queue?.ready) return;
+    const timer = setInterval(() => void refreshQueue(), 1500);
+    return () => clearInterval(timer);
+  }, [queue?.ready, refreshQueue]);
+
   useEffect(() => {
     const abort = new AbortController();
 
@@ -102,6 +120,50 @@ export default function App() {
   }, [refreshQueue]);
 
   const [refused, setRefused] = useState<string | null>(null);
+
+  const [loaded, setLoaded] = useState(false);
+
+  // The tray works with the window hidden, and a hidden window still runs, so it does
+  // the asking. Its menu has to say what the engine is actually doing.
+  useEffect(() => {
+    void setTrayActions(queue?.ready === true && !queue.paused, queue?.ready === true, loaded);
+  }, [queue?.ready, queue?.paused, loaded]);
+
+  const refreshModels = useCallback(async () => {
+    try {
+      const body = await getModels();
+      setLoaded(body.backends.some((one) => one.ours));
+    } catch {
+      // The tray is a detail. A failure here must not blank the window.
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshModels();
+    const timer = setInterval(() => void refreshModels(), 15000);
+    return () => clearInterval(timer);
+  }, [refreshModels, version]);
+
+  // One subscription for the life of the window. The handler changes every render, so
+  // the listener reads it from a box rather than being registered again each time.
+  const onAction = useRef<(action: TrayAction) => void>(() => undefined);
+  useEffect(() => {
+    let stop = () => undefined as void;
+    let gone = false;
+    void onTrayAction((action) => onAction.current(action)).then((off) => {
+      if (gone) off();
+      else stop = off;
+    });
+    return () => {
+      gone = true;
+      stop();
+    };
+  }, []);
+
+  onAction.current = (action) => {
+    if (action === "reviewing") void togglePause();
+    if (action === "unload") void stopModels().then(() => refreshModels());
+  };
 
   async function togglePause() {
     try {
@@ -152,7 +214,15 @@ export default function App() {
         </nav>
 
         <div className="space-y-2 border-t border-border px-3 py-3">
-          {queue && (
+          {queue && !queue.ready && (
+            // The first walk takes seconds. Until the workers exist there is nothing
+            // to start or stop, and a button that says otherwise is a lie.
+            <Button size="sm" variant="ghost" className="w-full justify-start" disabled>
+              <span className="w-3 text-center opacity-70">·</span>
+              Starting
+            </Button>
+          )}
+          {queue?.ready && (
             <Button
               size="sm"
               variant="ghost"

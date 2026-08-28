@@ -174,6 +174,9 @@ class QueueOut(BaseModel):
     in_flight: list[str]
     paused: bool
     workers: int
+    #: Whether the workers exist yet. Before the first walk finishes there is no queue
+    #: to be running or stopped, and `paused` says nothing true about it.
+    ready: bool = False
     #: Whether a model can answer a review. False means pressing play would only
     #: produce one failed run per repository.
     models_ready: bool = False

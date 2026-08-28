@@ -43,6 +43,22 @@ watch, and a model to review with. After that:
    writes nothing that anyone else sees.
 5. **Runs** shows every attempt, including the ones that were skipped and why.
 
+## If it crashes
+
+A model server holds tens of gigabytes. Auger releases it when you quit, when you press
+Unload in the Models view or the tray, and when the application that owns the engine
+disappears, because the engine notices and stops on its own.
+
+That leaves one case: the engine itself was killed outright. Its servers are then held by
+nothing. Open Auger and press Unload, or run:
+
+```
+auger stop
+```
+
+It needs no running engine. It stops every model server that came out of `~/.auger`, and
+it leaves a `llama-server` you started yourself alone.
+
 ## Building a release
 
 ```

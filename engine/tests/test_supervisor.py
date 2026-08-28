@@ -224,3 +224,26 @@ def test_a_server_on_another_port_is_not_confused_for_this_one(
 
     monkeypatch.setattr("psutil.process_iter", lambda attrs=None: [other])
     assert supervisor.adopt(Backend(url="http://127.0.0.1:1337/v1")) is None
+
+
+def test_stop_all_signals_every_server_before_it_waits_for_any(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Waiting on each in turn takes as long as the sum of them, and the application
+    is quitting. The host only holds the door open for so long."""
+    home = tmp_path / "home"
+    (home / "models").mkdir(parents=True)
+    supervisor = Supervisor(home / "models")
+
+    order: list[str] = []
+    monkeypatch.setattr(supervisor, "adopt_all", lambda: [11, 22])
+    monkeypatch.setattr("os.kill", lambda pid, sig: order.append(f"signal {pid}"))
+
+    def waited(pid: int, timeout: float = 0.0) -> bool:
+        order.append(f"wait {pid}")
+        return True
+
+    monkeypatch.setattr(supervisor, "wait_for", waited)
+
+    supervisor.stop_all()
+    assert order == ["signal 11", "signal 22", "wait 11", "wait 22"]

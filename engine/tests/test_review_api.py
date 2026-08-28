@@ -185,3 +185,18 @@ async def test_a_dismissed_finding_can_still_be_asked_for(
         shown = await call(http, token, "GET", "/findings?include_dismissed=true")
     assert hidden["findings"] == []
     assert len(shown["findings"]) == 1
+
+
+async def test_the_queue_says_when_it_has_not_started_yet(
+    http: httpx.AsyncClient, token: str, rig: Rig, tree: Path
+) -> None:
+    """The first walk takes seconds. Until the workers exist the queue is neither
+    running nor stopped, and the window must not claim it is reviewing."""
+    async with http:
+        before = await call(http, token, "GET", "/queue")
+        assert before["ready"] is False
+
+        await rig.start_background()
+        after = await call(http, token, "GET", "/queue")
+    assert after["ready"] is True
+    assert after["paused"] is True

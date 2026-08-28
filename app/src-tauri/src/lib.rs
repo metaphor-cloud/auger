@@ -34,6 +34,13 @@ fn set_tray_status(app: tauri::AppHandle, open: u32, critical: u32) {
     tray::set_status(&app, open, critical);
 }
 
+/// What the tray's action items should say, and whether they can be used.
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn set_tray_actions(app: tauri::AppHandle, reviewing: bool, ready: bool, loaded: bool) {
+    tray::set_actions(&app, reviewing, ready, loaded);
+}
+
 /// A finding that needs attention reaches the user even with the window closed.
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)]
@@ -92,6 +99,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             engine_info,
             set_tray_status,
+            set_tray_actions,
             notify,
             autostart,
             set_autostart

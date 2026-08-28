@@ -22,6 +22,8 @@ an allowlist that logs every request.
 - Audits a whole repository on a slower timer, for the problems a diff cannot show.
 - Waits when another coding agent is working in a repository.
 - Opens stopped. Nothing reviews until you press play, so the machine stays yours.
+- Gives the memory back. `auger stop` releases the model servers even with nothing
+  running, and the tray does it while the window is closed.
 - Keeps the work items for each repository, and lets your agent search and write them
   over MCP, so it knows what it already did. See [docs/tracker.md](docs/tracker.md).
 

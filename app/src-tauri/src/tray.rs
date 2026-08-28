@@ -5,26 +5,52 @@
 
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 pub const OPEN: &str = "open";
 pub const QUIT: &str = "quit";
+pub const REVIEWING: &str = "reviewing";
+pub const UNLOAD: &str = "unload";
 pub const TRAY_ID: &str = "main";
+
+/// The window carries the engine token and already talks to it, and it keeps running
+/// while it is hidden, so the tray asks it to act rather than holding a second client.
+pub const ACTION: &str = "tray://action";
+
+/// The two items whose words change with the engine's state.
+///
+/// A tray icon gives no way to read its own menu back, so the handles are kept here.
+pub struct Actions<R: Runtime> {
+    reviewing: MenuItem<R>,
+    unload: MenuItem<R>,
+}
 
 pub fn build<R: Runtime>(app: &AppHandle<R>, status: &str) -> tauri::Result<()> {
     let status_item = MenuItem::with_id(app, "status", status, false, None::<&str>)?;
     let open_item = MenuItem::with_id(app, OPEN, "Open Auger", true, None::<&str>)?;
+    // Both start disabled. The window turns them on once it knows what the engine is
+    // doing, so the menu never offers an action that would do nothing.
+    let reviewing_item = MenuItem::with_id(app, REVIEWING, "Start reviewing", false, None::<&str>)?;
+    let unload_item = MenuItem::with_id(app, UNLOAD, "Unload models", false, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, QUIT, "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[
             &status_item,
             &PredefinedMenuItem::separator(app)?,
+            &reviewing_item,
+            &unload_item,
+            &PredefinedMenuItem::separator(app)?,
             &open_item,
             &PredefinedMenuItem::separator(app)?,
             &quit_item,
         ],
     )?;
+
+    app.manage(Actions {
+        reviewing: reviewing_item.clone(),
+        unload: unload_item.clone(),
+    });
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(app.default_window_icon().cloned().expect("bundled icon"))
@@ -43,8 +69,28 @@ fn on_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
     match event.id.as_ref() {
         OPEN => show_window(app),
         QUIT => app.exit(0),
+        id @ (REVIEWING | UNLOAD) => {
+            let _ = app.emit(ACTION, id.to_string());
+        }
         _ => {}
     }
+}
+
+/// What the two action items say, and whether they can be used.
+///
+/// The window knows the engine's state, so it tells the tray. A menu that guessed
+/// would offer Pause to a rig that has not started.
+pub fn set_actions<R: Runtime>(app: &AppHandle<R>, reviewing: bool, ready: bool, loaded: bool) {
+    let Some(actions) = app.try_state::<Actions<R>>() else {
+        return;
+    };
+    let _ = actions.reviewing.set_text(if reviewing {
+        "Pause reviewing"
+    } else {
+        "Start reviewing"
+    });
+    let _ = actions.reviewing.set_enabled(ready);
+    let _ = actions.unload.set_enabled(loaded);
 }
 
 pub fn show_window<R: Runtime>(app: &AppHandle<R>) {

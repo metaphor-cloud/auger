@@ -27,8 +27,33 @@ Auger - a background code reviewer that keeps your code on your machine.
 
   auger              serve the engine and the window
   auger tracker      the work tracker for this repository, over MCP
+  auger stop         stop every model server auger started
   auger --version    print the version
 """
+
+
+def stop_models() -> int:
+    """Stop every model server that came out of the auger home.
+
+    The window and its tray can do this, and the engine does it when it exits or when
+    the application that owns it disappears. This is what is left when none of those
+    happened: a crash that took the engine with it, holding tens of gigabytes.
+
+    A `llama-server` you started yourself is not touched. Only a process running from
+    the auger home counts as ours.
+    """
+    from auger.config.loader import home_dir
+    from auger.llm.supervisor import Supervisor
+    from auger.log import create_logger
+
+    supervisor = Supervisor(home_dir() / "models", create_logger("auger", stream=sys.stderr))
+    found = supervisor.adopt_all()
+    if not found:
+        print("auger: no model server of ours is running.")
+        return 0
+    supervisor.stop_all()
+    print(f"auger: stopped {len(found)} model server{'' if len(found) == 1 else 's'}.")
+    return 0
 
 
 def main() -> None:
@@ -37,6 +62,8 @@ def main() -> None:
         from auger.tracker.__main__ import main as tracker
 
         raise SystemExit(tracker(sys.argv[2:]))
+    if first == ["stop"]:
+        raise SystemExit(stop_models())
     if first in (["--help"], ["-h"], ["help"]):
         print(USAGE, end="")
         raise SystemExit(0)

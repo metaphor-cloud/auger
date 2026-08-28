@@ -176,6 +176,7 @@ export type Queue = {
   pending: number;
   in_flight: string[];
   paused: boolean;
+  ready: boolean;
   workers: number;
   models_ready: boolean;
   models_reason: string | null;
