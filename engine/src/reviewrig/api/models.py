@@ -88,6 +88,9 @@ class BackendOut(BaseModel):
     up: bool
     hosted: bool
     managed: bool
+    #: This process started it, so this process can stop it. A server the user started
+    #: themselves stays theirs, and the window offers no control that would do nothing.
+    ours: bool = False
     models_served: list[str]
     reason: str | None
     requests: int
@@ -115,6 +118,9 @@ class FindingOut(BaseModel):
     line: int | None
     confidence: float
     status: str
+    category: str
+    #: When the user first read it. Null means new to them, and the map says so.
+    opened_at: str | None
     triage: str | None
     first_seen_at: str
     last_seen_at: str
@@ -207,6 +213,21 @@ class NoteList(BaseModel):
 
 class NoteRequest(BaseModel):
     text: str
+
+
+class OnboardingOut(BaseModel):
+    """What the first run still has to settle."""
+
+    done: bool
+    roots: int
+    models_ready: bool
+    repositories: int
+    sandbox: str
+    degraded: bool
+
+
+class OnboardingChange(BaseModel):
+    done: bool
 
 
 class ForgeOut(BaseModel):

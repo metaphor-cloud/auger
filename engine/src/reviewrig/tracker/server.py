@@ -144,6 +144,7 @@ def build(store: Store, repository: Path, version: str = "") -> MCPServer:
                 repo_path=repo,
                 source=AGENT_SOURCE,
                 severity=severity,  # type: ignore[arg-type]
+                category="task",
                 title=title.strip(),
                 detail=detail.strip(),
                 file=file.strip(),

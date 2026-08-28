@@ -19,3 +19,34 @@ body {
   font-family: var(--font-sans);
   font-size: 13px;
 }
+
+/* A finding nobody has opened. It breathes until the user reads it, and then it stops.
+   The animation is short and low contrast, because this runs all day. */
+@keyframes rr-twinkle {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.7);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+.rr-twinkle {
+  animation: rr-twinkle 2.4s ease-in-out infinite;
+  box-shadow: 0 0 8px 1px var(--accent-glow-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rr-twinkle {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* The map draws its own surface, so the library's default background is turned off. */
+.react-flow__attribution {
+  display: none;
+}

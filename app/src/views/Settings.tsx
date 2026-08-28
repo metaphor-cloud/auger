@@ -32,7 +32,9 @@ import {
   writeConfigText,
 } from "../engine";
 import { ChoiceSetting, NumberSetting, SwitchSetting, TextSetting } from "../settings-fields";
-import type { Forge, McpServer, Mode, Root, Settings } from "../types";
+import type { Forge, McpServer, Mode, Root, Settings, SetupProgress, System } from "../types";
+import Models from "./Models";
+import SystemView from "./System";
 import { Fact, Facts, Mono, PageTitle, Section } from "../ui";
 
 const MODES: readonly Mode[] = ["off", "draft", "complete"] as const;
@@ -62,7 +64,15 @@ type NewServer = {
 
 const EMPTY_SERVER: NewServer = { name: "", transport: "stdio", target: "", oauth: false };
 
-export default function SettingsView({ version }: { version: number }) {
+export default function SettingsView({
+  version,
+  setup,
+  system,
+}: {
+  version: number;
+  setup: SetupProgress | null;
+  system: System | null;
+}) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [forges, setForges] = useState<Forge[]>([]);
   const [servers, setServers] = useState<McpServer[]>([]);
@@ -188,14 +198,24 @@ export default function SettingsView({ version }: { version: number }) {
         </Alert>
       )}
 
-      <Tabs defaultValue="review">
+      <Tabs defaultValue="where">
         <TabsList className="mb-4">
-          <TabsTrigger value="review">Review</TabsTrigger>
           <TabsTrigger value="where">Where to look</TabsTrigger>
+          <TabsTrigger value="models">Models</TabsTrigger>
+          <TabsTrigger value="review">Review</TabsTrigger>
           <TabsTrigger value="tools">Tools</TabsTrigger>
           <TabsTrigger value="forges">Forges</TabsTrigger>
+          <TabsTrigger value="system">System</TabsTrigger>
           <TabsTrigger value="advanced">Advanced</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="models">
+          <Models setup={setup} nested />
+        </TabsContent>
+
+        <TabsContent value="system">
+          <SystemView system={system} nested />
+        </TabsContent>
 
         {/* ---------------------------------------------------------------- review */}
         <TabsContent value="review">

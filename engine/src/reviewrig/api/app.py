@@ -43,6 +43,8 @@ from reviewrig.api.models import (
     NoteList,
     NoteOut,
     NoteRequest,
+    OnboardingChange,
+    OnboardingOut,
     PolicyChange,
     PolicyLevelOut,
     QueueOut,
@@ -74,6 +76,7 @@ from reviewrig.store.findings import (
     Finding,
     counts,
     list_findings,
+    mark_opened,
     record_one,
     search_findings,
     set_status,
@@ -83,6 +86,9 @@ from reviewrig.store.notes import add_note, notes_for
 from reviewrig.store.runs import list_runs
 from reviewrig.store.summary import summarise
 from reviewrig.tracker import PERSON_SOURCE
+
+#: The mark that says the first run is finished.
+ONBOARDED_KEY = "onboarded"
 
 BEARER = "bearer "
 
@@ -271,6 +277,7 @@ def _backend_out(rig: Rig, name: str) -> BackendOut:
         up=bool(health and health.up),
         hosted=backend.hosted,
         managed=backend.managed,
+        ours=name in rig.supervisor.running,
         models_served=list(health.models) if health else [],
         reason=health.reason if health else "not checked yet",
         requests=usage.requests if usage else 0,
@@ -419,6 +426,17 @@ def create_app(rig: Rig) -> FastAPI:
     async def start_models() -> BackendList:
         """Start any managed backend that does not answer. A large model takes a minute."""
         await rig.ensure_models()
+        return backend_list()
+
+    @router.post("/models/stop")
+    async def stop_models(name: str | None = None) -> BackendList:
+        """Stop a managed model server, and give its memory back.
+
+        A review model holds tens of gigabytes. Nothing starts it again until a review
+        needs it, or until you press Start.
+        """
+        await asyncio.to_thread(rig.stop_models, name)
+        await rig.check_models()
         return backend_list()
 
     @router.get("/forges")
@@ -621,6 +639,7 @@ def create_app(rig: Rig) -> FastAPI:
                 repo_path=request.repo_path,
                 source=PERSON_SOURCE,
                 severity=request.severity,
+                category="task",
                 title=request.title.strip(),
                 detail=request.detail.strip(),
                 file=request.file.strip(),
@@ -648,6 +667,39 @@ def create_app(rig: Rig) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
         return await item_notes(item)
+
+    @router.post("/findings/{item}/opened")
+    async def open_item(item: str) -> FindingList:
+        """Remember that the user read this one, so the map stops flagging it as new."""
+        await asyncio.to_thread(mark_opened, rig.store, item)
+        rows = await asyncio.to_thread(list_findings, rig.store, None, ACTIVE, 500)
+        return FindingList(
+            findings=[FindingOut.of(finding) for finding in rows],
+            counts=await asyncio.to_thread(counts, rig.store, None),
+        )
+
+    @router.get("/onboarding")
+    async def onboarding() -> OnboardingOut:
+        health = rig.health or {}
+        marked = await asyncio.to_thread(rig.store.get_meta, ONBOARDED_KEY) == "true"
+        found = len(rig.repositories())
+        return OnboardingOut(
+            # A rig that already watches repositories has had its first run, whether or
+            # not anybody pressed the last button. It must not be asked to start again.
+            done=marked or (bool(rig.config.roots) and found > 0),
+            roots=len(rig.config.roots),
+            models_ready=any(state.up for state in health.values()),
+            repositories=found,
+            sandbox=rig.selection.sandbox.name,
+            degraded=rig.selection.degraded,
+        )
+
+    @router.put("/onboarding")
+    async def finish_onboarding(change: OnboardingChange) -> OnboardingOut:
+        await asyncio.to_thread(
+            rig.store.set_meta, ONBOARDED_KEY, "true" if change.done else "false"
+        )
+        return await onboarding()
 
     @router.get("/runs")
     async def runs(repo: str | None = None, limit: int = 100) -> RunList:

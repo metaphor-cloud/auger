@@ -84,6 +84,8 @@ def to_finding(entry: dict[str, Any], repo_path: str, run_id: str) -> Finding | 
         repo_path=repo_path,
         source="semgrep",
         severity=severity_of(entry),
+        # A static scan looks for one kind of problem, so it names the kind itself.
+        category="security",
         title=check.rsplit(".", 1)[-1].replace("-", " "),
         detail=str(extra.get("message", "")).strip(),
         suggestion=str(extra.get("fix", "") or "").strip(),

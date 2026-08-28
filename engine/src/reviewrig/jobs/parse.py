@@ -14,7 +14,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-from reviewrig.store.findings import SEVERITY_ORDER, Severity
+from reviewrig.store.findings import CATEGORIES, SEVERITY_ORDER, Category, Severity
 
 FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
 
@@ -24,6 +24,7 @@ class RawFinding(BaseModel):
     title: str
     detail: str = ""
     severity: Severity = "medium"
+    category: Category = "quality"
     line: int | None = None
     suggestion: str = ""
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
@@ -33,6 +34,12 @@ class RawFinding(BaseModel):
     def _known_severity(cls, value: object) -> str:
         text = str(value).strip().lower()
         return text if text in SEVERITY_ORDER else "medium"
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def _known_category(cls, value: object) -> str:
+        text = str(value).strip().lower()
+        return text if text in CATEGORIES else "quality"
 
     @field_validator("line", mode="before")
     @classmethod

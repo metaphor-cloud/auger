@@ -41,10 +41,21 @@ all cannot leak anything, which is a stronger guarantee than an address allowlis
 
 ## The window
 
-**Overview** is the landing page: what the rig is doing now, open findings by severity,
-the repositories that need attention, what it has run today and what that cost, and one
-banner per thing that needs you. **Findings**, **Repositories**, **Runs**, **Models**,
-**Settings**, and **System** are behind it.
+Three places, in a sidebar.
+
+**Map** is one tree. A repository is a node, and what was found in it hangs off it.
+Colour carries severity, a short tag carries the kind, and a finding nobody has read
+twinkles until it is read. Filter by kind and by state, open a finding to read it, write
+a note on it, change its state, and reach the run that found it. The last ten runs sit
+along the foot.
+
+**Runs** is every attempt, including the ones that were skipped and why.
+
+**Settings** holds the rest, in the order a first run needs it: where to look, models,
+review, tools, forges, system, advanced.
+
+The first time it opens, it walks you through the two things it cannot guess: a directory
+to watch, and a model to review with.
 
 ## Settings
 

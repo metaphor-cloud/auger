@@ -354,3 +354,28 @@ async def test_a_note_on_an_unknown_item_is_refused(http: Any, token: str) -> No
             json={"text": "a note"},
         )
     assert response.status_code == 400
+
+
+async def test_a_finding_is_new_until_it_is_opened(http: Any, token: str) -> None:
+    """The map flags what the user has not read. Reading it clears the flag."""
+    async with http:
+        recorded = await post(
+            http, token, "/findings", {"repo_path": REPO, "title": "drop the old walk"}
+        )
+        assert recorded["item"]["opened_at"] is None
+        assert recorded["item"]["category"] == "task"
+
+        body = await post(http, token, f"/findings/{recorded['item']['fingerprint']}/opened", {})
+    assert body["findings"][0]["opened_at"] is not None
+
+
+async def test_a_category_survives_a_repeat(store: Store) -> None:
+    """A re-review may change the kind, and that must not split the row."""
+    first, _ = record_one(store, task("tidy the parser"))
+    changed = task("tidy the parser")
+    changed.category = "security"
+    second, existed = record_one(store, changed)
+
+    assert existed is True
+    assert first.fingerprint == second.fingerprint
+    assert second.category == "security"

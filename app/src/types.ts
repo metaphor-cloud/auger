@@ -69,6 +69,7 @@ export type Backend = {
   up: boolean;
   hosted: boolean;
   managed: boolean;
+  ours: boolean;
   models_served: string[];
   reason: string | null;
   requests: number;
@@ -96,11 +97,22 @@ export type Finding = {
   line: number | null;
   confidence: number;
   status: string;
+  category: string;
+  opened_at: string | null;
   triage: string | null;
   first_seen_at: string;
   last_seen_at: string;
   times_seen: number;
   run_id: string | null;
+};
+
+export type Onboarding = {
+  done: boolean;
+  roots: number;
+  models_ready: boolean;
+  repositories: number;
+  sandbox: string;
+  degraded: boolean;
 };
 
 export type Note = {

@@ -35,6 +35,10 @@ A task and a review finding are the same row. The `source` says who wrote it:
 A state is one of `open`, `doing`, `done`, or `dropped`. The window shows `open` and
 `doing` together, because both mean unfinished.
 
+A category says what kind of problem it is: `security`, `correctness`, `performance`,
+`quality`, `style`, or `task`. The reviewer names its own, the scan is security by
+definition, and anything the tracker records is a task. The map filters on it.
+
 ## Attaching it to an agent
 
 The tracker speaks MCP over stdin and stdout. It opens no port and it holds no token, so

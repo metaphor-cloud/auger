@@ -18,7 +18,14 @@ import {
 } from "@metaphor-cloud/ui";
 import { useCallback, useEffect, useState } from "react";
 
-import { checkModels, getCatalog, getModels, setupModels, startModels } from "../engine";
+import {
+  checkModels,
+  getCatalog,
+  getModels,
+  setupModels,
+  startModels,
+  stopModels,
+} from "../engine";
 import type { BackendList, Catalog, ModelChoice, SetupProgress } from "../types";
 import { Fact, Facts, Mono, PageTitle, Section } from "../ui";
 
@@ -58,13 +65,19 @@ function Picker({
   );
 }
 
-export default function Models({ setup }: { setup: SetupProgress | null }) {
+export default function Models({
+  setup,
+  nested = false,
+}: {
+  setup: SetupProgress | null;
+  nested?: boolean;
+}) {
   const [data, setData] = useState<BackendList | null>(null);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [review, setReview] = useState("");
   const [embed, setEmbed] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"" | "check" | "start" | "setup">("");
+  const [busy, setBusy] = useState<"" | "check" | "start" | "stop" | "setup">("");
 
   const load = useCallback(async (fetcher: () => Promise<BackendList>) => {
     try {
@@ -90,9 +103,17 @@ export default function Models({ setup }: { setup: SetupProgress | null }) {
     void loadCatalog();
   }, [load, loadCatalog]);
 
-  async function act(which: "check" | "start") {
+  async function act(which: "check" | "start" | "stop") {
     setBusy(which);
-    await load(which === "check" ? checkModels : startModels);
+    const call =
+      which === "check" ? checkModels : which === "start" ? startModels : () => stopModels();
+    await load(call);
+    setBusy("");
+  }
+
+  async function stopOne(name: string) {
+    setBusy("stop");
+    await load(() => stopModels(name));
     setBusy("");
   }
 
@@ -120,14 +141,23 @@ export default function Models({ setup }: { setup: SetupProgress | null }) {
   return (
     <>
       <PageTitle
-        title="Models"
-        description="A job asks for a job class. The profile picks the backend."
+        title={nested ? "" : "Models"}
+        description={nested ? "" : "A job asks for a job class. The profile picks the backend."}
       >
         <Button size="sm" variant="ghost" onClick={() => act("check")} disabled={busy !== ""}>
           {busy === "check" ? "Checking" : "Check"}
         </Button>
         <Button size="sm" variant="secondary" onClick={() => act("start")} disabled={busy !== ""}>
           {busy === "start" ? "Starting" : "Start"}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          title="Stop every server the rig started, and give the memory back"
+          onClick={() => act("stop")}
+          disabled={busy !== "" || !(data?.backends ?? []).some((one) => one.ours)}
+        >
+          {busy === "stop" ? "Stopping" : "Unload all"}
         </Button>
       </PageTitle>
 
@@ -196,7 +226,10 @@ export default function Models({ setup }: { setup: SetupProgress | null }) {
         </div>
       </Section>
 
-      <Section title="Backends" description="What answers a request, and what it has cost so far.">
+      <Section
+        title="Backends"
+        description="What answers a request, and what it has cost so far. Unload gives the memory back, and the next review starts it again."
+      >
         {data === null ? (
           <p className="text-xs text-text-secondary">Loading</p>
         ) : (
@@ -234,6 +267,19 @@ export default function Models({ setup }: { setup: SetupProgress | null }) {
                   <TableCell className="text-right tabular-nums">{backend.requests}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     {backend.prompt_tokens + backend.completion_tokens}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {backend.ours && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        title="Stop this server and give its memory back"
+                        onClick={() => void stopOne(backend.name)}
+                        disabled={busy !== ""}
+                      >
+                        Unload
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

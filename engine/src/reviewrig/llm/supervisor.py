@@ -222,6 +222,19 @@ class Supervisor:
             )
         return health
 
+    def stop(self, name: str) -> bool:
+        """Stop one managed server, and give its memory back.
+
+        A review model holds tens of gigabytes. A user who wants that memory for
+        something else must be able to take it back without quitting the rig.
+        """
+        managed = self.running.pop(name, None)
+        if managed is None:
+            return False
+        managed.stop()
+        self.log.info("managed server stopped", backend=name)
+        return True
+
     def stop_all(self) -> None:
         for managed in list(self.running.values()):
             managed.stop()

@@ -311,6 +311,14 @@ class Rig:
         ready = sum(1 for state in self.tools.servers.values() if state.reachable)
         self.publish("tools.checked", ready=ready, total=len(self.tools.servers))
 
+    def stop_models(self, name: str | None = None) -> None:
+        """Stop one managed model server, or every one of them."""
+        if name is None:
+            self.supervisor.stop_all()
+        else:
+            self.supervisor.stop(name)
+        self.publish("models.stopped", backend=name or "all")
+
     async def check_models(self) -> dict[str, Health]:
         """Ask every backend which models it holds. Starts nothing."""
         self.health = await probe_all(self.gateway.client, self.config.backend)

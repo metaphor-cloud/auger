@@ -149,6 +149,7 @@ async def audit(
             repo_path=str(repository.path),
             source="audit",
             severity=item.severity,
+            category=item.category,
             title=item.title.strip(),
             detail=item.detail.strip(),
             suggestion=item.suggestion.strip(),

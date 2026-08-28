@@ -154,6 +154,17 @@ MIGRATIONS: tuple[str, ...] = (
         VALUES (new.rowid, new.title, new.detail);
     END;
     """,
+    """
+    -- What kind of problem this is, which is what the map filters on. Severity says
+    -- how much it matters; this says what it is.
+    ALTER TABLE findings ADD COLUMN category TEXT NOT NULL DEFAULT 'quality';
+    UPDATE findings SET category = 'security' WHERE source = 'semgrep';
+    UPDATE findings SET category = 'task' WHERE source IN ('agent', 'person');
+
+    -- When the user first opened it. Null means new to them, and the map says so.
+    ALTER TABLE findings ADD COLUMN opened_at TEXT;
+    CREATE INDEX findings_category ON findings (repo_path, category);
+    """,
 )
 
 

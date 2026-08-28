@@ -79,6 +79,7 @@ def to_finding(raw: RawFinding, repository: Repository, diff_text: str, run_id: 
         repo_path=str(repository.path),
         source="model",
         severity=raw.severity,
+        category=raw.category,
         title=raw.title.strip(),
         detail=raw.detail.strip(),
         suggestion=raw.suggestion.strip(),

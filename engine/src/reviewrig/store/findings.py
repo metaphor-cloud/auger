@@ -25,6 +25,17 @@ from reviewrig.store.text import fts_query
 
 Severity = Literal["critical", "high", "medium", "low", "info"]
 Status = Literal["open", "doing", "resolved", "suppressed"]
+#: What kind of problem this is. Severity says how much it matters; this says what it
+#: is, and it is what the map filters on.
+Category = Literal["security", "correctness", "performance", "quality", "style", "task"]
+CATEGORIES: tuple[str, ...] = (
+    "security",
+    "correctness",
+    "performance",
+    "quality",
+    "style",
+    "task",
+)
 #: What a person or an agent means by "not finished". `doing` is work in flight.
 ACTIVE: tuple[str, ...] = ("open", "doing")
 
@@ -71,6 +82,8 @@ class Finding:
     confidence: float = 0.0
     snippet: str = ""
     status: Status = "open"
+    category: Category = "quality"
+    opened_at: str | None = None
     triage: str | None = None
     first_seen_at: str = ""
     last_seen_at: str = ""
@@ -104,11 +117,12 @@ def record(store: Store, findings: Sequence[Finding], timestamp: str | None = No
 UPSERT = """
     INSERT INTO findings (
         fingerprint, repo_path, source, severity, title, detail, suggestion,
-        file, line, confidence, triage, first_seen_at, last_seen_at, run_id
+        file, line, confidence, triage, first_seen_at, last_seen_at, run_id, category
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(fingerprint) DO UPDATE SET
         severity     = excluded.severity,
+        category     = excluded.category,
         detail       = excluded.detail,
         suggestion   = excluded.suggestion,
         line         = excluded.line,
@@ -135,6 +149,7 @@ def _row(finding: Finding, stamp: str) -> tuple[object, ...]:
         stamp,
         stamp,
         finding.run_id,
+        finding.category,
     )
 
 
@@ -172,6 +187,8 @@ def _to_finding(row: sqlite3.Row) -> Finding:
         line=int(data["line"]) if data["line"] is not None else None,
         confidence=float(data["confidence"]),
         status=cast(Status, str(data["status"])),
+        category=cast(Category, str(data["category"])),
+        opened_at=data["opened_at"],
         triage=data["triage"],
         first_seen_at=str(data["first_seen_at"]),
         last_seen_at=str(data["last_seen_at"]),
@@ -275,6 +292,15 @@ def set_status(store: Store, fingerprints: Sequence[str], status: Status) -> int
             [status, *fingerprints],
         )
     return cursor.rowcount
+
+
+def mark_opened(store: Store, fingerprint: str, timestamp: str | None = None) -> None:
+    """Remember that the user has read this one. The map stops drawing attention to it."""
+    with store.write() as connection:
+        connection.execute(
+            "UPDATE findings SET opened_at = ? WHERE fingerprint = ? AND opened_at IS NULL",
+            (timestamp or now(), fingerprint),
+        )
 
 
 def set_triage(store: Store, fingerprint: str, verdict: str, reason: str = "") -> None:

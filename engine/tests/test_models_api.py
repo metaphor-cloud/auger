@@ -107,3 +107,87 @@ async def test_the_catalogue_needs_a_token(http: httpx.AsyncClient) -> None:
     async with http:
         assert (await http.get("/models/catalog")).status_code == 401
         assert (await http.post("/models/setup", json={})).status_code == 401
+
+
+async def test_a_managed_server_can_be_stopped_to_free_the_memory(
+    http: httpx.AsyncClient, token: str, rig: Rig
+) -> None:
+    """A review model holds tens of gigabytes. The user must be able to take it back."""
+
+    class Fake:
+        name = "local-review"
+
+        def __init__(self) -> None:
+            self.stopped = False
+
+        def stop(self) -> None:
+            self.stopped = True
+
+    running = Fake()
+    rig.supervisor.running["local-review"] = running  # type: ignore[assignment]
+
+    async with http:
+        listed = await get(http, token, "/models")
+        before = next(one for one in listed["backends"] if one["name"] == "local-review")
+        assert before["ours"] is True
+
+        response = await http.post(
+            "/models/stop?name=local-review", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 200
+        after = next(one for one in response.json()["backends"] if one["name"] == "local-review")
+
+    assert running.stopped is True
+    assert rig.supervisor.running == {}
+    # The window offers no unload for a server this process did not start.
+    assert after["ours"] is False
+
+
+async def test_stopping_every_model_leaves_nothing_running(
+    http: httpx.AsyncClient, token: str, rig: Rig
+) -> None:
+    class Fake:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def stop(self) -> None:
+            return
+
+    rig.supervisor.running["local-review"] = Fake("local-review")  # type: ignore[assignment]
+    rig.supervisor.running["local-embed"] = Fake("local-embed")  # type: ignore[assignment]
+
+    async with http:
+        response = await http.post("/models/stop", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    assert rig.supervisor.running == {}
+
+
+async def test_a_rig_that_already_watches_something_is_past_its_first_run(
+    http: httpx.AsyncClient, token: str, home: Path, rig: Rig, tmp_path: Path
+) -> None:
+    """An existing user must never be shown the first run wizard again."""
+    (tmp_path / "repo" / ".git").mkdir(parents=True)
+    (home / "config.toml").write_text(f'[[roots]]\npath = "{tmp_path}"\n', encoding="utf-8")
+    rig.reload_config()
+    rig.scan()
+
+    async with http:
+        body = await get(http, token, "/onboarding")
+    assert body["repositories"] == 1
+    assert body["done"] is True
+
+
+async def test_the_first_run_reports_what_is_still_missing(
+    http: httpx.AsyncClient, token: str
+) -> None:
+    async with http:
+        body = await get(http, token, "/onboarding")
+        assert body["done"] is False
+        assert body["roots"] == 0
+
+        response = await http.put(
+            "/onboarding", headers={"Authorization": f"Bearer {token}"}, json={"done": True}
+        )
+        assert response.json()["done"] is True
+
+        assert (await get(http, token, "/onboarding"))["done"] is True

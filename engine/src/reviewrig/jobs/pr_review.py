@@ -134,6 +134,7 @@ async def review_pull(
             repo_path=str(repository.path),
             source="model",
             severity=item.severity,
+            category=item.category,
             title=item.title.strip(),
             detail=item.detail.strip(),
             suggestion=item.suggestion.strip(),

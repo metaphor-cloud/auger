@@ -5,7 +5,13 @@ import { getAutostart, setAutostart } from "../host";
 import type { System } from "../types";
 import { Fact, Facts, Mono, PageTitle, Section } from "../ui";
 
-export default function SystemView({ system }: { system: System | null }) {
+export default function SystemView({
+  system,
+  nested = false,
+}: {
+  system: System | null;
+  nested?: boolean;
+}) {
   const [startsAtLogin, setStartsAtLogin] = useState(false);
 
   useEffect(() => {
@@ -17,7 +23,7 @@ export default function SystemView({ system }: { system: System | null }) {
   const { sandbox, egress, index } = system;
   return (
     <>
-      <PageTitle title="System" description={`Engine ${system.version}`} />
+      {!nested && <PageTitle title="System" description={`Engine ${system.version}`} />}
 
       {sandbox.degraded && sandbox.warning && (
         <Alert variant="warning" className="mb-4">

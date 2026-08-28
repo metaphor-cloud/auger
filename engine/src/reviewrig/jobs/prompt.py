@@ -23,10 +23,12 @@ empty list.
 Answer with one JSON object and nothing else, in exactly this shape:
 
 {"findings": [{"file": "path/from/the/diff", "line": 12, "severity": "critical", \
-"title": "one short line", "detail": "what is wrong and what happens as a result", \
+"category": "security", "title": "one short line", \
+"detail": "what is wrong and what happens as a result", \
 "suggestion": "the smallest change that fixes it", "confidence": 0.8}]}
 
 severity is one of: critical, high, medium, low, info.
+category is one of: security, correctness, performance, quality.
 confidence is between 0 and 1. Use it honestly. Below 0.5 means you are guessing.
 """
 

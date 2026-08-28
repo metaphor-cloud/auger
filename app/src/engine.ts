@@ -12,6 +12,7 @@ import type {
   Queue,
   RepositoryList,
   NoteList,
+  Onboarding,
   Recorded,
   RunList,
   Settings,
@@ -94,6 +95,28 @@ export async function checkModels(): Promise<BackendList> {
 
 export async function startModels(): Promise<BackendList> {
   return request("/models/start", { method: "POST" });
+}
+
+export async function stopModels(name?: string): Promise<BackendList> {
+  return request(name ? `/models/stop?name=${encodeURIComponent(name)}` : "/models/stop", {
+    method: "POST",
+  });
+}
+
+export async function markOpened(fingerprint: string): Promise<FindingList> {
+  return request(`/findings/${fingerprint}/opened`, { method: "POST" });
+}
+
+export async function getOnboarding(): Promise<Onboarding> {
+  return request("/onboarding");
+}
+
+export async function finishOnboarding(done: boolean): Promise<Onboarding> {
+  return request("/onboarding", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ done }),
+  });
 }
 
 export async function getFindings(
