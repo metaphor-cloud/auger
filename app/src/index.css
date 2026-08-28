@@ -28,19 +28,15 @@ body {
 @keyframes rr-breathe {
   0%,
   100% {
-    opacity: 0.18;
-    transform: scale(0.82);
+    opacity: 0.22;
   }
   50% {
-    opacity: 0.7;
-    transform: scale(1.25);
+    opacity: 1;
   }
 }
 
 .rr-breathe {
   animation: rr-breathe 2.8s ease-in-out infinite;
-  transform-box: fill-box;
-  transform-origin: center;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -443,7 +443,7 @@ export default function Work({
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overscroll-none overflow-auto [contain:paint]">
+      <div className="min-h-0 flex-1 overflow-auto overscroll-none">
         {groups.length === 0 && (
           <p className="px-4 py-8 text-center text-xs text-text-tertiary">
             {repositories.length === 0
@@ -453,7 +453,7 @@ export default function Work({
         )}
         {groups.map((group) => (
           <section key={group.path}>
-            <header className="sticky top-0 z-20 flex transform-gpu items-baseline gap-2 border-b border-border-subtle bg-bg px-4 py-1.5">
+            <header className="flex items-baseline gap-2 border-b border-border-subtle bg-bg px-4 py-1.5">
               <button
                 className="flex items-baseline gap-2 text-left"
                 onClick={() =>
