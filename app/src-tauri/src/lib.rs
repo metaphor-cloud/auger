@@ -155,11 +155,20 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
-        .run(|app, event| {
-            if let RunEvent::Exit = event {
+        .run(|app, event| match event {
+            // Stopping the engine releases the model servers, which takes a few
+            // seconds. A window still on screen through that reads as a hang, so it
+            // goes first and the slow part happens behind nothing.
+            RunEvent::ExitRequested { .. } => {
+                for window in app.webview_windows().values() {
+                    let _ = window.hide();
+                }
+            }
+            RunEvent::Exit => {
                 if let Some(running) = app.state::<EngineState>().0.lock().unwrap().take() {
                     running.stop();
                 }
             }
+            _ => {}
         });
 }

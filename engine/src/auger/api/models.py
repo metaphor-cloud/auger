@@ -228,6 +228,28 @@ class NoteRequest(BaseModel):
     text: str
 
 
+class PresetOut(BaseModel):
+    key: str
+    name: str
+    summary: str
+    instructions: str
+
+
+class PromptOut(BaseModel):
+    """The system prompt, as the model receives it."""
+
+    #: The whole thing, rules and instructions together.
+    system: str
+    #: The part the rig owns. The parser depends on the shape of the answer, so this
+    #: is not editable.
+    rules: str
+    #: The part the user owns.
+    instructions: str
+    #: Which ready-made set these instructions are, or `custom`.
+    preset: str
+    presets: list[PresetOut]
+
+
 class TurnOut(BaseModel):
     """One exchange with a model."""
 

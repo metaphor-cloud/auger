@@ -47,6 +47,8 @@ from auger.api.models import (
     OnboardingOut,
     PolicyChange,
     PolicyLevelOut,
+    PresetOut,
+    PromptOut,
     QueueOut,
     RecordedOut,
     RecordRequest,
@@ -70,6 +72,8 @@ from auger.api.models import (
 )
 from auger.config.schema import JobClass
 from auger.events import Event
+from auger.jobs.presets import PRESETS, matching
+from auger.jobs.prompt import SYSTEM, system_prompt
 from auger.log import Logger
 from auger.mcp import OAuthError
 from auger.rig import Rig
@@ -689,6 +693,30 @@ def create_app(rig: Rig) -> FastAPI:
         return FindingList(
             findings=[FindingOut.of(finding) for finding in rows],
             counts=await asyncio.to_thread(counts, rig.store, None),
+        )
+
+    @router.get("/prompt")
+    async def prompt(instructions: str | None = None) -> PromptOut:
+        """What the reviewer is told, word for word.
+
+        A person cannot judge a review without seeing what was asked for. Pass
+        `instructions` to preview a change before it is saved.
+        """
+        mine = rig.config.defaults.instructions if instructions is None else instructions
+        return PromptOut(
+            system=system_prompt(mine),
+            rules=SYSTEM,
+            instructions=mine,
+            preset=matching(mine),
+            presets=[
+                PresetOut(
+                    key=one.key,
+                    name=one.name,
+                    summary=one.summary,
+                    instructions=one.instructions,
+                )
+                for one in PRESETS
+            ],
         )
 
     @router.get("/transcript")

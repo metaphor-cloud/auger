@@ -32,6 +32,11 @@ Auger - a background code reviewer that keeps your code on your machine.
 """
 
 
+#: How long the server waits for open connections when it is asked to stop. The host
+#: allows a little more than this before it ends the process.
+SHUTDOWN_SECONDS = 3
+
+
 def stop_models() -> int:
     """Stop every model server that came out of the auger home.
 
@@ -86,7 +91,15 @@ def main() -> None:
     log.info("engine listening", port=port, host=settings.host, version=__version__)
 
     app = create_app(Rig(settings, log))
-    config = uvicorn.Config(app, log_config=None, access_log=False)
+    config = uvicorn.Config(
+        app,
+        log_config=None,
+        access_log=False,
+        # The window holds the event stream open for as long as it is running, and a
+        # graceful shutdown waits for every open connection. Without a limit, quitting
+        # waits on a stream that never ends on its own.
+        timeout_graceful_shutdown=SHUTDOWN_SECONDS,
+    )
     server = uvicorn.Server(config)
 
     def stop_for_lost_parent() -> None:

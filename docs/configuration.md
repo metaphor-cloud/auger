@@ -115,6 +115,14 @@ network call. Treat anything that writes a credential to a log as critical.
 instructions = "This is a prototype. Report only what would lose data."
 ```
 
+Settings, Review holds a set of ready-made instructions: security first, correctness
+only, performance, demanding, and one that reports only what you would stop a release
+for. Pick one, edit it, or write your own. The same view shows the whole system prompt
+as the model receives it.
+
+The rules and the answer format are not editable. The parser depends on the shape of
+the answer, and a prompt that changed it would produce a review nothing could read.
+
 `hints` live with the repository, and a repository you did not write is not you. They go
 in the user message, wrapped and labelled as data. They set priorities and they do not
 change the rules or the output format.

@@ -31,6 +31,7 @@ import {
   signInTool,
   writeConfigText,
 } from "../engine";
+import PromptEditor from "../parts/PromptEditor";
 import { ChoiceSetting, NumberSetting, SwitchSetting, TextSetting } from "../settings-fields";
 import type { Forge, McpServer, Mode, Root, Settings, SetupProgress, System } from "../types";
 import Models from "./Models";
@@ -81,7 +82,6 @@ export default function SettingsView({
   const [pattern, setPattern] = useState("");
   const [root, setRoot] = useState("");
   const [server, setServer] = useState<NewServer>(EMPTY_SERVER);
-  const [instructions, setInstructions] = useState("");
   const [raw, setRaw] = useState<string | null>(null);
   const [rawSaved, setRawSaved] = useState(true);
 
@@ -89,7 +89,6 @@ export default function SettingsView({
     try {
       const body = await getSettings();
       setSettings(body);
-      setInstructions(body.defaults.instructions);
       setForges((await getForges()).forges);
       const tools = await getTools();
       setServers(tools.servers);
@@ -277,22 +276,15 @@ export default function SettingsView({
             title="What to look for"
             description={
               <>
-                Your instructions to the reviewer. They can narrow what it reports, add
-                something to look for, or change how it judges severity. A repository&apos;s own{" "}
-                <code>hints</code> are separate, and are treated as data.
+                Pick a set, or write your own. It narrows what the reviewer reports, adds
+                something to look for, or changes how it judges severity. A repository&apos;s
+                own <code>hints</code> are separate, and are treated as data.
               </>
             }
           >
-            <Textarea
-              rows={5}
-              value={instructions}
-              placeholder="Report security defects and data loss. Ignore performance."
-              onChange={(event) => setInstructions(event.target.value)}
-              onBlur={() => {
-                if (instructions !== settings.defaults.instructions) {
-                  void change("defaults", "", { instructions });
-                }
-              }}
+            <PromptEditor
+              instructions={settings.defaults.instructions}
+              onSave={(next) => void change("defaults", "", { instructions: next })}
             />
           </Section>
 

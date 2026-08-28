@@ -108,6 +108,21 @@ export type Finding = {
   run_id: string | null;
 };
 
+export type Preset = {
+  key: string;
+  name: string;
+  summary: string;
+  instructions: string;
+};
+
+export type Prompt = {
+  system: string;
+  rules: string;
+  instructions: string;
+  preset: string;
+  presets: Preset[];
+};
+
 export type Turn = {
   id: number;
   at: number;
