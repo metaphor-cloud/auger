@@ -11,7 +11,7 @@ import pytest
 from reviewrig.config import Config, Policy
 from reviewrig.forge import Entry, ForgeState, Registry
 from reviewrig.forge.github import GitHub
-from reviewrig.llm import Gateway
+from reviewrig.llm import Gateway, Health
 from reviewrig.mcp import McpRegistry
 from reviewrig.models import Remote, Repository, RepositoryView
 from reviewrig.sandbox import select
@@ -34,6 +34,12 @@ class StubRig:
         self.gateway: Gateway = None  # type: ignore[assignment]
         self.policy = policy
         self.events: list[tuple[str, dict[str, object]]] = []
+
+    async def check_models(self) -> dict[str, Health]:
+        return {}
+
+    async def ensure_models(self) -> dict[str, Health]:
+        return {}
 
     def publish(self, event: str, **data: object) -> None:
         self.events.append((event, data))

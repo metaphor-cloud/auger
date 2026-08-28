@@ -47,3 +47,39 @@ def test_hints_are_labelled_as_data() -> None:
 def test_no_hints_means_no_notes_section() -> None:
     assert "NOTES" not in build()
     assert "NOTES" not in build("   ")
+
+
+# --- the user's own instructions ------------------------------------------------------
+
+
+def test_the_users_instructions_go_in_the_system_message() -> None:
+    """They come from the user's own config file, so they are trusted."""
+    from reviewrig.jobs.prompt import system_prompt
+
+    prompt = system_prompt("Report only security defects.")
+    assert "Report only security defects." in prompt
+    assert "Follow them" in prompt
+
+
+def test_no_instructions_leaves_the_rules_alone() -> None:
+    from reviewrig.jobs.prompt import SYSTEM, system_prompt
+
+    assert system_prompt("") == SYSTEM
+    assert system_prompt("   ") == SYSTEM
+
+
+def test_instructions_and_hints_are_kept_apart() -> None:
+    """One is the user speaking and one is a repository speaking."""
+    messages = review_messages(
+        slug="s",
+        branch="b",
+        head="h",
+        subject="x",
+        diff="d",
+        hints="the repository says this",
+        instructions="the user says this",
+    )
+    assert "the user says this" in messages[0].content
+    assert "the user says this" not in messages[1].content
+    assert "the repository says this" in messages[1].content
+    assert "the repository says this" not in messages[0].content

@@ -48,10 +48,36 @@ def apply(policy: Policy, overrides: Overrides) -> Policy:
 
 
 def resolve_policy(repository: Repository, config: Config) -> Policy:
-    """Merge the defaults, then the organisation, then the repository."""
+    """Merge the defaults, then the organisation, then the repository.
+
+    An excluded repository resolves to a policy that does nothing, so every caller sees
+    the exclusion without having to check for it.
+    """
+    if is_excluded(repository, config) is not None:
+        return config.defaults.model_copy(update={"enabled": False, "mode": "off"})
     policy = config.defaults
     for key in matching_org_keys(config.org, repository.org_key):
         policy = apply(policy, config.org[key])
     for key in matching_repo_keys(config.repo, repository.path):
         policy = apply(policy, config.repo[key])
     return policy
+
+
+def is_excluded(repository: Repository, config: Config) -> str | None:
+    """The pattern that excludes this repository, or None.
+
+    A path, a glob, or a forge key. A forge key matches on a segment boundary, the same
+    way an `[org]` section does, so `github.com/acme` never matches `github.com/acmecorp`.
+    """
+    target = str(repository.path)
+    for pattern in config.exclude:
+        text = pattern.strip()
+        if not text:
+            continue
+        if str(expand(text)) == target or fnmatch.fnmatchcase(target, str(expand(text))):
+            return pattern
+        if repository.org_key and text in matching_org_keys({text: None}, repository.org_key):
+            return pattern
+        if repository.remote and text == repository.remote.slug:
+            return pattern
+    return None

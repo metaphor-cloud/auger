@@ -17,8 +17,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
+from reviewrig.config.schema import CodeGraph as CodeGraphConfig
 from reviewrig.config.schema import JobClass
+from reviewrig.context import codegraph
 from reviewrig.llm import Gateway, ModelError
 from reviewrig.log import Logger, create_logger
 from reviewrig.store import Store
@@ -53,6 +56,8 @@ class ReviewContext:
     hits: list[Hit] = field(default_factory=list)
     symbols: list[str] = field(default_factory=list)
     reranked: bool = False
+    #: How many chunks the call graph contributed. Zero when it was not used.
+    graph_hits: int = 0
 
     def as_text(self, budget: int = DEFAULT_BUDGET) -> str:
         """The related code, largest relevance first, until the budget runs out."""
@@ -178,6 +183,30 @@ def rerank_query(names: list[str]) -> str:
     return "code that calls or uses " + ", ".join(wanted[:8])
 
 
+def graph_callers(
+    store: Store,
+    config: CodeGraphConfig | None,
+    repository: str,
+    names: list[str],
+    log: Logger,
+) -> list[Hit]:
+    """Callers from a real call graph, turned into chunks the reviewer can read.
+
+    Text search finds a name and vector search finds something similar. Neither knows
+    that one function calls another.
+    """
+    if config is None:
+        return []
+    found = codegraph.callers_for(config, Path(repository), searchable(names), log)
+    hits: list[Hit] = []
+    for caller in found:
+        for hit in chunks_in_file(store, repository, caller.path):
+            if hit.start_line <= caller.line <= hit.end_line or not hits:
+                hits.append(hit)
+                break
+    return hits
+
+
 async def context_for_diff(
     store: Store,
     gateway: Gateway | None,
@@ -185,6 +214,7 @@ async def context_for_diff(
     diff: str,
     profile: str = "balanced",
     limit: int = 12,
+    graph: CodeGraphConfig | None = None,
     log: Logger | None = None,
 ) -> ReviewContext:
     """Gather the code around a diff. Never raises: a failure returns less context."""
@@ -198,6 +228,9 @@ async def context_for_diff(
     # The changed chunks are already in the diff. Related code is what is missing.
     seen = {hit.chunk_id for hit in inside}
     groups = [callers(store, repository, names)]
+    graph_hits = graph_callers(store, graph, repository, names, log)
+    if graph_hits:
+        groups.append(graph_hits)
 
     if gateway is not None and gateway.available(JobClass.EMBED, profile):
         try:
@@ -214,7 +247,7 @@ async def context_for_diff(
             )
 
     candidates = merge(groups, exclude=seen)[:CANDIDATES]
-    context = ReviewContext(hits=candidates[:limit], symbols=names)
+    context = ReviewContext(hits=candidates[:limit], symbols=names, graph_hits=len(graph_hits))
 
     reranks = gateway is not None and gateway.available(JobClass.RERANK, profile)
     if reranks and gateway is not None and len(candidates) > limit:

@@ -371,3 +371,136 @@ section > button {
   flex: 1;
   min-width: 0;
 }
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: var(--soft);
+}
+
+.tile-value {
+  font-size: 1.6rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.tile-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.tile-sev-critical .tile-value {
+  color: var(--bad);
+}
+
+.tile-sev-high .tile-value {
+  color: var(--warn);
+}
+
+.bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  max-width: 34rem;
+}
+
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.bar-label {
+  width: 5rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.bar {
+  height: 0.7rem;
+  border-radius: 3px;
+  min-width: 0.5rem;
+}
+
+.bar-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.bar.sev-critical {
+  background: var(--bad);
+}
+
+.bar.sev-high {
+  background: var(--warn);
+}
+
+.bar.sev-medium {
+  background: var(--accent);
+}
+
+.bar.sev-low,
+.bar.sev-info {
+  background: var(--muted);
+}
+
+textarea,
+input[type="text"],
+.setup-row input {
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.8rem;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  padding: 0.4rem 0.5rem;
+  width: 100%;
+  max-width: 44rem;
+  resize: vertical;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+}
+
+.chips li {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.3rem 0.15rem 0.5rem;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  font-size: 0.8rem;
+}
+
+.chips button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0 0.2rem;
+}
+
+.chips button:hover {
+  color: var(--bad);
+}

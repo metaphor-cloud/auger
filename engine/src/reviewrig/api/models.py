@@ -203,6 +203,20 @@ class SettingsOut(BaseModel):
     defaults: Policy
     levels: list[PolicyLevelOut]
     config_path: str
+    exclude: list[str]
+    codegraph: bool
+    codegraph_available: bool
+
+
+class ExcludeChange(BaseModel):
+    """Add or drop one entry of the exclusion list."""
+
+    pattern: str
+    remove: bool = False
+
+
+class CodeGraphChange(BaseModel):
+    enabled: bool
 
 
 class PolicyChange(BaseModel):
@@ -242,6 +256,8 @@ class ModelChoiceOut(BaseModel):
     memory_gb: float
     description: str
     fits: bool
+    #: Already on disk. The UI shows this so nobody waits for a download twice.
+    downloaded: bool = False
 
 
 class CatalogOut(BaseModel):
@@ -268,3 +284,48 @@ class SetupOut(BaseModel):
     rerank_model: str
     runtime_path: str
     error: str | None
+
+
+class RepositorySummaryOut(BaseModel):
+    path: str
+    name: str
+    open_findings: int
+    worst_severity: str
+    last_run_at: str | None
+    last_status: str | None
+
+
+class DashboardOut(BaseModel):
+    """Everything the landing page shows, read in one pass."""
+
+    version: str
+    #: What the rig is doing now.
+    paused: bool
+    pending: int
+    in_flight: list[str]
+    workers: int
+    #: What it can do.
+    sandbox: SandboxOut
+    models_up: int
+    models_total: int
+    codegraph: bool
+    #: What it is watching.
+    repositories: int
+    enabled: int
+    excluded: int
+    indexed_files: int
+    chunks: int
+    #: What it found.
+    findings: dict[str, int]
+    suppressed: int
+    dismissed: int
+    #: What it did.
+    runs_today: int
+    runs_by_status: dict[str, int]
+    prompt_tokens: int
+    completion_tokens: int
+    last_run_at: str | None
+    skipped_reasons: dict[str, int]
+    busiest: list[RepositorySummaryOut]
+    #: What needs the user.
+    warnings: list[str]

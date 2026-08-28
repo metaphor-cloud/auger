@@ -4,6 +4,7 @@ import { getQueue, getSystem, health, pauseQueue, readEvents, resumeQueue } from
 import { setTray, notify } from "./host";
 import type { Queue, SetupProgress, System } from "./types";
 import Findings from "./views/Findings";
+import DashboardView from "./views/Dashboard";
 import Models from "./views/Models";
 import Repositories from "./views/Repositories";
 import Runs from "./views/Runs";
@@ -16,14 +17,22 @@ type Status =
   | { state: "ready"; version: string }
   | { state: "failed"; reason: string };
 
-const VIEWS = ["Findings", "Repositories", "Runs", "Models", "Settings", "System"] as const;
+const VIEWS = [
+  "Overview",
+  "Findings",
+  "Repositories",
+  "Runs",
+  "Models",
+  "Settings",
+  "System",
+] as const;
 type View = (typeof VIEWS)[number];
 
 const LOUD = new Set(["critical", "high"]);
 
 export default function App() {
   const [status, setStatus] = useState<Status>({ state: "starting" });
-  const [view, setView] = useState<View>("Findings");
+  const [view, setView] = useState<View>("Overview");
   const [scanning, setScanning] = useState(false);
   const [system, setSystem] = useState<System | null>(null);
   const [queue, setQueue] = useState<Queue | null>(null);
@@ -119,6 +128,7 @@ export default function App() {
       {system?.sandbox.degraded && <p className="banner">{system.sandbox.warning}</p>}
       {queue?.paused && <p className="banner">Paused. Queued work waits.</p>}
       <main>
+        {view === "Overview" && <DashboardView version={version} />}
         {view === "Findings" && <Findings version={version} onCounts={setTray} />}
         {view === "Repositories" && <Repositories scanning={scanning} />}
         {view === "Runs" && <Runs version={version} />}

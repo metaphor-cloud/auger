@@ -5,6 +5,7 @@ export type Mode = "off" | "draft" | "complete";
 export type Policy = {
   enabled: boolean;
   mode: Mode;
+  instructions: string;
   auto_review_assigned_prs: boolean;
   idle_seconds: number;
   priority: number;
@@ -156,6 +157,9 @@ export type Settings = {
   defaults: Policy;
   levels: PolicyLevel[];
   config_path: string;
+  exclude: string[];
+  codegraph: boolean;
+  codegraph_available: boolean;
 };
 
 export type Tool = {
@@ -201,4 +205,41 @@ export type SetupProgress = {
   total: number;
   fraction: number;
   message: string;
+};
+
+export type RepositorySummary = {
+  path: string;
+  name: string;
+  open_findings: number;
+  worst_severity: string;
+  last_run_at: string | null;
+  last_status: string | null;
+};
+
+export type Dashboard = {
+  version: string;
+  paused: boolean;
+  pending: number;
+  in_flight: string[];
+  workers: number;
+  sandbox: Sandbox;
+  models_up: number;
+  models_total: number;
+  codegraph: boolean;
+  repositories: number;
+  enabled: number;
+  excluded: number;
+  indexed_files: number;
+  chunks: number;
+  findings: Record<string, number>;
+  suppressed: number;
+  dismissed: number;
+  runs_today: number;
+  runs_by_status: Record<string, number>;
+  prompt_tokens: number;
+  completion_tokens: number;
+  last_run_at: string | null;
+  skipped_reasons: Record<string, number>;
+  busiest: RepositorySummary[];
+  warnings: string[];
 };

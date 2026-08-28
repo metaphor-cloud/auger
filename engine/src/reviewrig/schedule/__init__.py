@@ -7,6 +7,7 @@ from reviewrig.schedule.watcher import (
     watch,
     watch_audits,
     watch_forges,
+    watch_models,
 )
 
 __all__ = [
@@ -19,4 +20,5 @@ __all__ = [
     "watch",
     "watch_audits",
     "watch_forges",
+    "watch_models",
 ]

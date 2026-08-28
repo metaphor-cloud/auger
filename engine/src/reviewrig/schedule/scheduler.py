@@ -245,6 +245,7 @@ class Scheduler:
             base=task.base,
             target=task.target,
             tools=rig.tools,
+            graph=rig.config.codegraph,
             log=self.log,
         )
 

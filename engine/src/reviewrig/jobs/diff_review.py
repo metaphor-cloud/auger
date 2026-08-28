@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from reviewrig.config import Policy
+from reviewrig.config.schema import CodeGraph as CodeGraphConfig
 from reviewrig.config.schema import JobClass
 from reviewrig.context import ReviewContext, context_for_diff, reindex
 from reviewrig.jobs.parse import RawFinding, parse_findings
@@ -109,6 +110,7 @@ async def review(
     base: str | None = None,
     target: str = "HEAD",
     tools: McpRegistry | None = None,
+    graph: CodeGraphConfig | None = None,
     log: Logger | None = None,
 ) -> ReviewOutcome:
     """Review one change. Never raises: a failure is recorded on the run."""
@@ -134,7 +136,13 @@ async def review(
     # A commit that touched one file costs one file.
     await reindex(store, gateway, repository.path, policy.model_profile, log)
     context = await context_for_diff(
-        store, gateway, str(repository.path), diff_text, policy.model_profile, log=log
+        store,
+        gateway,
+        str(repository.path),
+        diff_text,
+        policy.model_profile,
+        graph=graph,
+        log=log,
     )
 
     messages = review_messages(
@@ -145,6 +153,7 @@ async def review(
         diff=diff_text,
         hints=policy.hints,
         context=context.as_text(),
+        instructions=policy.instructions,
     )
     try:
         completion, tool_run = await complete_with_tools(
@@ -175,6 +184,7 @@ async def review(
         prompt_tokens=completion.prompt_tokens,
         completion_tokens=completion.completion_tokens,
         context_chunks=len(context.hits),
+        graph_chunks=context.graph_hits,
         reranked=context.reranked,
         tool_calls=tool_run.calls,
     )

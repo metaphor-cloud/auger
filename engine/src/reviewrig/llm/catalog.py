@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 
@@ -139,12 +140,37 @@ def _largest_that_fits(choices: tuple[Choice, ...], available: float) -> Choice:
     return choices[-1]
 
 
-def recommended_review_model(memory_gb: float | None = None) -> Choice:
+def downloaded(choice: Choice, models_dir: Path | None) -> bool:
+    return models_dir is not None and (models_dir / choice.filename).is_file()
+
+
+def _already_here(
+    choices: tuple[Choice, ...], available: float, models_dir: Path | None
+) -> Choice | None:
+    """The best model that fits and is already on disk."""
+    for choice in choices:
+        if choice.memory_gb <= available and downloaded(choice, models_dir):
+            return choice
+    return None
+
+
+def recommended_review_model(
+    memory_gb: float | None = None, models_dir: Path | None = None
+) -> Choice:
+    """The best model this machine can hold, preferring one it already has.
+
+    Weights are tens of gigabytes. Recommending a larger model over one that is already
+    downloaded means an hour of waiting and a rig that cannot review in the meantime.
+    """
     available = usable_memory_gb() if memory_gb is None else memory_gb
-    return _largest_that_fits(REVIEW_MODELS, available)
+    return _already_here(REVIEW_MODELS, available, models_dir) or _largest_that_fits(
+        REVIEW_MODELS, available
+    )
 
 
-def recommended_embed_model(memory_gb: float | None = None) -> Choice:
+def recommended_embed_model(
+    memory_gb: float | None = None, models_dir: Path | None = None
+) -> Choice:
     """The code embedder where the machine can hold it.
 
     Measured on this repository, it raised recall at 12 from 0.613 to 0.686 and brought
@@ -152,7 +178,9 @@ def recommended_embed_model(memory_gb: float | None = None) -> Choice:
     about six times the indexing time, which is paid once and then only per changed file.
     """
     available = usable_memory_gb() if memory_gb is None else memory_gb
-    return _largest_that_fits(EMBED_MODELS, available)
+    return _already_here(EMBED_MODELS, available, models_dir) or _largest_that_fits(
+        EMBED_MODELS, available
+    )
 
 
 def by_name(name: str) -> Choice:

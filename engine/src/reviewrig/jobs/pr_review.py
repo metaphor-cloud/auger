@@ -119,6 +119,7 @@ async def review_pull(
         subject=f"pull request #{pull.number}: {pull.title}",
         diff=diff,
         hints=policy.hints,
+        instructions=policy.instructions,
     )
     try:
         completion, _ = await complete_with_tools(

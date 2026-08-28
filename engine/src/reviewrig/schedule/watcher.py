@@ -165,3 +165,29 @@ async def watch_audits(rig: RigLike, scheduler: Scheduler, log: Logger | None = 
         except Exception as error:
             log.error("audit cycle failed", reason="watcher_error", error=error)
         await asyncio.sleep(rig.config.schedule.audit_poll_seconds)
+
+
+async def watch_models(rig: RigLike, scheduler: Scheduler, log: Logger | None = None) -> None:
+    """Bring a managed model back when it stops.
+
+    A model server can be killed, run out of memory, or be stopped by hand. Without this
+    the rig keeps queueing reviews against a server that is gone, and every one of them
+    fails until somebody restarts the application.
+    """
+    log = (log or create_logger("schedule")).bind(component="watcher")
+    while True:
+        await asyncio.sleep(rig.config.schedule.model_poll_seconds)
+        try:
+            health = await rig.check_models()
+            down = [
+                name
+                for name, state in health.items()
+                if not state.up and rig.config.backend[name].managed
+            ]
+            if down:
+                log.warn("managed models are down", reason="model_down", backends=down)
+                await rig.ensure_models()
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            log.error("model cycle failed", reason="watcher_error", error=error)

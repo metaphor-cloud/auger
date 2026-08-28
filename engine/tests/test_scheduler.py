@@ -14,7 +14,7 @@ import pytest
 from reviewrig.config import Policy
 from reviewrig.config.schema import Backend, Config, ProfileEntry
 from reviewrig.forge import Registry
-from reviewrig.llm import Gateway
+from reviewrig.llm import Gateway, Health
 from reviewrig.mcp import McpRegistry
 from reviewrig.models import Remote, Repository, RepositoryView
 from reviewrig.net import Allowlist
@@ -40,6 +40,12 @@ class StubRig:
         self.tools = McpRegistry(config)
         self.selection = select()
         self.events: list[tuple[str, dict[str, object]]] = []
+
+    async def check_models(self) -> dict[str, Health]:
+        return {}
+
+    async def ensure_models(self) -> dict[str, Health]:
+        return {}
 
     def publish(self, event: str, **data: object) -> None:
         self.events.append((event, data))

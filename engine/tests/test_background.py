@@ -9,14 +9,14 @@ import pytest
 
 from reviewrig.llm import Health
 from reviewrig.rig import Rig
-from reviewrig.schedule import watch, watch_audits, watch_forges
+from reviewrig.schedule import watch, watch_audits, watch_forges, watch_models
 from reviewrig.settings import Settings
 from tests.helpers import git_commit, git_init
 
 
 def test_every_watcher_is_in_the_list() -> None:
     """The list is what `start_background` iterates. Adding one here is the only step."""
-    assert set(Rig.WATCHERS) == {watch, watch_forges, watch_audits}
+    assert set(Rig.WATCHERS) == {watch, watch_forges, watch_audits, watch_models}
 
 
 @pytest.fixture
@@ -104,3 +104,44 @@ async def test_a_managed_backend_is_started_before_any_review(
                 await asyncio.sleep(0.05)
             assert started == ["ensure"]
         await http.aclose()
+
+
+async def test_a_managed_server_that_died_is_not_reported_as_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A record of a dead process would report a server that is gone as running, and
+    every review would fail against nothing."""
+    import contextlib
+    import stat
+    import subprocess
+
+    from reviewrig.config.schema import Backend
+    from reviewrig.llm import Supervisor
+    from reviewrig.sandbox import which
+
+    server = tmp_path / "llama-server"
+    server.write_text("#!/bin/sh\nsleep 300\n", encoding="utf-8")
+    server.chmod(server.stat().st_mode | stat.S_IEXEC)
+    (tmp_path / "m.gguf").write_bytes(b"weights")
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setattr(which, "EXTRA_PATHS", ())
+
+    supervisor = Supervisor(tmp_path)
+    backend = Backend(managed=True, model_file="m.gguf")
+    supervisor.start("review", backend)
+    process = supervisor.running["review"].process
+    process.kill()
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        process.wait(timeout=5)
+
+    health = supervisor.start("review", backend)
+    assert health.reason == "starting"
+    assert supervisor.running["review"].process.pid != process.pid
+    supervisor.stop_all()
+
+
+def test_the_model_watchdog_is_in_the_list() -> None:
+    """Without it a killed model server is never noticed and every review fails."""
+    from reviewrig.schedule import watch_models
+
+    assert watch_models in Rig.WATCHERS

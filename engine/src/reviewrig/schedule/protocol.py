@@ -10,7 +10,7 @@ from typing import Protocol
 
 from reviewrig.config import Config
 from reviewrig.forge import Registry
-from reviewrig.llm import Gateway
+from reviewrig.llm import Gateway, Health
 from reviewrig.mcp import McpRegistry
 from reviewrig.models import RepositoryView
 from reviewrig.sandbox import Selection
@@ -28,3 +28,7 @@ class RigLike(Protocol):
     def publish(self, event: str, **data: object) -> None: ...
 
     def repositories(self) -> list[RepositoryView]: ...
+
+    async def check_models(self) -> dict[str, Health]: ...
+
+    async def ensure_models(self) -> dict[str, Health]: ...

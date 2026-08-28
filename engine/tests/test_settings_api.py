@@ -150,3 +150,85 @@ async def test_the_routes_need_a_token(http: httpx.AsyncClient) -> None:
         assert (await http.get("/settings")).status_code == 401
         assert (await http.get("/forges")).status_code == 401
         assert (await http.put("/settings", json={})).status_code == 401
+
+
+# --- exclusions and the call graph -----------------------------------------------------
+
+
+async def test_a_repository_can_be_excluded_and_brought_back(
+    http: httpx.AsyncClient, token: str, commented: Path
+) -> None:
+    async with http:
+        body = await call(
+            http,
+            token,
+            "PUT",
+            "/settings/exclude",
+            json={"pattern": "~/git/scratch", "remove": False},
+        )
+        assert body["exclude"] == ["~/git/scratch"]
+        assert load(commented).exclude == ["~/git/scratch"]
+        body = await call(
+            http,
+            token,
+            "PUT",
+            "/settings/exclude",
+            json={"pattern": "~/git/scratch", "remove": True},
+        )
+    assert body["exclude"] == []
+
+
+async def test_the_same_exclusion_is_not_added_twice(
+    http: httpx.AsyncClient, token: str, commented: Path
+) -> None:
+    async with http:
+        for _ in range(3):
+            body = await call(http, token, "PUT", "/settings/exclude", json={"pattern": "~/git/x"})
+    assert body["exclude"] == ["~/git/x"]
+
+
+async def test_an_empty_exclusion_is_refused(
+    http: httpx.AsyncClient, token: str, commented: Path
+) -> None:
+    async with http:
+        response = await http.put(
+            "/settings/exclude",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"pattern": "   "},
+        )
+    assert response.status_code == 400
+
+
+async def test_an_excluded_repository_is_never_reviewed(
+    http: httpx.AsyncClient, token: str, rig: Rig, commented: Path, tmp_path: Path
+) -> None:
+    """It stays listed, so the user can see it was excluded rather than lost."""
+    from reviewrig.models import Remote, Repository
+
+    repository = Repository(
+        path=tmp_path / "dropped", remote=Remote("github.com", "acme", "dropped")
+    )
+    assert rig.policy_for(repository).enabled is True
+    rig.change_exclusion(str(tmp_path / "dropped"), remove=False)
+    policy = rig.policy_for(repository)
+    assert policy.enabled is False
+    assert policy.mode == "off"
+
+
+async def test_the_call_graph_is_a_global_switch(
+    http: httpx.AsyncClient, token: str, commented: Path
+) -> None:
+    async with http:
+        assert (await call(http, token, "GET", "/settings"))["codegraph"] is False
+        body = await call(http, token, "PUT", "/settings/codegraph", json={"enabled": True})
+    assert body["codegraph"] is True
+    assert load(commented).codegraph.enabled is True
+
+
+async def test_the_settings_say_whether_codegraph_is_installed(
+    http: httpx.AsyncClient, token: str, commented: Path
+) -> None:
+    """Turning it on without the tool would do nothing and say nothing."""
+    async with http:
+        body = await call(http, token, "GET", "/settings")
+    assert isinstance(body["codegraph_available"], bool)

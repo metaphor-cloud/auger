@@ -6,6 +6,7 @@ import { takeEvents, type ServerEvent } from "./sse";
 import type {
   BackendList,
   Catalog,
+  Dashboard,
   FindingList,
   ForgeList,
   Queue,
@@ -41,6 +42,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export async function health(): Promise<{ status: string; version: string }> {
   return request("/health");
+}
+
+export async function getDashboard(): Promise<Dashboard> {
+  return request("/dashboard");
 }
 
 export async function getSystem(): Promise<System> {
@@ -154,6 +159,22 @@ export async function changeSettings(
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ level, key, changes }),
+  });
+}
+
+export async function changeExclusion(pattern: string, remove: boolean): Promise<Settings> {
+  return request("/settings/exclude", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pattern, remove }),
+  });
+}
+
+export async function setCodegraph(enabled: boolean): Promise<Settings> {
+  return request("/settings/codegraph", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
   });
 }
 

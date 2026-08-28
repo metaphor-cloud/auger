@@ -65,7 +65,13 @@ class Policy(BaseModel):
     idle_seconds: int = Field(default=300, ge=0)
     priority: Priority = 5
     model_profile: str = "balanced"
-    #: Free text that tells the reviewer what matters in this repository.
+    #: Your own instructions to the reviewer: what to look for, what to ignore, how
+    #: to judge severity. This comes from your config file, so it is trusted and it
+    #: goes in the system message where it can change the rules.
+    instructions: str = ""
+    #: Notes that live with the repository. They set priorities, and they are treated
+    #: as data, because a repository you did not write could otherwise redirect the
+    #: review.
     hints: str = ""
     #: MCP tools a job may call, as `server.tool` or `server.*`. Empty means none.
     tools: list[str] = Field(default_factory=list)
@@ -86,6 +92,7 @@ class Overrides(BaseModel):
     idle_seconds: int | None = Field(default=None, ge=0)
     priority: Priority | None = None
     model_profile: str | None = None
+    instructions: str | None = None
     hints: str | None = None
     tools: list[str] | None = None
     max_tool_calls: int | None = Field(default=None, ge=0, le=64)
@@ -230,6 +237,25 @@ class McpServer(BaseModel):
     timeout_seconds: float = Field(default=30.0, gt=0)
 
 
+class CodeGraph(BaseModel):
+    """Use an existing CodeGraph index as a source of callers.
+
+    CodeGraph holds a real call graph, which answers "who calls this" better than either
+    text or vector search can. The rig reads an index that is already there and never
+    creates one, because indexing a repository is the user's decision to make.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    #: The command to run. It must accept `callers <symbol> -p <path> --json`.
+    command: str = "codegraph"
+    #: How long one lookup may take.
+    timeout_seconds: float = Field(default=20.0, gt=0)
+    #: Callers to ask for per changed symbol.
+    limit: int = Field(default=20, ge=1, le=200)
+
+
 class Schedule(BaseModel):
     """How hard the rig works."""
 
@@ -249,6 +275,8 @@ class Schedule(BaseModel):
     quiet_hours: str = ""
     #: How often the watcher looks for a repository that is due an audit.
     audit_poll_seconds: int = Field(default=900, ge=60)
+    #: How often it checks that the managed models are still running.
+    model_poll_seconds: int = Field(default=60, ge=10)
 
 
 class Egress(BaseModel):
@@ -280,8 +308,13 @@ class Config(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     roots: list[Root] = Field(default_factory=list)
+    #: Repositories the rig never touches, whatever the roots say. Each entry is a path,
+    #: a glob, or a forge key such as `github.com/acme`. This is the quick way to drop
+    #: one repository without writing a whole `[repo]` section for it.
+    exclude: list[str] = Field(default_factory=list)
     egress: Egress = Field(default_factory=Egress)
     schedule: Schedule = Field(default_factory=Schedule)
+    codegraph: CodeGraph = Field(default_factory=CodeGraph)
     forge: dict[str, Forge] = Field(default_factory=lambda: _copy(DEFAULT_FORGES))
     mcp: dict[str, McpServer] = Field(default_factory=dict)
     defaults: Policy = Field(default_factory=Policy)

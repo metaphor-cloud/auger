@@ -26,7 +26,10 @@ from reviewrig.api.models import (
     BackendList,
     BackendOut,
     CatalogOut,
+    CodeGraphChange,
+    DashboardOut,
     EgressOut,
+    ExcludeChange,
     FindingList,
     FindingOut,
     ForgeList,
@@ -38,6 +41,7 @@ from reviewrig.api.models import (
     PolicyLevelOut,
     QueueOut,
     RepositoryList,
+    RepositorySummaryOut,
     ReviewRequest,
     RunList,
     RunOut,
@@ -57,6 +61,7 @@ from reviewrig.rig import Rig
 from reviewrig.store.findings import counts, list_findings, set_status
 from reviewrig.store.index import chunk_count
 from reviewrig.store.runs import list_runs
+from reviewrig.store.summary import summarise
 
 BEARER = "bearer "
 
@@ -120,6 +125,82 @@ async def _boot(rig: Rig) -> None:
     # to load, and the UI is already connected and watching.
     await rig.ensure_models()
     await rig.start_background()
+
+
+def _warnings(rig: Rig) -> list[str]:
+    """What needs the user, in the order it should be dealt with."""
+    found: list[str] = []
+    if rig.config_error:
+        found.append(
+            f"The config file was refused, so the rig is on its defaults: {rig.config_error}"
+        )
+    if rig.selection.warning:
+        found.append(rig.selection.warning)
+    down = [
+        name
+        for name, backend in rig.config.backend.items()
+        if backend.managed and not (rig.health.get(name) and rig.health[name].up)
+    ]
+    if down:
+        found.append(
+            f"No model is answering for {', '.join(sorted(down))}. Open Models and press Set up."
+        )
+    for name, reason in rig.forges.problems.items():
+        found.append(f"{name}: {reason}")
+    return found
+
+
+def _dashboard(rig: Rig) -> DashboardOut:
+    from datetime import UTC, datetime
+
+    from reviewrig.config import is_excluded
+
+    today = datetime.now(UTC).date().isoformat()
+    summary = summarise(rig.store, today)
+    views = rig.repositories()
+    excluded = sum(1 for view in views if is_excluded(view.repository, rig.config) is not None)
+    index = _index_out(rig)
+    return DashboardOut(
+        version=__version__,
+        paused=rig.scheduler.paused,
+        pending=rig.scheduler.pending,
+        in_flight=rig.scheduler.in_flight,
+        workers=rig.config.schedule.max_concurrent_reviews,
+        sandbox=SandboxOut(
+            backend=rig.selection.sandbox.name,
+            degraded=rig.selection.degraded,
+            warning=rig.selection.warning,
+        ),
+        models_up=sum(1 for health in rig.health.values() if health.up),
+        models_total=len(rig.config.backend),
+        codegraph=rig.config.codegraph.enabled,
+        repositories=len(views),
+        enabled=sum(1 for view in views if view.policy.enabled),
+        excluded=excluded,
+        indexed_files=index.files,
+        chunks=index.chunks,
+        findings=summary.findings,
+        suppressed=summary.suppressed,
+        dismissed=summary.dismissed,
+        runs_today=summary.runs_today,
+        runs_by_status=summary.runs_by_status,
+        prompt_tokens=summary.prompt_tokens,
+        completion_tokens=summary.completion_tokens,
+        last_run_at=summary.last_run_at,
+        skipped_reasons=summary.skipped_reasons,
+        busiest=[
+            RepositorySummaryOut(
+                path=item.path,
+                name=item.name,
+                open_findings=item.open_findings,
+                worst_severity=item.worst_severity,
+                last_run_at=item.last_run_at,
+                last_status=item.last_status,
+            )
+            for item in summary.busiest
+        ],
+        warnings=_warnings(rig),
+    )
 
 
 def _index_out(rig: Rig) -> IndexOut:
@@ -207,6 +288,11 @@ def create_app(rig: Rig) -> FastAPI:
     async def health() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
 
+    @router.get("/dashboard")
+    async def dashboard() -> DashboardOut:
+        """One read, so every number on the page is from the same moment."""
+        return await asyncio.to_thread(_dashboard, rig)
+
     @router.get("/system")
     async def system() -> SystemOut:
         stats = rig.proxy.stats
@@ -249,8 +335,10 @@ def create_app(rig: Rig) -> FastAPI:
     @router.get("/models/catalog")
     async def model_catalog() -> CatalogOut:
         from reviewrig.llm import catalog, runtime
+        from reviewrig.llm.setup import models_dir
 
         usable = catalog.usable_memory_gb()
+        here = models_dir(rig.settings.home)
         return CatalogOut(
             models=[
                 ModelChoiceOut(
@@ -261,10 +349,11 @@ def create_app(rig: Rig) -> FastAPI:
                     memory_gb=choice.memory_gb,
                     description=choice.description,
                     fits=choice.memory_gb <= usable,
+                    downloaded=catalog.downloaded(choice, here),
                 )
                 for choice in catalog.CATALOG
             ],
-            recommended=catalog.recommended_review_model().name,
+            recommended=catalog.recommended_review_model(None, here).name,
             usable_memory_gb=round(usable, 1),
             runtime_installed=runtime.resolve(rig.settings.home) is not None,
             setup_running=rig.setup_running,
@@ -357,10 +446,15 @@ def create_app(rig: Rig) -> FastAPI:
             PolicyLevelOut(level="repo", key=key, overrides=value.model_dump(exclude_none=True))
             for key, value in sorted(rig.config.repo.items())
         ]
+        from reviewrig.sandbox.which import find
+
         return SettingsOut(
             defaults=rig.config.defaults,
             levels=levels,
             config_path=str(rig.config_path),
+            exclude=list(rig.config.exclude),
+            codegraph=rig.config.codegraph.enabled,
+            codegraph_available=find(rig.config.codegraph.command) is not None,
         )
 
     @router.put("/settings")
@@ -372,6 +466,21 @@ def create_app(rig: Rig) -> FastAPI:
             )
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+        return await settings_view()
+
+    @router.put("/settings/exclude")
+    async def change_exclude(change: ExcludeChange) -> SettingsOut:
+        """Add or drop one entry of the exclusion list."""
+        pattern = change.pattern.strip()
+        if not pattern:
+            raise HTTPException(status_code=400, detail="an exclusion needs a pattern")
+        await asyncio.to_thread(rig.change_exclusion, pattern, change.remove)
+        return await settings_view()
+
+    @router.put("/settings/codegraph")
+    async def change_codegraph(change: CodeGraphChange) -> SettingsOut:
+        """Turn the call graph source on or off for every repository."""
+        await asyncio.to_thread(rig.set_codegraph, change.enabled)
         return await settings_view()
 
     @router.get("/findings")

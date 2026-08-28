@@ -36,6 +36,13 @@ Model servers run on the host, never in the sandbox, for two reasons. A containe
 macOS cannot reach Metal or the Apple Neural Engine. And a container with no network at
 all cannot leak anything, which is a stronger guarantee than an address allowlist.
 
+## The window
+
+**Overview** is the landing page: what the rig is doing now, open findings by severity,
+the repositories that need attention, what it has run today and what that cost, and one
+banner per thing that needs you. **Findings**, **Repositories**, **Runs**, **Models**,
+**Settings**, and **System** are behind it.
+
 ## Settings
 
 One file at `~/.reviewrig/config.toml`, and the UI edits the same file without losing
@@ -61,9 +68,15 @@ Treat a leaked credential as critical. Ignore style.
 """
 ```
 
-`hints` tells the reviewer what matters in that repository. It sets priorities. It does
-not change the rules or the output format. The full reference is in
-[docs/configuration.md](docs/configuration.md).
+Two things steer the reviewer, and the difference is who wrote them. `instructions` are
+yours, from your config file, so they are trusted and can change what the rig looks for
+and how it judges severity. `hints` live with the repository, so they are treated as data
+and only set priorities.
+
+`exclude` drops a repository wherever the roots find it: a path, a glob, or a forge key.
+It stays listed and marked excluded, so it is visibly dropped rather than quietly lost.
+
+The full reference is in [docs/configuration.md](docs/configuration.md).
 
 ## Models
 

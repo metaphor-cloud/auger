@@ -120,8 +120,14 @@ async def audit(
     hints = (
         f"\n\nThe repository owner wrote: {policy.hints.strip()}" if policy.hints.strip() else ""
     )
+    system = SYSTEM
+    if policy.instructions.strip():
+        system += (
+            "\nThe person running this review added the instructions below. Follow "
+            "them.\n\n" + policy.instructions.strip() + "\n"
+        )
     messages = [
-        Message(role="system", content=SYSTEM),
+        Message(role="system", content=system),
         Message(
             role="user",
             content=f"Repository: {repository.slug}{hints}\n\nOutline:\n{shape}",

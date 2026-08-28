@@ -28,6 +28,42 @@ max_depth = 4
 Dependency directories are excluded already: `node_modules`, `.venv`, `venv`, `vendor`,
 `target`, `.cargo`, `Library`, `.Trash`, `.cache`.
 
+## Excluding a repository
+
+`exclude` drops a repository wherever the roots find it. Each entry is a path, a glob, or
+a forge key, and a forge key matches on a segment boundary, so `github.com/acme` never
+matches `github.com/acmecorp`.
+
+```toml
+exclude = [
+  "~/git/scratch",
+  "~/git/forks/*",
+  "github.com/someone-else",
+]
+```
+
+An excluded repository is still listed, marked excluded, and never reviewed. Use a
+`[repo]` section instead when you want to change a setting rather than drop it.
+
+## Call graph
+
+```toml
+[codegraph]
+enabled = true
+```
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `false` | Ask CodeGraph for the callers of a changed symbol. |
+| `command` | `codegraph` | The program to run. |
+| `timeout_seconds` | `20` | How long one lookup may take. |
+| `limit` | `20` | Callers to ask for per changed symbol. |
+
+Text search finds a name and vector search finds something similar. Neither knows that
+one function calls another, and CodeGraph does. The rig reads an index that is already
+there and never creates one, because indexing a repository writes into it. A repository
+with no `.codegraph` directory is retrieved the usual way, and the System view says so.
+
 ## Policy
 
 The same fields appear at three levels: `[defaults]` for every repository,
@@ -54,13 +90,34 @@ hints = "Treat a leaked credential as critical. Ignore style."
 | `idle_seconds` | `300` | Wait this long after the last write before a review starts. |
 | `priority` | `5` | 1 first, 9 last. |
 | `model_profile` | `balanced` | Which profile picks the models. |
-| `hints` | `""` | Free text that tells the reviewer what matters here. |
+| `instructions` | `""` | Your own instructions to the reviewer. Trusted, and they can change the rules. |
+| `hints` | `""` | Notes that live with the repository. Data, and they only set priorities. |
 | `tools` | `[]` | MCP tools this repository may use, as `server.tool` or `server.*`. |
 | `max_tool_calls` | `8` | How many tool calls one review may make. |
 | `audit_hours` | `24` | How often a whole repository audit runs. `0` turns audits off. |
 
-`hints` goes into the prompt verbatim, wrapped and labelled as the repository owner's
-words. It sets priorities. It does not change the rules or the output format.
+### instructions and hints
+
+Both reach the reviewer, and the difference is who wrote them.
+
+`instructions` come from your config file, so they are yours. They go in the system
+message, and they can narrow what is reported, add something to look for, or change how
+severity is judged. They cannot change the output format, because the rig has to parse it.
+
+```toml
+[defaults]
+instructions = """
+Report security defects and data loss. Ignore performance unless it is a loop over a
+network call. Treat anything that writes a credential to a log as critical.
+"""
+
+[repo."~/git/acme/prototype"]
+instructions = "This is a prototype. Report only what would lose data."
+```
+
+`hints` live with the repository, and a repository you did not write is not you. They go
+in the user message, wrapped and labelled as data. They set priorities and they do not
+change the rules or the output format.
 
 ## Models
 
@@ -132,6 +189,7 @@ quiet_hours = "22:00-07:00"
 | `retry_seconds` | `120` | How long to wait before retrying a busy repository. |
 | `quiet_hours` | `""` | `HH:MM-HH:MM` in local time. No audit starts inside it. |
 | `audit_poll_seconds` | `900` | How often it looks for a repository that is due an audit. |
+| `model_poll_seconds` | `60` | How often it checks that the managed models are still running, and starts one that stopped. |
 
 ## Forges
 

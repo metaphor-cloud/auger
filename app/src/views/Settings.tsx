@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { changeSettings, checkTools, getForges, getSettings, getTools } from "../engine";
+import {
+  changeExclusion,
+  changeSettings,
+  checkTools,
+  getForges,
+  getSettings,
+  getTools,
+  setCodegraph,
+} from "../engine";
 import type { Forge, McpServer, Mode, PolicyLevel, Settings } from "../types";
 
 const MODES: Mode[] = ["off", "draft", "complete"];
@@ -30,10 +38,14 @@ export default function SettingsView() {
   const [servers, setServers] = useState<McpServer[]>([]);
   const [allowed, setAllowed] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [pattern, setPattern] = useState("");
+  const [instructions, setInstructions] = useState("");
 
   const load = useCallback(async () => {
     try {
-      setSettings(await getSettings());
+      const body = await getSettings();
+      setSettings(body);
+      setInstructions(body.defaults.instructions);
       setForges((await getForges()).forges);
       const tools = await getTools();
       setServers(tools.servers);
@@ -106,6 +118,87 @@ export default function SettingsView() {
         <dd className="mono">{settings.defaults.priority}</dd>
         <dt>Wait after an agent stops</dt>
         <dd className="mono">{settings.defaults.idle_seconds}s</dd>
+      </dl>
+
+      <h3>What to look for</h3>
+      <p className="muted">
+        Your instructions to the reviewer. They can narrow what it reports, add something
+        to look for, or change how it judges severity. A repository&apos;s own{" "}
+        <code>hints</code> are separate, and are treated as data.
+      </p>
+      <textarea
+        rows={5}
+        value={instructions}
+        placeholder="Report security defects and data loss. Ignore performance."
+        onChange={(event) => setInstructions(event.target.value)}
+        onBlur={() => {
+          if (instructions !== settings.defaults.instructions) {
+            void change("defaults", "", { instructions });
+          }
+        }}
+      />
+
+      <h3>Excluded repositories</h3>
+      <p className="muted">
+        A path, a glob, or a forge key such as <code>github.com/acme</code>. An excluded
+        repository stays listed and is never reviewed.
+      </p>
+      {settings.exclude.length > 0 && (
+        <ul className="chips">
+          {settings.exclude.map((entry) => (
+            <li key={entry}>
+              <span className="mono">{entry}</span>
+              <button
+                title="Stop excluding this"
+                onClick={() =>
+                  void changeExclusion(entry, true).then(setSettings).catch(() => undefined)
+                }
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="setup-row">
+        <input
+          value={pattern}
+          placeholder="~/git/scratch"
+          onChange={(event) => setPattern(event.target.value)}
+        />
+        <button
+          disabled={!pattern.trim()}
+          onClick={() =>
+            void changeExclusion(pattern, false)
+              .then((body) => {
+                setSettings(body);
+                setPattern("");
+              })
+              .catch((cause) => setError(String(cause)))
+          }
+        >
+          Exclude
+        </button>
+      </div>
+
+      <h3>Call graph</h3>
+      <dl className="facts">
+        <dt>Use CodeGraph</dt>
+        <dd>
+          <input
+            type="checkbox"
+            checked={settings.codegraph}
+            disabled={!settings.codegraph_available}
+            onChange={(event) =>
+              void setCodegraph(event.target.checked).then(setSettings)
+            }
+          />{" "}
+          <span className="muted">
+            {settings.codegraph_available
+              ? "Asks a real call graph who calls a changed symbol, where a repository has an index."
+              : "codegraph is not installed."}
+          </span>
+        </dd>
       </dl>
 
       <h3>Overrides</h3>

@@ -143,8 +143,19 @@ class Supervisor:
 
     def start(self, name: str, backend: Backend) -> Health:
         """Start one managed backend. Returns why it could not, without raising."""
-        if name in self.running:
-            return Health(name=name, url=backend.url, up=True, managed=True)
+        running = self.running.get(name)
+        if running is not None:
+            if running.process.poll() is None:
+                return Health(name=name, url=backend.url, up=True, managed=True)
+            # It exited. A record of a dead process would report a server that is gone
+            # as running, and every review would fail against nothing.
+            self.log.warn(
+                "managed server exited",
+                reason="server_died",
+                backend=name,
+                code=running.process.returncode,
+            )
+            del self.running[name]
         server = self.server_command()
         if server is None:
             reason = (

@@ -58,15 +58,15 @@ def models_dir(home: Path) -> Path:
     return home / "models"
 
 
-def plan(memory_gb: float | None = None) -> list[Choice]:
+def plan(memory_gb: float | None = None, models_dir: Path | None = None) -> list[Choice]:
     """Which models this machine should fetch.
 
     No reranker. It measured markedly worse than not reranking, so fetching it by
     default would cost a download and give a worse review.
     """
     return [
-        catalog.recommended_review_model(memory_gb),
-        catalog.recommended_embed_model(memory_gb),
+        catalog.recommended_review_model(memory_gb, models_dir),
+        catalog.recommended_embed_model(memory_gb, models_dir),
     ]
 
 
@@ -126,8 +126,15 @@ async def install(
         if on_step:
             on_step(step)
 
-    review = catalog.by_name(review_model) if review_model else catalog.recommended_review_model()
-    embed = catalog.by_name(embed_model) if embed_model else catalog.recommended_embed_model()
+    here = models_dir(home)
+    review = (
+        catalog.by_name(review_model)
+        if review_model
+        else catalog.recommended_review_model(None, here)
+    )
+    embed = (
+        catalog.by_name(embed_model) if embed_model else catalog.recommended_embed_model(None, here)
+    )
 
     async with client() as http:
         try:

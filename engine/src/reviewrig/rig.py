@@ -29,7 +29,14 @@ from reviewrig.mcp import McpRegistry
 from reviewrig.models import Repository, RepositoryView
 from reviewrig.net import Allowlist, Destination, EgressProxy
 from reviewrig.sandbox import Selection, select
-from reviewrig.schedule import Scheduler, Task, watch, watch_audits, watch_forges
+from reviewrig.schedule import (
+    Scheduler,
+    Task,
+    watch,
+    watch_audits,
+    watch_forges,
+    watch_models,
+)
 from reviewrig.settings import Settings
 from reviewrig.store import Store
 from reviewrig.store.repositories import list_repositories, record_scan
@@ -61,7 +68,7 @@ class Rig:
 
     #: Every background loop the rig runs. A watcher missing from here never runs, and
     #: nothing else would say so.
-    WATCHERS = (watch, watch_forges, watch_audits)
+    WATCHERS = (watch, watch_forges, watch_audits, watch_models)
 
     async def start_background(self) -> None:
         """Start the workers and every watcher."""
@@ -160,6 +167,26 @@ class Rig:
             raise ValueError(f"unknown settings level {level!r}")
         save(self.config_path, self.config)
         self.log.info("settings changed", level=level, key=key, fields=sorted(changes))
+        self.publish("config.reloaded", roots=len(self.config.roots))
+        return self.config
+
+    def change_exclusion(self, pattern: str, remove: bool) -> Config:
+        """Add or drop one exclusion, and write the file back."""
+        current = list(self.config.exclude)
+        if remove:
+            current = [entry for entry in current if entry != pattern]
+        elif pattern not in current:
+            current.append(pattern)
+        self.config.exclude = current
+        save(self.config_path, self.config)
+        self.log.info("exclusions changed", removed=remove, pattern=pattern, count=len(current))
+        self.publish("config.reloaded", roots=len(self.config.roots))
+        return self.config
+
+    def set_codegraph(self, enabled: bool) -> Config:
+        self.config.codegraph = self.config.codegraph.model_copy(update={"enabled": enabled})
+        save(self.config_path, self.config)
+        self.log.info("call graph changed", enabled=enabled)
         self.publish("config.reloaded", roots=len(self.config.roots))
         return self.config
 

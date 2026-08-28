@@ -429,3 +429,37 @@ async def test_a_host_that_ignores_range_starts_again(
     async with download.client() as http:
         await fetch(http, f"{base}/model.gguf", destination, sha(body))
     assert destination.read_bytes() == body
+
+
+# --- what is already on disk ----------------------------------------------------------
+
+
+def test_it_prefers_a_model_that_is_already_downloaded(tmp_path: Path) -> None:
+    """Recommending a larger model over one already here costs an hour of waiting,
+    and the rig cannot review while it waits."""
+    models = tmp_path / "models"
+    models.mkdir()
+    small = catalog.by_name("gpt-oss-20b")
+    (models / small.filename).write_bytes(b"weights")
+    assert catalog.recommended_review_model(96, models).name == "gpt-oss-20b"
+
+
+def test_with_nothing_downloaded_it_picks_by_memory(tmp_path: Path) -> None:
+    assert catalog.recommended_review_model(96, tmp_path).name == "gpt-oss-120b"
+
+
+def test_a_downloaded_model_that_does_not_fit_is_not_chosen(tmp_path: Path) -> None:
+    models = tmp_path / "models"
+    models.mkdir()
+    large = catalog.by_name("gpt-oss-120b")
+    (models / large.filename).write_bytes(b"weights")
+    assert catalog.recommended_review_model(11, models).name == "gpt-oss-20b"
+
+
+def test_a_half_finished_download_does_not_count(tmp_path: Path) -> None:
+    """A `.part` file is not a model."""
+    models = tmp_path / "models"
+    models.mkdir()
+    small = catalog.by_name("gpt-oss-20b")
+    (models / f"{small.filename}.part").write_bytes(b"partial")
+    assert catalog.downloaded(small, models) is False
