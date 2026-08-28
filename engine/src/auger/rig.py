@@ -22,6 +22,7 @@ from auger.config import (
     set_value,
 )
 from auger.config.loader import parse
+from auger.config.schema import JobClass
 from auger.discovery import scan
 from auger.events import Event, EventBus
 from auger.forge import Registry
@@ -43,6 +44,7 @@ from auger.schedule import (
 from auger.settings import Settings
 from auger.store import Store
 from auger.store.repositories import list_repositories, record_scan
+from auger.store.runs import close_interrupted
 
 
 class Rig:
@@ -88,6 +90,15 @@ class Rig:
         the first thing a new user would see is work they did not start. The watchers
         still run, so the queue fills and shows what is waiting.
         """
+        # A run left in flight belongs to a process that is gone. Close it before the
+        # workers start, or it sits in the list as work that nothing is doing.
+        interrupted = await asyncio.to_thread(close_interrupted, self.store)
+        if interrupted:
+            self.log.warn(
+                "runs left in flight were closed",
+                reason="interrupted",
+                count=interrupted,
+            )
         await self.scheduler.start(self.config.schedule.max_concurrent_reviews)
         self.scheduler.pause()
         for watcher in self.WATCHERS:
@@ -324,6 +335,25 @@ class Rig:
         await self.tools.refresh()
         ready = sum(1 for state in self.tools.servers.values() if state.reachable)
         self.publish("tools.checked", ready=ready, total=len(self.tools.servers))
+
+    def review_model_state(self) -> tuple[bool, str | None]:
+        """Whether a review could run now, and why not.
+
+        The profile decides which backend answers a review, so that is the one to ask
+        about. A health record the rig has not written yet means nobody has looked.
+        """
+        profile = self.config.profile.get(self.config.defaults.model_profile)
+        if profile is None:
+            return False, f"no model profile named {self.config.defaults.model_profile!r}"
+        name = profile.entry(JobClass.REVIEW).backend
+        if not name:
+            return False, "the profile turns reviewing off. Pick a model in Settings."
+        health = self.health.get(name)
+        if health is None:
+            return False, f"{name} has not been checked yet"
+        if health.up:
+            return True, None
+        return False, health.reason or f"{name} does not answer at {health.url}"
 
     def stop_models(self, name: str | None = None) -> None:
         """Stop one managed model server, or every one of them."""

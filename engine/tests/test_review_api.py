@@ -109,8 +109,14 @@ async def test_a_review_of_a_path_that_is_not_a_repository_is_refused(
 
 
 async def test_the_queue_can_be_paused_and_resumed(
-    http: httpx.AsyncClient, token: str, tree: Path
+    http: httpx.AsyncClient, token: str, rig: Rig, tree: Path
 ) -> None:
+    from auger.llm import Health
+
+    # Play is refused when no model answers, so this one does.
+    rig.health["local-review"] = Health(
+        name="local-review", url="http://127.0.0.1:1337/v1", up=True
+    )
     async with http:
         assert (await call(http, token, "POST", "/queue/pause"))["paused"] is True
         assert (await call(http, token, "GET", "/queue"))["paused"] is True

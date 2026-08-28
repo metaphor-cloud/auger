@@ -13,7 +13,7 @@ pub const TRAY_ID: &str = "main";
 
 pub fn build<R: Runtime>(app: &AppHandle<R>, status: &str) -> tauri::Result<()> {
     let status_item = MenuItem::with_id(app, "status", status, false, None::<&str>)?;
-    let open_item = MenuItem::with_id(app, OPEN, "Open auger", true, None::<&str>)?;
+    let open_item = MenuItem::with_id(app, OPEN, "Open Auger", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, QUIT, "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
@@ -29,7 +29,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>, status: &str) -> tauri::Result<()> 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(app.default_window_icon().cloned().expect("bundled icon"))
         .icon_as_template(true)
-        .tooltip("auger")
+        .tooltip("Auger")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(on_menu_event)
@@ -48,6 +48,10 @@ fn on_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
 }
 
 pub fn show_window<R: Runtime>(app: &AppHandle<R>) {
+    // A window with no dock icon has no menu bar either, so it has no Quit and no
+    // Paste. Become a normal application while the window is up.
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.set_focus();
@@ -73,7 +77,7 @@ pub fn set_status<R: Runtime>(app: &AppHandle<R>, open: u32, loud: u32) {
 fn apply<R: Runtime>(tray: &TrayIcon<R>, title: &str, open: u32, loud: u32) {
     let _ = tray.set_title(Some(title));
     let _ = tray.set_tooltip(Some(&match open {
-        0 => "auger: nothing open".to_string(),
-        _ => format!("auger: {open} open, {loud} that need attention"),
+        0 => "Auger: nothing open".to_string(),
+        _ => format!("Auger: {open} open, {loud} that need attention"),
     }));
 }

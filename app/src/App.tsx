@@ -100,8 +100,18 @@ export default function App() {
     return () => abort.abort();
   }, [refreshQueue]);
 
+  const [refused, setRefused] = useState<string | null>(null);
+
   async function togglePause() {
-    setQueue(queue?.paused ? await resumeQueue() : await pauseQueue());
+    try {
+      setQueue(queue?.paused ? await resumeQueue() : await pauseQueue());
+      setRefused(null);
+    } catch (cause) {
+      // The engine refuses to start with no model, because a queue that runs without
+      // one only produces a failed run per repository.
+      setRefused(cause instanceof Error ? cause.message : String(cause));
+      void refreshQueue();
+    }
   }
 
   if (onboarded === false) {
@@ -120,7 +130,7 @@ export default function App() {
     <div className="flex h-full bg-bg text-text-primary">
       <aside className="flex w-[13.5rem] shrink-0 flex-col border-r border-border bg-bg-elevated">
         <div className="flex items-center gap-2 px-4 py-3">
-          <span className="text-sm font-semibold tracking-tight">auger</span>
+          <span className="text-sm font-semibold tracking-tight">Auger</span>
         </div>
 
         <nav className="flex flex-1 flex-col gap-0.5 px-2">
@@ -149,9 +159,11 @@ export default function App() {
               // it carries the accent. Running is the quiet state.
               className={`w-full justify-start ${queue.paused ? "text-accent" : ""}`}
               title={
-                queue.paused
-                  ? "Start reviewing. Nothing runs until you do."
-                  : "Finish what is running, then stop pulling work."
+                queue.models_ready === false
+                  ? (queue.models_reason ?? "no model answers yet")
+                  : queue.paused
+                    ? "Start reviewing. Nothing runs until you do."
+                    : "Finish what is running, then stop pulling work."
               }
               onClick={() => void togglePause()}
             >
@@ -165,6 +177,14 @@ export default function App() {
                 </Badge>
               )}
             </Button>
+          )}
+          {refused && (
+            <p className="px-3 text-[11px] leading-snug text-warning">
+              {refused}{" "}
+              <button className="underline" onClick={() => setView("Settings")}>
+                Open Models
+              </button>
+            </p>
           )}
           <Button
             size="sm"

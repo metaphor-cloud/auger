@@ -138,6 +138,22 @@ def _to_run(row: sqlite3.Row) -> Run:
     )
 
 
+def close_interrupted(store: Store, reason: str = "interrupted") -> int:
+    """Mark every run still recorded as running as failed.
+
+    Only a process that stopped without finishing leaves a run in that state: a crash,
+    or the user quitting. The row would otherwise show work in flight that nothing is
+    doing, for as long as the database lives.
+    """
+    with store.write() as connection:
+        cursor = connection.execute(
+            "UPDATE runs SET status = 'failed', reason = ?, finished_at = ? "
+            "WHERE status = 'running'",
+            (reason, now()),
+        )
+    return int(cursor.rowcount)
+
+
 def list_runs(store: Store, repo_path: str | Path | None = None, limit: int = 100) -> list[Run]:
     where = "WHERE repo_path = ?" if repo_path is not None else ""
     parameters: list[object] = [str(repo_path)] if repo_path is not None else []

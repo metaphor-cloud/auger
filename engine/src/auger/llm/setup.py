@@ -93,7 +93,7 @@ def apply_to_config(
     )
     if rerank is not None:
         config.backend[RERANK_BACKEND] = (
-            config.backend.get(RERANK_BACKEND) or Backend(url="http://127.0.0.1:8082/v1")
+            config.backend.get(RERANK_BACKEND) or Backend(url="http://127.0.0.1:1339/v1")
         ).model_copy(
             update={
                 "managed": True,

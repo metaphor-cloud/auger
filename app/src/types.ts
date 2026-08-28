@@ -157,6 +157,8 @@ export type Queue = {
   in_flight: string[];
   paused: boolean;
   workers: number;
+  models_ready: boolean;
+  models_reason: string | null;
 };
 
 export type Forge = {

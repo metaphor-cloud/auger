@@ -23,7 +23,7 @@ from auger.rig import Rig
 from auger.settings import Settings
 
 USAGE = """\
-auger - a background code reviewer that keeps your code on your machine.
+Auger - a background code reviewer that keeps your code on your machine.
 
   auger              serve the engine and the window
   auger tracker      the work tracker for this repository, over MCP

@@ -117,7 +117,7 @@ class Backend(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    url: str = "http://127.0.0.1:8080/v1"
+    url: str = "http://127.0.0.1:1337/v1"
     model: str = ""
     #: Name of the environment variable that holds the key. Never the key itself.
     api_key_env: str | None = None
@@ -164,16 +164,19 @@ class Profile(BaseModel):
 #: What the rig uses when the user has written no backend of their own. Both are local,
 #: both are managed, and `auger.llm.setup` fetches the weights and fills in the file
 #: name that suits this machine.
+#: The rig's own servers. 8080 and 8081 are the two busiest ports on a developer
+#: machine, and a review that quietly talked to somebody else's server would be worse
+#: than one that failed. These three are contiguous and rarely taken.
 DEFAULT_BACKENDS: dict[str, Backend] = {
     "local-review": Backend(
-        url="http://127.0.0.1:8080/v1",
+        url="http://127.0.0.1:1337/v1",
         model="gpt-oss",
         managed=True,
         model_file="gpt-oss-120b-MXFP4.gguf",
         max_concurrent=2,
     ),
     "local-embed": Backend(
-        url="http://127.0.0.1:8081/v1",
+        url="http://127.0.0.1:1338/v1",
         model="qwen3-embedding",
         managed=True,
         model_file="Qwen3-Embedding-0.6B-Q8_0.gguf",

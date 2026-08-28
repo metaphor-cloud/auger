@@ -191,3 +191,45 @@ async def test_the_first_run_reports_what_is_still_missing(
         assert response.json()["done"] is True
 
         assert (await get(http, token, "/onboarding"))["done"] is True
+
+
+async def test_play_is_refused_when_no_model_can_answer(
+    http: httpx.AsyncClient, token: str, home: Path, rig: Rig
+) -> None:
+    """A queue that runs with no model gives one failed run per repository and no
+    explanation. Refuse, and say what to do instead."""
+    (home / "config.toml").write_text(
+        '[backend.local-review]\nurl = "http://127.0.0.1:1/v1"\nmanaged = false\n',
+        encoding="utf-8",
+    )
+    rig.reload_config()
+    rig.scheduler.pause()  # The window opens stopped, so this is the real starting state.
+
+    async with http:
+        await http.post("/models/check", headers={"Authorization": f"Bearer {token}"})
+        state = await get(http, token, "/queue")
+        assert state["models_ready"] is False
+        assert state["models_reason"]
+
+        response = await http.post("/queue/resume", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 409
+    assert rig.scheduler.paused is True
+
+
+async def test_a_run_left_in_flight_is_closed_on_the_next_start(home: Path, token: str) -> None:
+    """Only a crash or a quit leaves a run running. It must not sit there forever."""
+    from auger.settings import Settings
+    from auger.store.runs import list_runs, start
+
+    rig = Rig(Settings(host="127.0.0.1", port=0, token=token, log_level="debug", home=home))
+    try:
+        start(rig.store, Path("/tmp/repo"), "diff_review", None, "HEAD")
+        assert [one.status for one in list_runs(rig.store)] == ["running"]
+
+        await rig.start_background()
+        closed = list_runs(rig.store)
+    finally:
+        await rig.aclose()
+
+    assert [one.status for one in closed] == ["failed"]
+    assert [one.reason for one in closed] == ["interrupted"]

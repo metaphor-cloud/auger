@@ -127,7 +127,7 @@ A job asks for a job class, never for a model. The profile decides which backend
 image = "auger/analysis:0.1"
 
 [backend.local-review]
-url = "http://127.0.0.1:8080/v1"
+url = "http://127.0.0.1:1337/v1"
 model = "gpt-oss-120b"
 managed = true
 model_file = "gpt-oss-120b-mxfp4.gguf"
@@ -139,7 +139,7 @@ max_tokens = 8192
 
 | Backend key | Default | Meaning |
 | --- | --- | --- |
-| `url` | `http://127.0.0.1:8080/v1` | An OpenAI-compatible base URL. |
+| `url` | `http://127.0.0.1:1337/v1` | An OpenAI-compatible base URL. |
 | `model` | `""` | The model name to send. |
 | `api_key_env` | none | Name of the variable holding a key. Never the key. |
 | `max_concurrent` | `4` | Requests in flight. A batch server stays full at this depth. |

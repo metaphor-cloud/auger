@@ -25,7 +25,7 @@ START_TIMEOUT = 180.0
 POLL_SECONDS = 1.0
 #: Where an OpenAI-compatible server usually listens. `llama-server` and
 #: `mlx-openai-server` both default into this range.
-COMMON_PORTS = (8080, 8081, 8082, 8083, 1234, 11434, 8000)
+COMMON_PORTS = (1337, 1338, 1339, 8080, 8081, 8082, 8083, 1234, 11434, 8000)
 SERVERS = ("llama-server", "mlx_lm.server", "mlx-openai-server")
 
 

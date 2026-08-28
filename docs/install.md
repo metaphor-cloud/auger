@@ -34,7 +34,7 @@ On the very first run a short wizard asks the two things it cannot guess: a dire
 watch, and a model to review with. After that:
 
 1. Open the window from the menu bar.
-2. Press **Start reviewing** in the sidebar. auger opens stopped, so nothing runs until
+2. Press **Start reviewing** in the sidebar. Auger opens stopped, so nothing runs until
    you ask for it.
 3. **Work** lists what needs attention, and the strip above it shows every run as it
    happens.

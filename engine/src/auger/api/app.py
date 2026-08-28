@@ -258,11 +258,14 @@ def _index_out(rig: Rig) -> IndexOut:
 
 
 def _queue_out(rig: Rig) -> QueueOut:
+    ready, reason = rig.review_model_state()
     return QueueOut(
         pending=rig.scheduler.pending,
         in_flight=rig.scheduler.in_flight,
         paused=rig.scheduler.paused,
         workers=rig.config.schedule.max_concurrent_reviews,
+        models_ready=ready,
+        models_reason=reason,
     )
 
 
@@ -718,6 +721,18 @@ def create_app(rig: Rig) -> FastAPI:
 
     @router.post("/queue/resume")
     async def resume() -> QueueOut:
+        """Start reviewing.
+
+        A queue that runs with no model produces one failed run per repository and no
+        explanation, so this checks first, and it tries to start a managed server before
+        it gives up.
+        """
+        ready, reason = rig.review_model_state()
+        if not ready:
+            await rig.ensure_models()
+            ready, reason = rig.review_model_state()
+        if not ready:
+            raise HTTPException(status_code=409, detail=reason or "no model answers")
         rig.scheduler.resume()
         rig.publish("queue.resumed", pending=rig.scheduler.pending)
         return _queue_out(rig)

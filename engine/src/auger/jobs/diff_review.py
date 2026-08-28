@@ -134,17 +134,21 @@ async def review(
         return ReviewOutcome(finish(store, run), [], [])
 
     # The index must match the code under review, so it is brought up to date first.
-    # A commit that touched one file costs one file.
-    await reindex(store, gateway, repository.path, policy.model_profile, log)
-    context = await context_for_diff(
-        store,
-        gateway,
-        str(repository.path),
-        diff_text,
-        policy.model_profile,
-        graph=graph,
-        log=log,
-    )
+    # A commit that touched one file costs one file. Retrieval needs the embedding
+    # model, so it fails the same way a review does when no model answers.
+    try:
+        await reindex(store, gateway, repository.path, policy.model_profile, log)
+        context = await context_for_diff(
+            store,
+            gateway,
+            str(repository.path),
+            diff_text,
+            policy.model_profile,
+            graph=graph,
+            log=log,
+        )
+    except ModelError as error:
+        return _failed(store, run, log, "model_failed", str(error), started)
 
     messages = review_messages(
         slug=repository.slug,

@@ -5,6 +5,7 @@
 //! Python engine.
 
 mod engine;
+mod menu;
 mod tray;
 
 use engine::{EngineInfo, EngineState};
@@ -96,11 +97,14 @@ pub fn run() {
             set_autostart
         ])
         .setup(|app| {
-            // The menu bar is the product. Keep the dock clear.
+            // With no window open the rig is a menu bar application, so the dock stays
+            // clear. Opening the window turns it into a normal one, which is what gives
+            // it a menu bar, a dock icon, and ⌘Q.
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             let handle = app.handle().clone();
+            app.set_menu(menu::build(&handle)?)?;
             let status = match engine::start(&handle) {
                 Ok(running) => {
                     let status = format!("Engine on port {}", running.info().port);
@@ -130,10 +134,15 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing the window must not quit a background application. Hide it.
+            // Closing the window must not quit a background application. Hide it, and
+            // give the dock icon back, so the rig is a menu bar application again.
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
+                #[cfg(target_os = "macos")]
+                let _ = window
+                    .app_handle()
+                    .set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
         })
         .build(tauri::generate_context!())

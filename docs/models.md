@@ -38,7 +38,7 @@ backend at it, and the setup above becomes unnecessary.
 
 ```toml
 [backend.local-review]
-url = "http://127.0.0.1:8080/v1"
+url = "http://127.0.0.1:1337/v1"
 model = "whatever-you-loaded"
 ```
 
@@ -129,7 +129,7 @@ To try one, fetch it by hand and name it in a profile:
 
 ```toml
 [backend.local-rerank]
-url = "http://127.0.0.1:8082/v1"
+url = "http://127.0.0.1:1339/v1"
 managed = true
 model_file = "Qwen.Qwen3-Reranker-0.6B.Q8_0.gguf"
 args = ["--reranking"]

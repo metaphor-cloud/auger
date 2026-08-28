@@ -1,4 +1,4 @@
-# auger
+# Auger
 
 A background code review rig. Point it at the directories that hold your git
 repositories. It finds every repository, watches them, and reviews the changes with

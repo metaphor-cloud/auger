@@ -33,7 +33,7 @@ async def test_the_allowlist_holds_the_local_model_backends(
     async with http:
         body = await system(http, token)
     allowed = body["egress"]["allowed"]
-    assert "127.0.0.1:8080" in allowed
+    assert "127.0.0.1:1337" in allowed
     assert all(
         destination.startswith(("127.0.0.1", "localhost", "::1", "0.0.0.0"))
         for destination in allowed

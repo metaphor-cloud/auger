@@ -1,6 +1,6 @@
-# auger engine
+# Auger engine
 
-The Python half of [auger](../README.md). It finds git repositories, resolves the
+The Python half of [Auger](../README.md). It finds git repositories, resolves the
 policy for each one, schedules review jobs, runs them in a sandbox, and stores the
 findings.
 

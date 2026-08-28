@@ -169,6 +169,11 @@ class QueueOut(BaseModel):
     in_flight: list[str]
     paused: bool
     workers: int
+    #: Whether a model can answer a review. False means pressing play would only
+    #: produce one failed run per repository.
+    models_ready: bool = False
+    #: Why not, in the words the user needs to act on.
+    models_reason: str | None = None
 
 
 class ReviewRequest(BaseModel):
