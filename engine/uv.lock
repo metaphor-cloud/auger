@@ -688,7 +688,7 @@ wheels = [
 ]
 
 [[package]]
-name = "reviewrig-engine"
+name = "auger"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

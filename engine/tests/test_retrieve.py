@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from reviewrig.config.schema import Backend, Config, ProfileEntry
-from reviewrig.context import reindex
-from reviewrig.context.retrieve import changed_ranges, context_for_diff, symbol_names
-from reviewrig.llm import Gateway
-from reviewrig.net import Allowlist
-from reviewrig.store import Store
-from reviewrig.store.index import Hit
-from reviewrig.watch import git
+from auger.config.schema import Backend, Config, ProfileEntry
+from auger.context import reindex
+from auger.context.retrieve import changed_ranges, context_for_diff, symbol_names
+from auger.llm import Gateway
+from auger.net import Allowlist
+from auger.store import Store
+from auger.store.index import Hit
+from auger.watch import git
 from tests.helpers import FakeModelServer, git_commit, git_init
 
 Serve = Callable[[object], Awaitable[str]]
@@ -117,7 +117,7 @@ async def test_a_diff_that_matches_nothing_returns_nothing(store: Store, reposit
 
 
 def context_empty() -> object:
-    from reviewrig.context.retrieve import ReviewContext
+    from auger.context.retrieve import ReviewContext
 
     return ReviewContext()
 
@@ -178,7 +178,7 @@ async def test_a_real_repository_diff_finds_related_code(store: Store) -> None:
 
 def test_a_chunk_both_searches_like_beats_one_only_a_single_search_likes() -> None:
     """This is the whole reason for rank fusion."""
-    from reviewrig.context.retrieve import merge
+    from auger.context.retrieve import merge
 
     both = Hit(1, "both.py", "both", 1, 2, "")
     keyword_only = Hit(2, "keyword.py", "keyword", 1, 2, "")
@@ -193,7 +193,7 @@ def test_the_score_scales_of_the_two_searches_do_not_decide_the_order() -> None:
     Combining them by score let the vector list win every time whatever its quality.
     Measured on this repository, that cut recall from 0.58 to 0.30.
     """
-    from reviewrig.context.retrieve import merge
+    from auger.context.retrieve import merge
 
     strong_keyword = Hit(1, "a.py", "a", 1, 2, "", score=0.05)
     weak_vector = Hit(2, "b.py", "b", 1, 2, "", score=0.95)
@@ -202,7 +202,7 @@ def test_the_score_scales_of_the_two_searches_do_not_decide_the_order() -> None:
 
 
 def test_an_excluded_chunk_stays_out_of_the_merge() -> None:
-    from reviewrig.context.retrieve import merge
+    from auger.context.retrieve import merge
 
     hit = Hit(1, "a.py", "a", 1, 2, "")
     assert merge([[hit]], exclude={1}) == []
@@ -214,7 +214,7 @@ def test_the_reranker_is_asked_a_question_not_given_a_diff() -> None:
     Passing the raw diff as the query measured far worse than not reranking at all:
     recall fell from 0.686 to 0.337 on this repository.
     """
-    from reviewrig.context.retrieve import rerank_query
+    from auger.context.retrieve import rerank_query
 
     query = rerank_query(["complete", "resolve"])
     assert "complete" in query
@@ -224,7 +224,7 @@ def test_the_reranker_is_asked_a_question_not_given_a_diff() -> None:
 
 
 def test_a_change_with_no_named_symbol_still_asks_something() -> None:
-    from reviewrig.context.retrieve import rerank_query
+    from auger.context.retrieve import rerank_query
 
     assert rerank_query([]) == "code related to this change"
     assert rerank_query(["ab"]) == "code related to this change"

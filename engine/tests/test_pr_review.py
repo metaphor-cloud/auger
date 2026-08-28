@@ -9,9 +9,9 @@ from pathlib import Path
 import httpx
 import pytest
 
-from reviewrig.config import Config, Policy, resolve_policy
-from reviewrig.config.schema import Backend, ProfileEntry
-from reviewrig.forge import (
+from auger.config import Config, Policy, resolve_policy
+from auger.config.schema import Backend, ProfileEntry
+from auger.forge import (
     Comment,
     Entry,
     ForgeError,
@@ -20,14 +20,14 @@ from reviewrig.forge import (
     PullRequest,
     Repo,
 )
-from reviewrig.forge.github import GitHub
-from reviewrig.jobs.pr_review import COMMENT_CONFIDENCE, review_pull, summary_text, to_comments
-from reviewrig.llm import Gateway
-from reviewrig.models import Remote, Repository
-from reviewrig.net import Allowlist
-from reviewrig.store import Store
-from reviewrig.store.findings import Finding, list_findings
-from reviewrig.store.runs import list_runs, pull_reviewed
+from auger.forge.github import GitHub
+from auger.jobs.pr_review import COMMENT_CONFIDENCE, review_pull, summary_text, to_comments
+from auger.llm import Gateway
+from auger.models import Remote, Repository
+from auger.net import Allowlist
+from auger.store import Store
+from auger.store.findings import Finding, list_findings
+from auger.store.runs import list_runs, pull_reviewed
 from tests.helpers import FakeGitHub, FakeModelServer
 
 Serve = Callable[[object], Awaitable[str]]

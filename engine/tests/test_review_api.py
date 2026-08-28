@@ -6,8 +6,8 @@ from typing import Any
 import httpx
 import pytest
 
-from reviewrig.rig import Rig
-from reviewrig.store.findings import Finding, record
+from auger.rig import Rig
+from auger.store.findings import Finding, record
 from tests.helpers import git_commit, git_init
 
 
@@ -120,7 +120,7 @@ async def test_the_queue_can_be_paused_and_resumed(
 async def test_the_run_log_is_readable(
     http: httpx.AsyncClient, token: str, rig: Rig, tree: Path
 ) -> None:
-    from reviewrig.store.runs import record_skip
+    from auger.store.runs import record_skip
 
     record_skip(rig.store, tree / "alpha", "diff_review", "agent_running", "claude(1)")
     async with http:
@@ -145,7 +145,7 @@ async def test_a_repeat_skip_shares_one_row(
     http: httpx.AsyncClient, token: str, rig: Rig, tree: Path
 ) -> None:
     """A repository that stays busy must not bury the rest of the log."""
-    from reviewrig.store.runs import record_skip
+    from auger.store.runs import record_skip
 
     for _ in range(5):
         record_skip(rig.store, tree / "alpha", "diff_review", "agent_running", "claude(1)")
@@ -170,7 +170,7 @@ async def test_a_security_scan_can_be_asked_for_by_hand(
 async def test_a_dismissed_finding_can_still_be_asked_for(
     http: httpx.AsyncClient, token: str, rig: Rig, tree: Path
 ) -> None:
-    from reviewrig.store.findings import set_triage
+    from auger.store.findings import set_triage
 
     finding = seed(rig, tree / "alpha")
     set_triage(rig.store, finding.fingerprint, "false", "not affected")

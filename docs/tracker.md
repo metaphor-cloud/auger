@@ -42,7 +42,7 @@ definition, and anything the tracker records is a task. The map filters on it.
 ## Attaching it to an agent
 
 The tracker speaks MCP over stdin and stdout. It opens no port and it holds no token, so
-nothing else on the machine can reach it, and it works when the reviewrig window is
+nothing else on the machine can reach it, and it works when the auger window is
 closed.
 
 In a checkout of this repository:
@@ -50,7 +50,7 @@ In a checkout of this repository:
 ```json
 {
   "mcpServers": {
-    "reviewrig": { "command": "reviewrig-tracker" }
+    "auger": { "command": "auger", "args": ["tracker"] }
   }
 }
 ```
@@ -60,8 +60,8 @@ From the packaged application:
 ```json
 {
   "mcpServers": {
-    "reviewrig": {
-      "command": "/Applications/reviewrig.app/Contents/Resources/engine/reviewrig-engine",
+    "auger": {
+      "command": "/Applications/auger.app/Contents/Resources/engine/auger",
       "args": ["tracker"]
     }
   }
@@ -69,7 +69,7 @@ From the packaged application:
 ```
 
 It takes the repository from the directory it starts in. Pass `--repo` to name another
-one, and `--home` to read another reviewrig home.
+one, and `--home` to read another auger home.
 
 ## The tools
 

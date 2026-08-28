@@ -20,6 +20,23 @@ type View = (typeof VIEWS)[number];
 /** One mark per view. A sidebar is read by shape before it is read by word. */
 const MARK: Record<View, string> = { Work: "◈", Runs: "≡", Settings: "⚙" };
 
+function PlayMark() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+      <path d="M2 1 L9 5 L2 9 Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function PauseMark() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+      <rect x="2" y="1" width="2.4" height="8" rx="0.6" fill="currentColor" />
+      <rect x="5.8" y="1" width="2.4" height="8" rx="0.6" fill="currentColor" />
+    </svg>
+  );
+}
+
 const LOUD = new Set(["critical", "high"]);
 
 export default function App() {
@@ -103,7 +120,7 @@ export default function App() {
     <div className="flex h-full bg-bg text-text-primary">
       <aside className="flex w-[13.5rem] shrink-0 flex-col border-r border-border bg-bg-elevated">
         <div className="flex items-center gap-2 px-4 py-3">
-          <span className="text-sm font-semibold tracking-tight">reviewrig</span>
+          <span className="text-sm font-semibold tracking-tight">auger</span>
         </div>
 
         <nav className="flex flex-1 flex-col gap-0.5 px-2">
@@ -128,10 +145,20 @@ export default function App() {
             <Button
               size="sm"
               variant="ghost"
-              className="w-full justify-start"
+              // Stopped is the state the window opens in, so the control that changes
+              // it carries the accent. Running is the quiet state.
+              className={`w-full justify-start ${queue.paused ? "text-accent" : ""}`}
+              title={
+                queue.paused
+                  ? "Start reviewing. Nothing runs until you do."
+                  : "Finish what is running, then stop pulling work."
+              }
               onClick={() => void togglePause()}
             >
-              {queue.paused ? "Resume reviews" : "Pause reviews"}
+              <span className="w-3 text-center">
+                {queue.paused ? <PlayMark /> : <PauseMark />}
+              </span>
+              {queue.paused ? "Start reviewing" : "Reviewing"}
               {queue.pending > 0 && (
                 <Badge variant="outline" className="ml-auto">
                   {queue.pending}

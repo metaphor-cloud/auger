@@ -9,19 +9,19 @@ from pathlib import Path
 
 import pytest
 
-from reviewrig.config import Config, Policy
-from reviewrig.config.schema import Backend, ProfileEntry
-from reviewrig.context import reindex
-from reviewrig.jobs.audit import audit, outline
-from reviewrig.llm import Gateway
-from reviewrig.models import Remote, Repository, RepositoryView
-from reviewrig.net import Allowlist
-from reviewrig.schedule import is_quiet
-from reviewrig.schedule.quiet import parse_window
-from reviewrig.schedule.watcher import audit_due
-from reviewrig.store import Store
-from reviewrig.store.findings import list_findings
-from reviewrig.store.runs import last_audit, set_audited
+from auger.config import Config, Policy
+from auger.config.schema import Backend, ProfileEntry
+from auger.context import reindex
+from auger.jobs.audit import audit, outline
+from auger.llm import Gateway
+from auger.models import Remote, Repository, RepositoryView
+from auger.net import Allowlist
+from auger.schedule import is_quiet
+from auger.schedule.quiet import parse_window
+from auger.schedule.watcher import audit_due
+from auger.store import Store
+from auger.store.findings import list_findings
+from auger.store.runs import last_audit, set_audited
 from tests.helpers import FakeModelServer, git_commit, git_init
 
 Serve = Callable[[object], Awaitable[str]]

@@ -17,11 +17,11 @@ import pytest
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
-from reviewrig.config.schema import Config
-from reviewrig.llm import catalog, runtime, setup
-from reviewrig.llm.catalog import CatalogError
-from reviewrig.net import download
-from reviewrig.net.download import DownloadError, allowed, fetch, safe_url
+from auger.config.schema import Config
+from auger.llm import catalog, runtime, setup
+from auger.llm.catalog import CatalogError
+from auger.net import download
+from auger.net.download import DownloadError, allowed, fetch, safe_url
 
 Serve = Callable[[object], Awaitable[str]]
 
@@ -352,7 +352,7 @@ def test_a_reranker_can_still_be_configured_by_hand() -> None:
 async def test_a_setup_that_cannot_reach_a_release_reports_the_reason(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from reviewrig.sandbox import which
+    from auger.sandbox import which
 
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
     monkeypatch.setattr(which, "EXTRA_PATHS", ())

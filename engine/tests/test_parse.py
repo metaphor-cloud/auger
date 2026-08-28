@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from reviewrig.jobs.parse import extract_object, parse_findings
+from auger.jobs.parse import extract_object, parse_findings
 
 ONE = {"findings": [{"file": "a.py", "title": "Leak", "severity": "high", "line": 12}]}
 

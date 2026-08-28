@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reviewrig.config.schema import Root
-from reviewrig.discovery import scan
-from reviewrig.discovery.walk import find_repositories
+from auger.config.schema import Root
+from auger.discovery import scan
+from auger.discovery.walk import find_repositories
 from tests.helpers import make_repo
 
 

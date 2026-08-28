@@ -1,11 +1,11 @@
-# reviewrig build tasks. Run `just` for the list.
+# auger build tasks. Run `just` for the list.
 
 root := justfile_directory()
 # In development the host runs the engine from the checkout. In a bundle it runs the
 # PyInstaller build from the resource directory.
-engine_cmd := "uv run --project " + root + "/engine reviewrig-engine"
+engine_cmd := "uv run --project " + root + "/engine auger"
 runtime := `command -v container || command -v podman || command -v docker || echo docker`
-image := "reviewrig/analysis:0.1"
+image := "auger/analysis:0.1"
 
 default:
     @just --list
@@ -17,11 +17,11 @@ setup:
 
 # Run the application against the engine in this checkout.
 dev:
-    cd {{root}}/app && REVIEWRIG_ENGINE_CMD="{{engine_cmd}}" pnpm tauri dev
+    cd {{root}}/app && AUGER_ENGINE_CMD="{{engine_cmd}}" pnpm tauri dev
 
 # Run the engine on its own. Useful with curl.
 engine:
-    cd {{root}}/engine && uv run reviewrig-engine
+    cd {{root}}/engine && uv run auger
 
 typecheck:
     cd {{root}}/engine && uv run mypy
@@ -54,7 +54,7 @@ build-sidecar:
     cd {{root}}/engine && uv run pyinstaller --clean --noconfirm \
         --distpath {{root}}/app/src-tauri/binaries \
         --workpath {{root}}/engine/build/pyinstaller \
-        reviewrig-engine.spec
+        auger.spec
 
 # Build the .app. It runs where it was built.
 package: build-sidecar

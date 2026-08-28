@@ -67,5 +67,5 @@ jobs:
       - run: just package
       - uses: actions/upload-artifact@v4
         with:
-          name: reviewrig-app
-          path: app/src-tauri/target/release/bundle/macos/reviewrig.app
+          name: auger-app
+          path: app/src-tauri/target/release/bundle/macos/auger.app

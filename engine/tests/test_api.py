@@ -8,8 +8,8 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from reviewrig import __version__
-from reviewrig.events import Event
+from auger import __version__
+from auger.events import Event
 
 
 async def test_health_needs_a_token(http: httpx.AsyncClient) -> None:

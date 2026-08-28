@@ -17,7 +17,7 @@ Everything it fetches is verified against a sha256 published by the repository. 
 download that fails part way carries on from where it stopped, and a file that does not
 match its checksum is deleted.
 
-The runtime goes in `~/.reviewrig/runtime`, the weights in `~/.reviewrig/models`.
+The runtime goes in `~/.auger/runtime`, the weights in `~/.auger/models`.
 
 ## Or use a server you already run
 

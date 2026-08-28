@@ -11,17 +11,17 @@ from pathlib import Path
 
 import pytest
 
-from reviewrig.config import Policy
-from reviewrig.config.schema import Backend, Config, ProfileEntry
-from reviewrig.forge import Registry
-from reviewrig.llm import Gateway, Health
-from reviewrig.mcp import McpRegistry
-from reviewrig.models import Remote, Repository, RepositoryView
-from reviewrig.net import Allowlist
-from reviewrig.sandbox import select
-from reviewrig.schedule import Scheduler, Task
-from reviewrig.store import Store
-from reviewrig.store.runs import list_runs
+from auger.config import Policy
+from auger.config.schema import Backend, Config, ProfileEntry
+from auger.forge import Registry
+from auger.llm import Gateway, Health
+from auger.mcp import McpRegistry
+from auger.models import Remote, Repository, RepositoryView
+from auger.net import Allowlist
+from auger.sandbox import select
+from auger.schedule import Scheduler, Task
+from auger.store import Store
+from auger.store.runs import list_runs
 from tests.helpers import FakeModelServer, git_commit, git_init
 
 Serve = Callable[[object], Awaitable[str]]

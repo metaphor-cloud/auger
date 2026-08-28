@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
-from reviewrig.config.schema import (
+from auger.config.schema import (
     Backend,
     Config,
     Egress,

@@ -7,9 +7,9 @@ from pathlib import Path
 import httpx
 import pytest
 
-from reviewrig.config.schema import Backend
-from reviewrig.llm import Supervisor, discover, probe, probe_all
-from reviewrig.llm.supervisor import port_of
+from auger.config.schema import Backend
+from auger.llm import Supervisor, discover, probe, probe_all
+from auger.llm.supervisor import port_of
 from tests.helpers import FakeModelServer
 
 Serve = Callable[[object], Awaitable[str]]
@@ -64,7 +64,7 @@ def test_it_will_not_start_without_a_runtime(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The message must say what to do, not what is missing."""
-    from reviewrig.sandbox import which
+    from auger.sandbox import which
 
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
     monkeypatch.setattr(which, "EXTRA_PATHS", ())
@@ -79,7 +79,7 @@ def test_it_prefers_the_runtime_the_rig_installed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A first run has nothing on PATH, so the rig's own copy is the only one."""
-    from reviewrig.sandbox import which
+    from auger.sandbox import which
 
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
     monkeypatch.setattr(which, "EXTRA_PATHS", ())

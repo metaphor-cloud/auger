@@ -9,8 +9,8 @@ from typing import Any
 
 import pytest
 
-from reviewrig.store.db import Store
-from reviewrig.store.findings import (
+from auger.store.db import Store
+from auger.store.findings import (
     ACTIVE,
     Finding,
     list_findings,
@@ -19,8 +19,8 @@ from reviewrig.store.findings import (
     search_findings,
     set_status,
 )
-from reviewrig.store.notes import add_note, note_counts, notes_for
-from reviewrig.tracker.repo import repository_for
+from auger.store.notes import add_note, note_counts, notes_for
+from auger.tracker.repo import repository_for
 
 REPO = "/tmp/repo"
 
@@ -171,7 +171,7 @@ def tracker(home: Path, repository: Path) -> Any:
             command=sys.executable,
             args=[
                 "-m",
-                "reviewrig.tracker",
+                "auger.tracker",
                 "--repo",
                 str(repository),
                 "--home",

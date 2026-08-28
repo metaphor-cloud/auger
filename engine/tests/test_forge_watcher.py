@@ -8,16 +8,16 @@ from pathlib import Path
 import httpx
 import pytest
 
-from reviewrig.config import Config, Policy
-from reviewrig.forge import Entry, ForgeState, Registry
-from reviewrig.forge.github import GitHub
-from reviewrig.llm import Gateway, Health
-from reviewrig.mcp import McpRegistry
-from reviewrig.models import Remote, Repository, RepositoryView
-from reviewrig.sandbox import select
-from reviewrig.schedule import Scheduler, poll_pull_requests
-from reviewrig.store import Store
-from reviewrig.store.runs import Run, finish, start
+from auger.config import Config, Policy
+from auger.forge import Entry, ForgeState, Registry
+from auger.forge.github import GitHub
+from auger.llm import Gateway, Health
+from auger.mcp import McpRegistry
+from auger.models import Remote, Repository, RepositoryView
+from auger.sandbox import select
+from auger.schedule import Scheduler, poll_pull_requests
+from auger.store import Store
+from auger.store.runs import Run, finish, start
 from tests.helpers import FakeGitHub
 
 Serve = Callable[[object], Awaitable[str]]
@@ -150,8 +150,8 @@ async def test_a_forge_that_refuses_does_not_stop_the_cycle(
 
 async def test_the_egress_allowlist_follows_the_enabled_forges(tmp_path: Path) -> None:
     """A forge that is off must not be reachable."""
-    from reviewrig.rig import Rig
-    from reviewrig.settings import Settings
+    from auger.rig import Rig
+    from auger.settings import Settings
 
     home = tmp_path / "home"
     home.mkdir()

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from reviewrig.events import QUEUE_SIZE, Event, EventBus
+from auger.events import QUEUE_SIZE, Event, EventBus
 
 
 async def test_a_subscriber_receives_a_published_event() -> None:

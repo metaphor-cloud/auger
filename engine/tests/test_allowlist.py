@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from reviewrig.net import Allowlist, Destination
+from auger.net import Allowlist, Destination
 
 
 @pytest.mark.parametrize(

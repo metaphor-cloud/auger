@@ -10,17 +10,17 @@
 
 ## From a release
 
-Download the `.dmg`, drag `reviewrig` to Applications, and open it. The rig appears in
+Download the `.dmg`, drag `auger` to Applications, and open it. The rig appears in
 the menu bar. It has no dock icon, because it runs all day.
 
-On first run it writes `~/.reviewrig/config.toml` pointing at `~/git`, walks it, and
+On first run it writes `~/.auger/config.toml` pointing at `~/git`, walks it, and
 lists what it found.
 
 ## From source
 
 ```
-git clone https://github.com/metaphor-cloud/reviewrig
-cd reviewrig
+git clone https://github.com/metaphor-cloud/auger
+cd auger
 just setup
 just build-image      # the analysis image. Needs network.
 just dev
@@ -30,15 +30,18 @@ just dev
 
 ## First run
 
+On the very first run a short wizard asks the two things it cannot guess: a directory to
+watch, and a model to review with. After that:
+
 1. Open the window from the menu bar.
-2. **Repositories** lists what the walk found. Edit `~/.reviewrig/config.toml` to change
-   the roots.
-3. **Models** shows whether a model server answers. Press Start managed to let the rig
-   run one.
-4. **Settings** sets what the rig may do, per repository and per organisation. It starts
-   in `draft` mode, which writes nothing that anyone else sees.
-5. **Findings** fills as reviews finish. **Runs** shows every attempt, including the ones
-   that were skipped and why.
+2. Press **Start reviewing** in the sidebar. auger opens stopped, so nothing runs until
+   you ask for it.
+3. **Work** lists what needs attention, and the strip above it shows every run as it
+   happens.
+4. **Settings** holds the rest, in the order a first run needs it: where to look,
+   models, review, tools, forges, system, advanced. It starts in `draft` mode, which
+   writes nothing that anyone else sees.
+5. **Runs** shows every attempt, including the ones that were skipped and why.
 
 ## Building a release
 
@@ -46,7 +49,7 @@ just dev
 just package
 ```
 
-That produces `reviewrig.app`. A `.dmg` that other people can open needs your own Apple
+That produces `auger.app`. A `.dmg` that other people can open needs your own Apple
 Developer certificate:
 
 ```
@@ -62,5 +65,5 @@ an unsigned application that arrived from elsewhere.
 
 ## Uninstall
 
-Delete the application, and `~/.reviewrig`. Turn off Start at login first, in the System
+Delete the application, and `~/.auger`. Turn off Start at login first, in the System
 view, or the login item stays behind.

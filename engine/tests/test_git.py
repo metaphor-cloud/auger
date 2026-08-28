@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from reviewrig.watch import git
+from auger.watch import git
 from tests.helpers import git_commit, git_init
 
 

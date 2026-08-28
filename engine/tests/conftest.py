@@ -10,9 +10,9 @@ import pytest
 import uvicorn
 from fastapi import FastAPI
 
-from reviewrig.api import create_app
-from reviewrig.rig import Rig
-from reviewrig.settings import Settings
+from auger.api import create_app
+from auger.rig import Rig
+from auger.settings import Settings
 
 
 @pytest.fixture
@@ -22,7 +22,7 @@ def token() -> str:
 
 @pytest.fixture
 def home(tmp_path: Path) -> Path:
-    """An isolated reviewrig home with no roots.
+    """An isolated auger home with no roots.
 
     A test must never walk the developer's own tree, so the config starts empty and each
     test adds the roots it needs.

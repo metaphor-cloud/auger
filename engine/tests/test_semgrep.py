@@ -8,17 +8,17 @@ from pathlib import Path
 
 import pytest
 
-from reviewrig.config import Policy
-from reviewrig.config.schema import Backend, Config, ProfileEntry
-from reviewrig.jobs.scan_job import run_scan
-from reviewrig.jobs.semgrep import command, parse, scan
-from reviewrig.jobs.triage import item_text, messages_for, parse_verdicts, triage
-from reviewrig.llm import Gateway
-from reviewrig.models import Remote, Repository
-from reviewrig.net import Allowlist
-from reviewrig.sandbox import Network, RunResult, RunSpec, SandboxError
-from reviewrig.store import Store
-from reviewrig.store.findings import counts, list_findings, record
+from auger.config import Policy
+from auger.config.schema import Backend, Config, ProfileEntry
+from auger.jobs.scan_job import run_scan
+from auger.jobs.semgrep import command, parse, scan
+from auger.jobs.triage import item_text, messages_for, parse_verdicts, triage
+from auger.llm import Gateway
+from auger.models import Remote, Repository
+from auger.net import Allowlist
+from auger.sandbox import Network, RunResult, RunSpec, SandboxError
+from auger.store import Store
+from auger.store.findings import counts, list_findings, record
 from tests.helpers import FakeModelServer
 
 Serve = Callable[[object], Awaitable[str]]
@@ -272,7 +272,7 @@ async def test_a_scan_run_stores_and_judges(
 ) -> None:
     model.reply = verdicts([{"id": 2, "verdict": "false", "reason": "ascii by construction"}])
     outcome = await run_scan(
-        store, gateway, StubSandbox(), REPOSITORY, Policy(), "reviewrig/analysis:0.1"
+        store, gateway, StubSandbox(), REPOSITORY, Policy(), "auger/analysis:0.1"
     )
     assert outcome.run.status == "ok"
     assert outcome.run.finding_count == 2

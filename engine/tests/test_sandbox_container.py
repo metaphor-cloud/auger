@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from reviewrig.sandbox import RunResult, RunSpec, Sandbox, select
-from reviewrig.sandbox.seatbelt import Seatbelt
+from auger.sandbox import RunResult, RunSpec, Sandbox, select
+from auger.sandbox.seatbelt import Seatbelt
 
 IMAGE = "python:3.12-alpine"
 

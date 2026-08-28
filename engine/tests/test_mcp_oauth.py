@@ -21,17 +21,17 @@ from urllib.parse import parse_qs, urlsplit
 import httpx2
 import pytest
 
-from reviewrig.config.schema import McpServer
-from reviewrig.mcp.client import Access
-from reviewrig.mcp.oauth import (
+from auger.config.schema import McpServer
+from auger.mcp.client import Access
+from auger.mcp.oauth import (
     OAuthError,
     background_provider,
     sign_in,
     signed_in,
     store_path,
 )
-from reviewrig.net.allowlist import Allowlist, Destination
-from reviewrig.net.client import guarded_mcp_client
+from auger.net.allowlist import Allowlist, Destination
+from auger.net.client import guarded_mcp_client
 
 TOKEN = "test-access-token"
 
@@ -239,7 +239,7 @@ async def test_a_tool_server_off_the_allowlist_is_refused(tmp_path: Path) -> Non
 @pytest.mark.asyncio
 async def test_a_sign_in_that_never_comes_back_gives_up(server: Any, tmp_path: Path) -> None:
     """A user who closes the browser tab gets an error, not a wait forever."""
-    from reviewrig.mcp import oauth
+    from auger.mcp import oauth
 
     config = McpServer(
         transport="http",
@@ -289,7 +289,7 @@ def test_access_defaults_to_an_empty_allowlist() -> None:
 
 @pytest.mark.asyncio
 async def test_a_timeout_does_not_leave_the_callback_port_open(server: Any, tmp_path: Path) -> None:
-    from reviewrig.mcp import oauth
+    from auger.mcp import oauth
 
     config = McpServer(
         transport="http",

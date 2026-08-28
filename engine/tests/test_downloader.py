@@ -9,7 +9,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.responses import Response
 
-from reviewrig.llm import DownloadError, Progress, download
+from auger.llm import DownloadError, Progress, download
 
 Serve = Callable[[object], Awaitable[str]]
 WEIGHTS = b"weights" * 4096

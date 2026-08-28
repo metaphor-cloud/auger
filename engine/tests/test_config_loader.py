@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from reviewrig.config import Config, Overrides, ensure_config, load, save
-from reviewrig.config.loader import home_dir, parse
+from auger.config import Config, Overrides, ensure_config, load, save
+from auger.config.loader import home_dir, parse
 
 
 def test_it_writes_a_starter_file(tmp_path: Path) -> None:
@@ -78,7 +78,7 @@ def test_a_save_round_trips(tmp_path: Path) -> None:
 
 
 def test_the_home_follows_the_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("REVIEWRIG_HOME", str(tmp_path))
+    monkeypatch.setenv("AUGER_HOME", str(tmp_path))
     assert home_dir() == tmp_path
 
 
@@ -94,7 +94,7 @@ def test_two_configs_do_not_share_their_defaults() -> None:
 
 def test_a_config_that_is_refused_says_why(tmp_path: Path) -> None:
     """One bad value discards the whole file, so the reason must reach the user."""
-    from reviewrig.config import load_result
+    from auger.config import load_result
 
     path = tmp_path / "config.toml"
     path.write_text("[schedule]\naudit_poll_seconds = 20\n", encoding="utf-8")
@@ -105,7 +105,7 @@ def test_a_config_that_is_refused_says_why(tmp_path: Path) -> None:
 
 
 def test_a_config_that_is_fine_reports_no_error(tmp_path: Path) -> None:
-    from reviewrig.config import load_result
+    from auger.config import load_result
 
     path = tmp_path / "config.toml"
     path.write_text('[defaults]\nmode = "off"\n', encoding="utf-8")
@@ -115,6 +115,6 @@ def test_a_config_that_is_fine_reports_no_error(tmp_path: Path) -> None:
 
 
 def test_a_missing_file_is_not_an_error(tmp_path: Path) -> None:
-    from reviewrig.config import load_result
+    from auger.config import load_result
 
     assert load_result(tmp_path / "gone.toml").error is None

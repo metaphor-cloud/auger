@@ -7,12 +7,12 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 import httpx
 import pytest
 
-from reviewrig.config.schema import Config
-from reviewrig.config.schema import Forge as ForgeConfig
-from reviewrig.forge import Comment, ForgeError, NoTokenError, Registry, Repo, resolve_token
-from reviewrig.forge.github import GitHub
-from reviewrig.forge.gitlab import GitLab
-from reviewrig.models import Remote, Repository
+from auger.config.schema import Config
+from auger.config.schema import Forge as ForgeConfig
+from auger.forge import Comment, ForgeError, NoTokenError, Registry, Repo, resolve_token
+from auger.forge.github import GitHub
+from auger.forge.gitlab import GitLab
+from auger.models import Remote, Repository
 from tests.helpers import FakeGitHub, FakeGitLab
 
 Serve = Callable[[object], Awaitable[str]]

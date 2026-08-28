@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reviewrig.discovery.gitdir import read_remote, resolve_git_dir
-from reviewrig.models import Remote
+from auger.discovery.gitdir import read_remote, resolve_git_dir
+from auger.models import Remote
 from tests.helpers import make_repo
 
 

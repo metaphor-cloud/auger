@@ -8,8 +8,8 @@ from typing import Any
 import httpx
 import pytest
 
-from reviewrig.config import load
-from reviewrig.rig import Rig
+from auger.config import load
+from auger.rig import Rig
 
 
 async def call(http: httpx.AsyncClient, token: str, method: str, path: str, **kwargs: Any) -> Any:
@@ -203,7 +203,7 @@ async def test_an_excluded_repository_is_never_reviewed(
     http: httpx.AsyncClient, token: str, rig: Rig, commented: Path, tmp_path: Path
 ) -> None:
     """It stays listed, so the user can see it was excluded rather than lost."""
-    from reviewrig.models import Remote, Repository
+    from auger.models import Remote, Repository
 
     repository = Repository(
         path=tmp_path / "dropped", remote=Remote("github.com", "acme", "dropped")

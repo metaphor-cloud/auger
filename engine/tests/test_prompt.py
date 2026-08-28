@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from reviewrig.jobs.prompt import HINTS_HEADER, review_messages
+from auger.jobs.prompt import HINTS_HEADER, review_messages
 
 
 def build(hints: str = "") -> str:
@@ -54,7 +54,7 @@ def test_no_hints_means_no_notes_section() -> None:
 
 def test_the_users_instructions_go_in_the_system_message() -> None:
     """They come from the user's own config file, so they are trusted."""
-    from reviewrig.jobs.prompt import system_prompt
+    from auger.jobs.prompt import system_prompt
 
     prompt = system_prompt("Report only security defects.")
     assert "Report only security defects." in prompt
@@ -62,7 +62,7 @@ def test_the_users_instructions_go_in_the_system_message() -> None:
 
 
 def test_no_instructions_leaves_the_rules_alone() -> None:
-    from reviewrig.jobs.prompt import SYSTEM, system_prompt
+    from auger.jobs.prompt import SYSTEM, system_prompt
 
     assert system_prompt("") == SYSTEM
     assert system_prompt("   ") == SYSTEM

@@ -25,11 +25,11 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
 /// Where the bundle keeps the engine, relative to the resource directory.
-const BUNDLED_ENGINE: &str = "engine/reviewrig-engine";
+const BUNDLED_ENGINE: &str = "engine/auger";
 
-/// Set this to run a different engine, for example `uv run reviewrig-engine` in a
+/// Set this to run a different engine, for example `uv run auger` in a
 /// development checkout. The value is a command line, split on whitespace.
-const ENGINE_COMMAND_OVERRIDE: &str = "REVIEWRIG_ENGINE_CMD";
+const ENGINE_COMMAND_OVERRIDE: &str = "AUGER_ENGINE_CMD";
 
 const START_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -144,9 +144,9 @@ pub fn start(app: &AppHandle) -> Result<Engine, StartError> {
     let token = generate_token();
     let mut command = engine_command(app)?;
     command
-        .env("REVIEWRIG_TOKEN", &token)
-        .env("REVIEWRIG_PORT", "0")
-        .env("REVIEWRIG_HOST", "127.0.0.1")
+        .env("AUGER_TOKEN", &token)
+        .env("AUGER_PORT", "0")
+        .env("AUGER_HOST", "127.0.0.1")
         // The engine reads nothing. It notices a dead host by its parent process id.
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

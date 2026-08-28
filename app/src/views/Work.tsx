@@ -27,6 +27,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   addNote,
+  changeExclusion,
   getFindings,
   getNotes,
   getRepositories,
@@ -265,7 +266,7 @@ export default function Work({
   const [categories, setCategories] = useState<Set<string>>(new Set(CATEGORY_NAMES));
   const [states, setStates] = useState<Set<string>>(new Set(["open", "doing"]));
   const [dismissed, setDismissed] = useState(false);
-  const [hours, setHours] = useState(6);
+  const [hours, setHours] = useState(0.5);
   const [readAt, setReadAt] = useState(() => Date.now());
   const [search, setSearch] = useState("");
   const [chosen, setChosen] = useState<Finding | null>(null);
@@ -347,6 +348,11 @@ export default function Work({
         ),
       );
     }
+  }
+
+  async function exclude(path: string) {
+    await changeExclusion(path, false);
+    await load();
   }
 
   async function changeState(finding: Finding, state: string) {
@@ -453,6 +459,15 @@ export default function Work({
                 onClick={() => void requestReview(group.path)}
               >
                 Review now
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 text-text-tertiary"
+                title="Never review this repository. It stays listed in Settings."
+                onClick={() => void exclude(group.path)}
+              >
+                Exclude
               </Button>
             </header>
             <ul className="divide-y divide-border-subtle/60">

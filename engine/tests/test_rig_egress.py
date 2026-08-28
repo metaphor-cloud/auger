@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reviewrig.rig import Rig
-from reviewrig.settings import Settings
+from auger.rig import Rig
+from auger.settings import Settings
 
 
 def rig_with(home: Path, config: str, token: str) -> Rig:

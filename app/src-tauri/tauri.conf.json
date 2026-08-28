@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "reviewrig",
+  "productName": "auger",
   "version": "0.1.0",
-  "identifier": "cloud.metaphor.reviewrig",
+  "identifier": "cloud.metaphor.auger",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "reviewrig",
+        "title": "auger",
         "width": 1000,
         "height": 700,
         "visible": false,

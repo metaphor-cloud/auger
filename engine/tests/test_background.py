@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from reviewrig.llm import Health
-from reviewrig.rig import Rig
-from reviewrig.schedule import watch, watch_audits, watch_forges, watch_models
-from reviewrig.settings import Settings
+from auger.llm import Health
+from auger.rig import Rig
+from auger.schedule import watch, watch_audits, watch_forges, watch_models
+from auger.settings import Settings
 from tests.helpers import git_commit, git_init
 
 
@@ -52,6 +52,22 @@ async def test_the_rig_starts_one_task_per_watcher(home: Path, token: str, tree:
         await rig.aclose()
 
 
+async def test_nothing_reviews_until_the_user_presses_play(
+    home: Path, token: str, tree: Path
+) -> None:
+    """The window opens stopped. The watchers still fill the queue, so it shows what
+    is waiting, and the machine stays quiet until somebody asks for the work."""
+    rig = Rig(Settings(host="127.0.0.1", port=0, token=token, log_level="debug", home=home))
+    try:
+        rig.scan()
+        await rig.start_background()
+        assert rig.scheduler.paused is True
+        rig.scheduler.resume()
+        assert rig.scheduler.paused is False
+    finally:
+        await rig.aclose()
+
+
 async def test_an_audit_is_queued_without_anyone_asking(home: Path, token: str, tree: Path) -> None:
     """This is the check that would have caught an audit watcher that never started."""
     rig = Rig(Settings(host="127.0.0.1", port=0, token=token, log_level="debug", home=home))
@@ -77,7 +93,7 @@ async def test_a_managed_backend_is_started_before_any_review(
     """A review that runs before its model is up fails and is recorded as a failure."""
     import httpx
 
-    from reviewrig.api import create_app
+    from auger.api import create_app
 
     (home / "config.toml").write_text(
         f'[[roots]]\npath = "{tree}"\n\n'
@@ -115,9 +131,9 @@ async def test_a_managed_server_that_died_is_not_reported_as_running(
     import stat
     import subprocess
 
-    from reviewrig.config.schema import Backend
-    from reviewrig.llm import Supervisor
-    from reviewrig.sandbox import which
+    from auger.config.schema import Backend
+    from auger.llm import Supervisor
+    from auger.sandbox import which
 
     server = tmp_path / "llama-server"
     server.write_text("#!/bin/sh\nsleep 300\n", encoding="utf-8")
@@ -142,6 +158,6 @@ async def test_a_managed_server_that_died_is_not_reported_as_running(
 
 def test_the_model_watchdog_is_in_the_list() -> None:
     """Without it a killed model server is never noticed and every review fails."""
-    from reviewrig.schedule import watch_models
+    from auger.schedule import watch_models
 
     assert watch_models in Rig.WATCHERS

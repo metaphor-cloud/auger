@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from reviewrig.discovery import parse_remote
-from reviewrig.models import Remote
+from auger.discovery import parse_remote
+from auger.models import Remote
 
 GITHUB = Remote(host="github.com", namespace="acme", name="thing")
 

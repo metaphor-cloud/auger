@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 import httpx
 import pytest
 
-from reviewrig.net import Allowlist, EgressProxy
+from auger.net import Allowlist, EgressProxy
 
 
 @pytest.fixture

@@ -5,10 +5,10 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 
 import pytest
 
-from reviewrig.config.schema import Backend, Config, JobClass, Profile, ProfileEntry
-from reviewrig.llm import EgressBlockedError, Gateway, Message, ModelError
-from reviewrig.llm.gateway import MissingBackendError
-from reviewrig.net import Allowlist
+from auger.config.schema import Backend, Config, JobClass, Profile, ProfileEntry
+from auger.llm import EgressBlockedError, Gateway, Message, ModelError
+from auger.llm.gateway import MissingBackendError
+from auger.net import Allowlist
 from tests.helpers import FakeModelServer
 
 Serve = Callable[[object], Awaitable[str]]
@@ -166,7 +166,7 @@ async def test_a_blocked_backend_is_a_model_error_so_one_run_fails_and_not_the_r
 async def test_a_large_rerank_is_sent_in_batches(gateway: Gateway, fake: FakeModelServer) -> None:
     """Forty chunks in one call returned 500 from a real server, and the rig retried it
     three times and then lost the whole ordering step."""
-    from reviewrig.llm.gateway import RERANK_BATCH
+    from auger.llm.gateway import RERANK_BATCH
 
     documents = [f"chunk {index}" for index in range(20)]
     scores = await gateway.rerank("query", documents)
@@ -180,7 +180,7 @@ async def test_each_document_is_trimmed_before_it_is_sent(
     gateway: Gateway, fake: FakeModelServer
 ) -> None:
     """A reranker judges relevance from the head of a chunk. The rest is cost."""
-    from reviewrig.llm.gateway import RERANK_DOCUMENT_CHARS
+    from auger.llm.gateway import RERANK_DOCUMENT_CHARS
 
     await gateway.rerank("query", ["x" * (RERANK_DOCUMENT_CHARS * 3)])
     sent = fake.requests[0]["documents"][0]

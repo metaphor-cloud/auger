@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from reviewrig.config.schema import CodeGraph
-from reviewrig.context import codegraph
+from auger.config.schema import CodeGraph
+from auger.context import codegraph
 
 OUTPUT = json.dumps(
     {
@@ -57,7 +57,7 @@ def test_it_is_off_until_it_is_turned_on(tmp_path: Path) -> None:
 
 
 def test_it_says_when_the_tool_is_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from reviewrig.sandbox import which
+    from auger.sandbox import which
 
     (tmp_path / ".codegraph").mkdir()
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
@@ -71,7 +71,7 @@ def test_it_says_when_the_repository_has_no_index(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The rig reads an index that is there. It never makes one."""
-    from reviewrig.sandbox import which
+    from auger.sandbox import which
 
     tools = tmp_path / "bin"
     tools.mkdir()
@@ -86,7 +86,7 @@ def test_it_says_when_the_repository_has_no_index(
 def test_it_asks_only_when_everything_is_ready(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from reviewrig.sandbox import which
+    from auger.sandbox import which
 
     repository = tmp_path / "repo"
     (repository / ".codegraph").mkdir(parents=True)
@@ -105,7 +105,7 @@ def test_it_asks_only_when_everything_is_ready(
 def test_a_tool_that_fails_returns_no_callers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from reviewrig.sandbox import which
+    from auger.sandbox import which
 
     repository = tmp_path / "repo"
     (repository / ".codegraph").mkdir(parents=True)
@@ -120,7 +120,7 @@ def test_a_tool_that_fails_returns_no_callers(
 def test_the_same_caller_is_not_returned_twice(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from reviewrig.sandbox import which
+    from auger.sandbox import which
 
     repository = tmp_path / "repo"
     (repository / ".codegraph").mkdir(parents=True)

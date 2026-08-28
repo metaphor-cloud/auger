@@ -1,4 +1,4 @@
-/** Shapes that the engine returns. These mirror `engine/src/reviewrig/api/models.py`. */
+/** Shapes that the engine returns. These mirror `engine/src/auger/api/models.py`. */
 
 export type Mode = "off" | "draft" | "complete";
 

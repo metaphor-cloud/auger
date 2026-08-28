@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 
-from reviewrig.rig import Rig
+from auger.rig import Rig
 
 
 async def get(http: httpx.AsyncClient, token: str, path: str) -> Any:

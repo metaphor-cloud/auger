@@ -1,4 +1,4 @@
-//! The reviewrig host.
+//! The auger host.
 //!
 //! Rust owns the tray, the window, the engine lifecycle, and the token. It holds no
 //! review logic. Every decision about repositories, policy, and models lives in the

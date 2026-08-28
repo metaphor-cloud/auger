@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from reviewrig.store import Store
-from reviewrig.store.findings import (
+from auger.store import Store
+from auger.store.findings import (
     Finding,
     counts,
     fingerprint,

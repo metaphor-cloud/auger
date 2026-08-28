@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 import pytest
 
-from reviewrig.rig import Rig
+from auger.rig import Rig
 from tests.helpers import make_repo
 
 

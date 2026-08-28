@@ -90,9 +90,9 @@ generates at start. Any local process can reach a loopback port, so every route 
 
 ## What the rig writes
 
-- `~/.reviewrig/config.toml`, when you change a setting in the UI.
-- `~/.reviewrig/reviewrig.db`, the findings, runs, and code index.
-- `~/.reviewrig/models`, downloaded weights.
+- `~/.auger/config.toml`, when you change a setting in the UI.
+- `~/.auger/auger.db`, the findings, runs, and code index.
+- `~/.auger/models`, downloaded weights.
 - A pull request review, and only in `complete` mode.
 
 It never writes to a repository.

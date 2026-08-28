@@ -6,9 +6,9 @@ from pathlib import Path
 
 import httpx
 
-from reviewrig.models import Remote, Repository
-from reviewrig.rig import Rig
-from reviewrig.store.repositories import record_scan
+from auger.models import Remote, Repository
+from auger.rig import Rig
+from auger.store.repositories import record_scan
 from tests.helpers import git_commit, git_init
 
 

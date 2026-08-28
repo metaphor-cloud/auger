@@ -1,10 +1,10 @@
 # Configuration
 
-One file: `~/.reviewrig/config.toml`. The rig writes a starter version on first run.
+One file: `~/.auger/config.toml`. The rig writes a starter version on first run.
 
 The UI edits the same file and keeps your comments, so you can use either.
 
-Set `REVIEWRIG_HOME` to move the whole directory, which holds the config, the database,
+Set `AUGER_HOME` to move the whole directory, which holds the config, the database,
 and the model weights.
 
 ## Roots
@@ -124,7 +124,7 @@ change the rules or the output format.
 A job asks for a job class, never for a model. The profile decides which backend answers.
 
 ```toml
-image = "reviewrig/analysis:0.1"
+image = "auger/analysis:0.1"
 
 [backend.local-review]
 url = "http://127.0.0.1:8080/v1"
@@ -145,7 +145,7 @@ max_tokens = 8192
 | `max_concurrent` | `4` | Requests in flight. A batch server stays full at this depth. |
 | `hosted` | `false` | This backend sends your code off the machine. |
 | `managed` | `false` | Start this server when nothing answers at `url`. |
-| `model_file` | `""` | Weights under `~/.reviewrig/models`. |
+| `model_file` | `""` | Weights under `~/.auger/models`. |
 | `model_url` | `""` | Where to fetch the weights. |
 | `args` | `[]` | Extra arguments for a managed server. |
 
@@ -248,7 +248,7 @@ auth = "oauth"
 ```
 
 Press Sign in under Settings, Tools. A browser opens, you approve, and the token is
-written to `~/.reviewrig/oauth/<name>.json`, which only you can read. The rig registers
+written to `~/.auger/oauth/<name>.json`, which only you can read. The rig registers
 itself with the authorization server on the first sign in.
 
 A background review never opens a browser. It uses the stored token and refreshes it on

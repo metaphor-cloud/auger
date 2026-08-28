@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reviewrig.config import Config, resolve_policy
-from reviewrig.config.policy import matching_org_keys, matching_repo_keys
-from reviewrig.models import Remote, Repository
+from auger.config import Config, resolve_policy
+from auger.config.policy import matching_org_keys, matching_repo_keys
+from auger.models import Remote, Repository
 
 
 def repository(path: str, slug: str | None = "github.com/acme/thing") -> Repository:

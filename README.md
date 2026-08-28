@@ -1,4 +1,4 @@
-# reviewrig
+# auger
 
 A background code review rig. Point it at the directories that hold your git
 repositories. It finds every repository, watches them, and reviews the changes with
@@ -21,6 +21,7 @@ an allowlist that logs every request.
 - Runs Semgrep in the sandbox and asks a model which of its findings are real.
 - Audits a whole repository on a slower timer, for the problems a diff cannot show.
 - Waits when another coding agent is working in a repository.
+- Opens stopped. Nothing reviews until you press play, so the machine stays yours.
 - Keeps the work items for each repository, and lets your agent search and write them
   over MCP, so it knows what it already did. See [docs/tracker.md](docs/tracker.md).
 
@@ -49,8 +50,9 @@ kind, and an item nobody has read breathes until it is read. Filter by kind, by 
 or by any word. Open one to read it, write a note on it, change its state, and reach the
 run that found it.
 
-Above the list is the one picture: every run over the last hours, one column per slice
-of time, stacked by outcome, with each finding marked below at the moment it appeared.
+Above the list is the one picture: every run over the last half hour, one column per
+slice of time, stacked by outcome, with each finding marked below at the moment it
+appeared. Widen the window to three days when you want the shape of a week instead.
 Time is the axis where a rig that runs all day actually varies, so that is where the
 drawing goes. A run that fails sits at the top of its column, where the eye lands.
 
@@ -64,7 +66,7 @@ to watch, and a model to review with.
 
 ## Settings
 
-One file at `~/.reviewrig/config.toml`, and the UI edits the same file without losing
+One file at `~/.auger/config.toml`, and the UI edits the same file without losing
 your comments. Settings merge in three levels: everything, one forge organisation, then
 one repository. The narrow level wins.
 

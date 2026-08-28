@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from reviewrig.context.chunker import chunk_file
-from reviewrig.context.indexer import changed_files, reindex
-from reviewrig.store import Store
-from reviewrig.store.index import chunk_count, chunks_for_symbol, chunks_in_file, search_text
+from auger.context.chunker import chunk_file
+from auger.context.indexer import changed_files, reindex
+from auger.store import Store
+from auger.store.index import chunk_count, chunks_for_symbol, chunks_in_file, search_text
 from tests.helpers import git_commit, git_init
 
 READER = "def read(path):\n    return path\n"

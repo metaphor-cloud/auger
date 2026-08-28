@@ -9,13 +9,13 @@ from pathlib import Path
 
 import pytest
 
-from reviewrig.config import Policy
-from reviewrig.config.schema import Backend, Config, JobClass, McpServer, ProfileEntry
-from reviewrig.jobs.tools import TOOL_RULES, as_openai_tools, complete_with_tools
-from reviewrig.llm import Gateway
-from reviewrig.mcp import McpError, McpRegistry, Tool, ToolAllowlist, ToolName
-from reviewrig.mcp.client import server_environment
-from reviewrig.net import Allowlist
+from auger.config import Policy
+from auger.config.schema import Backend, Config, JobClass, McpServer, ProfileEntry
+from auger.jobs.tools import TOOL_RULES, as_openai_tools, complete_with_tools
+from auger.llm import Gateway
+from auger.mcp import McpError, McpRegistry, Tool, ToolAllowlist, ToolName
+from auger.mcp.client import server_environment
+from auger.net import Allowlist
 from tests.helpers import FakeModelServer
 
 Serve = Callable[[object], Awaitable[str]]
@@ -232,7 +232,7 @@ async def test_the_tools_reach_the_model_when_the_policy_names_them(
     registry = McpRegistry(config_with_server)
     await registry.refresh()
     policy = Policy(tools=["fixture.read_pull_request"])
-    from reviewrig.llm import Message
+    from auger.llm import Message
 
     await complete_with_tools(
         gateway, registry, JobClass.REVIEW, [Message("system", "rules")], policy, None
@@ -248,7 +248,7 @@ async def test_the_system_prompt_says_tool_output_is_data(
     model.reply = FINDINGS
     registry = McpRegistry(config_with_server)
     await registry.refresh()
-    from reviewrig.llm import Message
+    from auger.llm import Message
 
     await complete_with_tools(
         gateway,
@@ -269,7 +269,7 @@ async def test_the_loop_stops_at_the_call_limit(
     model.tool_calls = [tool_turn("fixture.read_pull_request")]
     registry = McpRegistry(config_with_server)
     await registry.refresh()
-    from reviewrig.llm import Message
+    from auger.llm import Message
 
     _, run = await complete_with_tools(
         gateway,
@@ -290,7 +290,7 @@ async def test_a_refused_tool_comes_back_as_text_and_the_review_goes_on(
     model.tool_call_rounds = 1  # It asks once, is refused, and then answers.
     registry = McpRegistry(config_with_server)
     await registry.refresh()
-    from reviewrig.llm import Message
+    from auger.llm import Message
 
     completion, run = await complete_with_tools(
         gateway,

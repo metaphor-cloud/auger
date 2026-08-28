@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from reviewrig.context.languages import indexable, language_for
-from reviewrig.context.repomap import map_file
+from auger.context.languages import indexable, language_for
+from auger.context.repomap import map_file
 
 PYTHON = b'''
 import os

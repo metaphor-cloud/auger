@@ -8,9 +8,9 @@ from typing import Any
 import httpx
 import pytest
 
-from reviewrig.rig import Rig
-from reviewrig.store.findings import Finding, record, set_status, set_triage
-from reviewrig.store.runs import Run, finish, record_skip, start
+from auger.rig import Rig
+from auger.store.findings import Finding, record, set_status, set_triage
+from auger.store.runs import Run, finish, record_skip, start
 from tests.helpers import git_commit, git_init
 
 
@@ -67,7 +67,7 @@ async def test_a_suppressed_or_dismissed_finding_is_counted_apart(
     http: httpx.AsyncClient, token: str, rig: Rig, tree: Path
 ) -> None:
     record(rig.store, [finding(tree / "alpha", "one"), finding(tree / "alpha", "two")])
-    from reviewrig.store.findings import list_findings
+    from auger.store.findings import list_findings
 
     rows = list_findings(rig.store)
     set_status(rig.store, [rows[0].fingerprint], "suppressed")

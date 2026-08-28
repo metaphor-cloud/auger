@@ -8,16 +8,16 @@ from pathlib import Path
 
 import pytest
 
-from reviewrig.config import Policy
-from reviewrig.config.schema import Backend, Config, ProfileEntry
-from reviewrig.jobs import diff_review
-from reviewrig.llm import Gateway
-from reviewrig.models import Remote, Repository
-from reviewrig.net import Allowlist
-from reviewrig.store import Store
-from reviewrig.store.findings import list_findings
-from reviewrig.store.runs import list_runs, reviewed_head
-from reviewrig.watch import git
+from auger.config import Policy
+from auger.config.schema import Backend, Config, ProfileEntry
+from auger.jobs import diff_review
+from auger.llm import Gateway
+from auger.models import Remote, Repository
+from auger.net import Allowlist
+from auger.store import Store
+from auger.store.findings import list_findings
+from auger.store.runs import list_runs, reviewed_head
+from auger.watch import git
 from tests.helpers import FakeModelServer, git_commit, git_init
 
 Serve = Callable[[object], Awaitable[str]]

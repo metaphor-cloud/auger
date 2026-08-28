@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from reviewrig.sandbox import (
+from auger.sandbox import (
     SEATBELT_WARNING,
     AppleContainer,
     Docker,
@@ -24,7 +24,7 @@ from reviewrig.sandbox import (
     Seatbelt,
     select,
 )
-from reviewrig.sandbox.select import Selection
+from auger.sandbox.select import Selection
 
 IMAGE = "python:3.12-alpine"
 
@@ -34,7 +34,7 @@ def spec(tmp_path: Path, command: list[str], **kwargs: object) -> RunSpec:
 
 
 def arguments(backend: OciSandbox, tmp_path: Path, **kwargs: object) -> list[str]:
-    return backend.arguments(spec(tmp_path, ["true"], **kwargs), "reviewrig-test")
+    return backend.arguments(spec(tmp_path, ["true"], **kwargs), "auger-test")
 
 
 # --- argument rules -------------------------------------------------------------------
@@ -67,7 +67,7 @@ def test_the_process_drops_every_capability(backend: OciSandbox, tmp_path: Path)
 def test_the_container_is_removed_and_named(backend: OciSandbox, tmp_path: Path) -> None:
     line = arguments(backend, tmp_path)
     assert "--rm" in line
-    assert line[line.index("--name") + 1] == "reviewrig-test"
+    assert line[line.index("--name") + 1] == "auger-test"
 
 
 def test_apple_container_turns_off_name_resolution(tmp_path: Path) -> None:
@@ -85,12 +85,12 @@ def test_the_scratch_size_is_capped_where_the_runtime_allows_it(tmp_path: Path) 
 
 
 def test_the_environment_reaches_the_container(tmp_path: Path) -> None:
-    line = arguments(AppleContainer(), tmp_path, env={"REVIEWRIG_JOB": "j1"})
-    assert line[line.index("--env") + 1] == "REVIEWRIG_JOB=j1"
+    line = arguments(AppleContainer(), tmp_path, env={"AUGER_JOB": "j1"})
+    assert line[line.index("--env") + 1] == "AUGER_JOB=j1"
 
 
 def test_the_command_comes_last(tmp_path: Path) -> None:
-    line = AppleContainer().arguments(spec(tmp_path, ["semgrep", "--json"]), "reviewrig-test")
+    line = AppleContainer().arguments(spec(tmp_path, ["semgrep", "--json"]), "auger-test")
     assert line[-3:] == [IMAGE, "semgrep", "--json"]
 
 
@@ -135,7 +135,7 @@ def test_seatbelt_can_read_the_repository(tmp_path: Path) -> None:
 
 @pytest.mark.skipif(not Seatbelt().available(), reason="sandbox-exec is missing")
 def test_seatbelt_can_write_to_its_scratch(tmp_path: Path) -> None:
-    result = Seatbelt().run(spec(tmp_path, ["sh", "-c", 'touch "$REVIEWRIG_SCRATCH/x" && echo ok']))
+    result = Seatbelt().run(spec(tmp_path, ["sh", "-c", 'touch "$AUGER_SCRATCH/x" && echo ok']))
     assert result.stdout.strip() == "ok"
 
 
@@ -155,7 +155,7 @@ def test_a_runtime_outside_the_graphical_path_is_still_found(
 ) -> None:
     """An application started at login inherits launchd's PATH, which holds no
     package manager directory. Without this, a Homebrew install looks absent."""
-    from reviewrig.sandbox import which
+    from auger.sandbox import which
 
     brew = tmp_path / "brew-bin"
     brew.mkdir()
@@ -170,7 +170,7 @@ def test_a_runtime_outside_the_graphical_path_is_still_found(
 def test_a_tool_that_is_nowhere_is_not_found(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from reviewrig.sandbox import which
+    from auger.sandbox import which
 
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
     monkeypatch.setattr(which, "EXTRA_PATHS", (str(tmp_path / "also-empty"),))
@@ -179,5 +179,5 @@ def test_a_tool_that_is_nowhere_is_not_found(
 
 def test_the_command_uses_the_full_path(tmp_path: Path) -> None:
     """A narrow PATH would otherwise make the runtime unreachable at run time too."""
-    line = AppleContainer().arguments(spec(tmp_path, ["true"]), "reviewrig-test")
+    line = AppleContainer().arguments(spec(tmp_path, ["true"]), "auger-test")
     assert line[0].endswith("container")

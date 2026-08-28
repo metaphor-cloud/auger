@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 import pytest
 
-from reviewrig.parent import watch_for_reparent
+from auger.parent import watch_for_reparent
 
 
 def reader(values: list[int]) -> Callable[[], int]:

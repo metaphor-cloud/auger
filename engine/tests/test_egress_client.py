@@ -3,7 +3,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from reviewrig.net import Allowlist, EgressRefused, GuardedTransport
+from auger.net import Allowlist, EgressRefused, GuardedTransport
 
 
 def guarded(values: list[str], handler: object) -> httpx.AsyncClient:

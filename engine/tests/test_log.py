@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from reviewrig.log import create_logger, serialise
+from auger.log import create_logger, serialise
 
 
 def test_a_line_is_one_json_object_with_level_and_message(

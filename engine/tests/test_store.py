@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reviewrig.models import Remote, Repository
-from reviewrig.store import Store
-from reviewrig.store.db import MIGRATIONS
-from reviewrig.store.repositories import list_repositories, record_scan
+from auger.models import Remote, Repository
+from auger.store import Store
+from auger.store.db import MIGRATIONS
+from auger.store.repositories import list_repositories, record_scan
 
 
 def repository(path: str, name: str = "thing") -> Repository:

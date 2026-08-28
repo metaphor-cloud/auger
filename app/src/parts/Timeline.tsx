@@ -10,6 +10,16 @@ import { useMemo, useState } from "react";
 import { severityOf } from "../palette";
 import { gather, peak, scale, type FindingMark, type Mark } from "./buckets";
 
+/** What the strip can show. The first is the default: a person watching their own
+    machine wants the last few minutes, not the last few hours. */
+const WINDOWS = [
+  { hours: 0.25, label: "15m" },
+  { hours: 0.5, label: "30m" },
+  { hours: 2, label: "2h" },
+  { hours: 12, label: "12h" },
+  { hours: 72, label: "3d" },
+];
+
 const HEIGHT = 74;
 const BARS = 52;
 const MARKS = 12;
@@ -70,17 +80,17 @@ export default function Timeline({
           </span>
         )}
         <span className="ml-auto flex items-center gap-1">
-          {[6, 12, 24, 72].map((one) => (
+          {WINDOWS.map((one) => (
             <button
-              key={one}
-              onClick={() => onHours(one)}
+              key={one.hours}
+              onClick={() => onHours(one.hours)}
               className={
-                one === hours
+                one.hours === hours
                   ? "rounded px-1.5 py-0.5 text-accent"
                   : "rounded px-1.5 py-0.5 text-text-tertiary transition-colors hover:text-text-secondary"
               }
             >
-              {one}h
+              {one.label}
             </button>
           ))}
           <button

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from reviewrig.watch import busy
+from auger.watch import busy
 from tests.helpers import git_commit, git_init
 
 
