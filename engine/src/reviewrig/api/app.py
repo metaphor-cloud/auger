@@ -15,7 +15,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from sse_starlette.sse import EventSourceResponse
 from starlette.datastructures import Headers
 from starlette.middleware.cors import CORSMiddleware
@@ -27,6 +27,7 @@ from reviewrig.api.models import (
     BackendOut,
     CatalogOut,
     CodeGraphChange,
+    ConfigText,
     DashboardOut,
     EgressOut,
     ExcludeChange,
@@ -34,8 +35,10 @@ from reviewrig.api.models import (
     FindingOut,
     ForgeList,
     ForgeOut,
+    ForgeSetting,
     IndexOut,
     McpServerOut,
+    McpServerSetting,
     ModelChoiceOut,
     PolicyChange,
     PolicyLevelOut,
@@ -43,9 +46,11 @@ from reviewrig.api.models import (
     RepositoryList,
     RepositorySummaryOut,
     ReviewRequest,
+    RootOut,
     RunList,
     RunOut,
     SandboxOut,
+    SettingChange,
     SettingsOut,
     SetupOut,
     SetupRequest,
@@ -57,6 +62,7 @@ from reviewrig.api.models import (
 from reviewrig.config.schema import JobClass
 from reviewrig.events import Event
 from reviewrig.log import Logger
+from reviewrig.mcp import OAuthError
 from reviewrig.rig import Rig
 from reviewrig.store.findings import counts, list_findings, set_status
 from reviewrig.store.index import chunk_count
@@ -125,6 +131,17 @@ async def _boot(rig: Rig) -> None:
     # to load, and the UI is already connected and watching.
     await rig.ensure_models()
     await rig.start_background()
+
+
+def _first_problem(error: Exception) -> str:
+    """One readable sentence out of a validation failure."""
+    from pydantic import ValidationError
+
+    if isinstance(error, ValidationError) and error.errors():
+        first = error.errors()[0]
+        where = ".".join(str(part) for part in first.get("loc", ()))
+        return f"{where or 'config'}: {first.get('msg', 'is invalid')}"
+    return str(error)
 
 
 def _warnings(rig: Rig) -> list[str]:
@@ -426,6 +443,8 @@ def create_app(rig: Rig) -> FastAPI:
                         )
                         for tool in state.tools
                     ],
+                    needs_sign_in=state.needs_sign_in,
+                    signed_in=state.needs_sign_in and rig.tools.signed_in(name),
                 )
                 for name, state in sorted(rig.tools.servers.items())
             ],
@@ -435,6 +454,18 @@ def create_app(rig: Rig) -> FastAPI:
     @router.post("/tools/check")
     async def check_tools() -> ToolList:
         await rig.check_tools()
+        return await tools()
+
+    @router.post("/tools/{name}/sign-in")
+    async def sign_in_tool(name: str) -> ToolList:
+        """Sign in to one MCP server, in a browser, because the user asked.
+
+        A review never reaches this route. It is the only place a browser opens.
+        """
+        try:
+            await rig.sign_in_tool(name)
+        except OAuthError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
         return await tools()
 
     @router.get("/settings")
@@ -455,6 +486,25 @@ def create_app(rig: Rig) -> FastAPI:
             exclude=list(rig.config.exclude),
             codegraph=rig.config.codegraph.enabled,
             codegraph_available=find(rig.config.codegraph.command) is not None,
+            roots=[
+                RootOut(path=str(root.path), exclude=list(root.exclude), max_depth=root.max_depth)
+                for root in rig.config.roots
+            ],
+            mcp=[
+                McpServerSetting(
+                    name=name,
+                    transport=server.transport,
+                    target=server.url or server.command,
+                    enabled=server.enabled,
+                )
+                for name, server in sorted(rig.config.mcp.items())
+            ],
+            forges=[
+                ForgeSetting(name=name, host=forge.host, enabled=forge.enabled)
+                for name, forge in sorted(rig.config.forge.items())
+            ],
+            schedule=rig.config.schedule.model_dump(mode="json"),
+            allow_hosted=rig.config.egress.allow_hosted,
         )
 
     @router.put("/settings")
@@ -466,6 +516,32 @@ def create_app(rig: Rig) -> FastAPI:
             )
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+        return await settings_view()
+
+    @router.put("/settings/value")
+    async def change_setting(change: SettingChange) -> SettingsOut:
+        """Change any setting by its dotted path.
+
+        One route rather than a form per key, so nothing in the config file is beyond
+        the UI's reach.
+        """
+        try:
+            await asyncio.to_thread(rig.set_setting, change.path, change.value, change.remove)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=_first_problem(error)) from error
+        return await settings_view()
+
+    @router.get("/settings/raw", response_class=PlainTextResponse)
+    async def read_config() -> str:
+        return await asyncio.to_thread(rig.config_text)
+
+    @router.put("/settings/raw")
+    async def write_config(body: ConfigText) -> SettingsOut:
+        """Replace the whole file. Nothing is written when it does not parse."""
+        try:
+            await asyncio.to_thread(rig.write_config, body.text)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=_first_problem(error)) from error
         return await settings_view()
 
     @router.put("/settings/exclude")

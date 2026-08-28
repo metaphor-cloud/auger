@@ -6,6 +6,8 @@ from reviewrig.config.loader import (
     load,
     load_result,
     save,
+    set_value,
+    split_path,
 )
 from reviewrig.config.policy import is_excluded, resolve_policy
 from reviewrig.config.schema import CodeGraph, Config, Egress, Mode, Overrides, Policy, Root
@@ -27,4 +29,6 @@ __all__ = [
     "load_result",
     "resolve_policy",
     "save",
+    "set_value",
+    "split_path",
 ]

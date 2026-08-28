@@ -232,3 +232,135 @@ async def test_the_settings_say_whether_codegraph_is_installed(
     async with http:
         body = await call(http, token, "GET", "/settings")
     assert isinstance(body["codegraph_available"], bool)
+
+
+async def test_any_setting_can_be_changed_by_its_path(
+    http: httpx.AsyncClient, token: str, commented: Path
+) -> None:
+    """One route reaches every key, so nothing in the file is beyond the UI."""
+    async with http:
+        body = await call(
+            http,
+            token,
+            "PUT",
+            "/settings/value",
+            json={"path": "schedule.poll_seconds", "value": 45},
+        )
+    assert body["schedule"]["poll_seconds"] == 45
+    assert load(commented).schedule.poll_seconds == 45
+
+
+async def test_a_key_that_holds_dots_is_quoted(
+    http: httpx.AsyncClient, token: str, commented: Path
+) -> None:
+    async with http:
+        body = await call(
+            http,
+            token,
+            "PUT",
+            "/settings/value",
+            json={"path": 'repo."~/git/acme/payments".priority', "value": 1},
+        )
+    assert {"level": "repo", "key": "~/git/acme/payments", "overrides": {"priority": 1}} in body[
+        "levels"
+    ]
+    assert load(commented).repo["~/git/acme/payments"].priority == 1
+
+
+async def test_a_setting_can_be_removed(
+    http: httpx.AsyncClient, token: str, commented: Path
+) -> None:
+    async with http:
+        await call(
+            http,
+            token,
+            "PUT",
+            "/settings/value",
+            json={"path": 'mcp."acme"', "value": {"command": "echo"}},
+        )
+        body = await call(
+            http,
+            token,
+            "PUT",
+            "/settings/value",
+            json={"path": 'mcp."acme"', "value": None, "remove": True},
+        )
+    assert body["mcp"] == []
+    assert load(commented).mcp == {}
+
+
+async def test_a_refused_value_leaves_the_file_alone(
+    http: httpx.AsyncClient, token: str, commented: Path
+) -> None:
+    """The whole config is validated before anything is written."""
+    before = commented.read_text(encoding="utf-8")
+    async with http:
+        response = await http.put(
+            "/settings/value",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"path": "schedule.poll_seconds", "value": 1},
+        )
+    assert response.status_code == 400
+    assert "poll_seconds" in response.text
+    assert commented.read_text(encoding="utf-8") == before
+
+
+async def test_the_roots_are_listed_and_can_be_changed(
+    http: httpx.AsyncClient, token: str, commented: Path
+) -> None:
+    async with http:
+        body = await call(
+            http,
+            token,
+            "PUT",
+            "/settings/value",
+            json={"path": "roots", "value": [{"path": "~/git", "exclude": ["**/fixtures/**"]}]},
+        )
+    assert body["roots"][0]["path"].endswith("/git")
+    assert body["roots"][0]["exclude"] == ["**/fixtures/**"]
+    assert len(load(commented).roots) == 1
+
+
+async def test_the_whole_file_can_be_read_and_written(
+    http: httpx.AsyncClient, token: str, commented: Path
+) -> None:
+    async with http:
+        response = await http.get("/settings/raw", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 200
+        assert "# my rig" in response.text
+        body = await call(
+            http,
+            token,
+            "PUT",
+            "/settings/raw",
+            json={"text": '# rewritten\n[defaults]\nmode = "complete"\npriority = 3\n'},
+        )
+    assert body["defaults"]["mode"] == "complete"
+    assert "# rewritten" in commented.read_text(encoding="utf-8")
+
+
+async def test_a_file_that_does_not_parse_is_not_written(
+    http: httpx.AsyncClient, token: str, commented: Path
+) -> None:
+    before = commented.read_text(encoding="utf-8")
+    async with http:
+        response = await http.put(
+            "/settings/raw",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"text": '[defaults]\nmode = "sideways"\n'},
+        )
+    assert response.status_code == 400
+    assert commented.read_text(encoding="utf-8") == before
+    assert load(commented).defaults.mode == "draft"
+
+
+async def test_an_http_tool_server_joins_the_allowlist(rig: Rig, home: Path) -> None:
+    """An MCP server the user attached is reachable. One that is off is not."""
+    (home / "config.toml").write_text(
+        '[mcp.acme]\ntransport = "http"\nurl = "https://tools.acme.com/mcp"\n\n'
+        '[mcp.other]\nenabled = false\ntransport = "http"\nurl = "https://off.example.com/mcp"\n',
+        encoding="utf-8",
+    )
+    rig.reload_config()
+    assert rig.allowlist.allows("tools.acme.com", 443)
+    assert not rig.allowlist.allows("off.example.com", 443)

@@ -19,13 +19,16 @@ from reviewrig.config import (
     load_result,
     resolve_policy,
     save,
+    set_value,
 )
+from reviewrig.config.loader import parse
 from reviewrig.discovery import scan
 from reviewrig.events import Event, EventBus
 from reviewrig.forge import Registry
 from reviewrig.llm import Gateway, Health, Supervisor, probe_all
 from reviewrig.log import Logger, create_logger
-from reviewrig.mcp import McpRegistry
+from reviewrig.mcp import Access as McpAccess
+from reviewrig.mcp import McpRegistry, OAuthError, sign_in
 from reviewrig.models import Repository, RepositoryView
 from reviewrig.net import Allowlist, Destination, EgressProxy
 from reviewrig.sandbox import Selection, select
@@ -62,7 +65,7 @@ class Rig:
         self.health: dict[str, Health] = {}
         self.setup_running = False
         self.forges = Registry(self.config, self.gateway.client, self.log)
-        self.tools = McpRegistry(self.config, self.log)
+        self.tools = McpRegistry(self.config, self.log, McpAccess(self.allowlist, settings.home))
         self.scheduler = Scheduler(self, self.log)
         self._background: list[asyncio.Task[None]] = []
 
@@ -127,6 +130,11 @@ class Rig:
         for forge in self.config.forge.values():
             if forge.enabled:
                 values.append(forge.api)
+        # An http MCP server is a destination like any other. The user attached it, so
+        # it is allowed, and a server that is off is not.
+        for server in self.config.mcp.values():
+            if server.enabled and server.transport == "http" and server.url:
+                values.append(server.url)
         for value in values:
             destination = Destination.parse(value)
             if destination:
@@ -169,6 +177,45 @@ class Rig:
         self.log.info("settings changed", level=level, key=key, fields=sorted(changes))
         self.publish("config.reloaded", roots=len(self.config.roots))
         return self.config
+
+    def set_setting(self, path: str, value: object, remove: bool = False) -> Config:
+        """Change one setting by its dotted path, and write the file back.
+
+        One route for every setting. The whole config is validated before anything is
+        written, so a change that is wrong is refused with a reason and the file on disk
+        is untouched.
+        """
+        self.config = set_value(self.config, path, value, remove)
+        save(self.config_path, self.config)
+        self.config_error = None
+        self._refresh_allowlist()
+        self.gateway.config = self.config
+        self.forges.reload(self.config)
+        self.tools.reload(self.config)
+        self.log.info("setting changed", path=path, removed=remove)
+        self.publish("config.reloaded", roots=len(self.config.roots))
+        return self.config
+
+    def write_config(self, text: str) -> Config:
+        """Replace the whole file. Refuses without writing when it does not parse."""
+        config = parse(text)
+        self.config_path.parent.mkdir(parents=True, exist_ok=True)
+        self.config_path.write_text(text, encoding="utf-8")
+        self.config = config
+        self.config_error = None
+        self._refresh_allowlist()
+        self.gateway.config = self.config
+        self.forges.reload(self.config)
+        self.tools.reload(self.config)
+        self.log.info("config replaced", path=str(self.config_path))
+        self.publish("config.reloaded", roots=len(self.config.roots))
+        return self.config
+
+    def config_text(self) -> str:
+        try:
+            return self.config_path.read_text(encoding="utf-8")
+        except OSError:
+            return ""
 
     def change_exclusion(self, pattern: str, remove: bool) -> Config:
         """Add or drop one exclusion, and write the file back."""
@@ -243,6 +290,20 @@ class Rig:
             await self.ensure_models()
         self.publish("setup.finished", ok=result.ok, error=result.error)
         return result
+
+    async def sign_in_tool(self, name: str) -> None:
+        """Sign in to one MCP server. The user asked, so a browser opens.
+
+        Only this path opens a browser. A review that meets a server it cannot reach
+        fails with a reason instead, because a sign in the user did not ask for is a
+        surprise they cannot connect to anything they did.
+        """
+        state = self.tools.servers.get(name)
+        if state is None:
+            raise OAuthError(f"no MCP server named {name!r}")
+        await sign_in(name, state.config, self.settings.home, self.allowlist, self.log)
+        await self.tools.refresh({name})
+        self.publish("tools.checked", ready=1, total=len(self.tools.servers))
 
     async def check_tools(self) -> None:
         """Read the tool list from every attached MCP server."""

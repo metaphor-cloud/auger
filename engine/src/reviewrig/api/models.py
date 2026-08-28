@@ -199,6 +199,25 @@ class PolicyLevelOut(BaseModel):
     overrides: dict[str, object]
 
 
+class RootOut(BaseModel):
+    path: str
+    exclude: list[str]
+    max_depth: int | None
+
+
+class McpServerSetting(BaseModel):
+    name: str
+    transport: str
+    target: str
+    enabled: bool
+
+
+class ForgeSetting(BaseModel):
+    name: str
+    host: str
+    enabled: bool
+
+
 class SettingsOut(BaseModel):
     defaults: Policy
     levels: list[PolicyLevelOut]
@@ -206,6 +225,27 @@ class SettingsOut(BaseModel):
     exclude: list[str]
     codegraph: bool
     codegraph_available: bool
+    roots: list[RootOut]
+    mcp: list[McpServerSetting]
+    forges: list[ForgeSetting]
+    schedule: dict[str, object]
+    allow_hosted: bool
+
+
+class SettingChange(BaseModel):
+    """One setting, named by its dotted path.
+
+    A key that holds a dot, such as a repository path or a forge host, is quoted:
+    `repo."~/git/thing".priority`.
+    """
+
+    path: str
+    value: object = None
+    remove: bool = False
+
+
+class ConfigText(BaseModel):
+    text: str
 
 
 class ExcludeChange(BaseModel):
@@ -240,6 +280,10 @@ class McpServerOut(BaseModel):
     reachable: bool
     reason: str | None
     tools: list[ToolOut]
+    #: This server asks for OAuth, so it needs a sign in the user starts.
+    needs_sign_in: bool = False
+    #: A token is stored. It does not promise the token still works.
+    signed_in: bool = False
 
 
 class ToolList(BaseModel):

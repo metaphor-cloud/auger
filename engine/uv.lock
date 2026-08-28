@@ -694,6 +694,7 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "httpx2" },
     { name = "mcp" },
     { name = "pathspec" },
     { name = "psutil" },
@@ -721,6 +722,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
+    { name = "httpx2", specifier = ">=2.12" },
     { name = "mcp", specifier = ">=1.2" },
     { name = "pathspec", specifier = ">=0.12" },
     { name = "psutil", specifier = ">=6.1" },

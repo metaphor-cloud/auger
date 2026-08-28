@@ -14,17 +14,32 @@ import asyncio
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from reviewrig.config.schema import McpServer
 from reviewrig.log import Logger, create_logger
+from reviewrig.net.allowlist import Allowlist
 
 CONNECT_TIMEOUT = 30.0
 
 
 class McpError(RuntimeError):
     """The server could not be reached, or it refused."""
+
+
+@dataclass(frozen=True)
+class Access:
+    """What an http server may be reached through, and where its token is kept.
+
+    An http server is a destination like any other, so it obeys the same allowlist as
+    the rest of the engine. Before this existed, the SDK built its own client and no
+    rule applied to it.
+    """
+
+    allowlist: Allowlist = field(default_factory=Allowlist)
+    home: Path = field(default_factory=lambda: Path("~/.reviewrig").expanduser())
 
 
 @dataclass(frozen=True)
@@ -65,12 +80,21 @@ def server_environment(config: McpServer) -> dict[str, str]:
 
 
 @asynccontextmanager
-async def session(config: McpServer, log: Logger) -> AsyncIterator[Any]:
+async def session(
+    config: McpServer,
+    log: Logger,
+    name: str = "",
+    access: Access | None = None,
+) -> AsyncIterator[Any]:
     """Open a session to one server, and close it however the block ends."""
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
     from mcp.client.streamable_http import streamable_http_client
 
+    from reviewrig.net.client import guarded_mcp_client
+
+    access = access or Access()
+    http: Any = None
     if config.transport == "stdio":
         if not config.command:
             raise McpError("a stdio server needs a command")
@@ -81,7 +105,13 @@ async def session(config: McpServer, log: Logger) -> AsyncIterator[Any]:
     else:
         if not config.url:
             raise McpError("an http server needs a url")
-        transport = streamable_http_client(config.url)
+        auth = None
+        if config.auth == "oauth":
+            from reviewrig.mcp.oauth import background_provider
+
+            auth = background_provider(name or config.url, config, access.home)
+        http = guarded_mcp_client(access.allowlist, log, auth=auth)
+        transport = streamable_http_client(config.url, http_client=http)
 
     try:
         async with transport as streams:
@@ -94,11 +124,19 @@ async def session(config: McpServer, log: Logger) -> AsyncIterator[Any]:
     except Exception as error:
         log.warn("mcp session failed", reason="mcp_unreachable", error=error)
         raise McpError(str(error)) from error
+    finally:
+        if http is not None:
+            await http.aclose()
 
 
-async def list_tools(name: str, config: McpServer, log: Logger | None = None) -> list[Tool]:
+async def list_tools(
+    name: str,
+    config: McpServer,
+    log: Logger | None = None,
+    access: Access | None = None,
+) -> list[Tool]:
     log = (log or create_logger("mcp")).bind(component="mcp", server=name)
-    async with session(config, log) as client:
+    async with session(config, log, name, access) as client:
         listing = await asyncio.wait_for(client.list_tools(), CONNECT_TIMEOUT)
     return [
         Tool(
@@ -117,10 +155,11 @@ async def call_tool(
     tool: str,
     arguments: dict[str, Any],
     log: Logger | None = None,
+    access: Access | None = None,
 ) -> ToolResult:
     """Call one tool. The result is text, and it is data, never an instruction."""
     log = (log or create_logger("mcp")).bind(component="mcp", server=name, tool=tool)
-    async with session(config, log) as client:
+    async with session(config, log, name, access) as client:
         try:
             result = await asyncio.wait_for(
                 client.call_tool(tool, arguments), config.timeout_seconds

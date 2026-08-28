@@ -158,3 +158,53 @@ def save(path: Path, config: Config) -> None:
     _merge(document, _serialise(config))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(tomlkit.dumps(document), encoding="utf-8")
+
+
+def set_value(config: Config, path: str, value: object, remove: bool = False) -> Config:
+    """Return a new config with one dotted path changed, or raise.
+
+    The whole config is validated afterwards, not just the field, so a change that is
+    valid on its own but wrong in context is still refused. That is what lets one route
+    cover every setting without a form per key.
+
+    A key with a dot in it, such as a repository path or a forge host, is written as
+    `repo."~/git/thing".priority`.
+    """
+    parts = split_path(path)
+    if not parts:
+        raise ValueError("a change needs a setting to change")
+    body = config.model_dump(mode="json", exclude_none=True)
+    cursor: Any = body
+    for part in parts[:-1]:
+        if not isinstance(cursor, dict):
+            raise ValueError(f"{path} is not a setting")
+        cursor = cursor.setdefault(part, {})
+    if not isinstance(cursor, dict):
+        raise ValueError(f"{path} is not a setting")
+    if remove:
+        cursor.pop(parts[-1], None)
+    else:
+        cursor[parts[-1]] = value
+    return Config.model_validate(body)
+
+
+def split_path(path: str) -> list[str]:
+    """Split on dots, except inside quotes.
+
+    A repository key is a path and a forge key is a host, so both hold dots of their own.
+    """
+    parts: list[str] = []
+    current = ""
+    quoted = False
+    for character in path.strip():
+        if character == '"':
+            quoted = not quoted
+        elif character == "." and not quoted:
+            if current:
+                parts.append(current)
+            current = ""
+        else:
+            current += character
+    if current:
+        parts.append(current)
+    return parts

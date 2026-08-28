@@ -13,7 +13,8 @@ from typing import Any
 from reviewrig.config.schema import Config, McpServer
 from reviewrig.log import Logger, create_logger
 from reviewrig.mcp.allowlist import ToolAllowlist
-from reviewrig.mcp.client import McpError, Tool, ToolResult, call_tool, list_tools
+from reviewrig.mcp.client import Access, McpError, Tool, ToolResult, call_tool, list_tools
+from reviewrig.mcp.oauth import signed_in
 
 #: How much of a tool's answer reaches the prompt. A tool that returns a whole file
 #: would otherwise push the diff out of the model's context.
@@ -28,12 +29,23 @@ class ServerState:
     reachable: bool = False
     reason: str | None = None
 
+    @property
+    def needs_sign_in(self) -> bool:
+        return self.config.transport == "http" and self.config.auth == "oauth"
+
 
 class McpRegistry:
-    def __init__(self, config: Config, log: Logger | None = None) -> None:
+    def __init__(
+        self, config: Config, log: Logger | None = None, access: Access | None = None
+    ) -> None:
         self.log = (log or create_logger("mcp")).bind(component="mcp")
+        self.access = access or Access()
         self.servers: dict[str, ServerState] = {}
         self.reload(config)
+
+    def signed_in(self, name: str) -> bool:
+        """Whether a token is stored for this server."""
+        return signed_in(self.access.home, name)
 
     def reload(self, config: Config) -> None:
         kept = {
@@ -52,7 +64,7 @@ class McpRegistry:
 
     async def _refresh_one(self, state: ServerState) -> None:
         try:
-            state.tools = await list_tools(state.name, state.config, self.log)
+            state.tools = await list_tools(state.name, state.config, self.log, self.access)
             state.reachable = True
             state.reason = None
             self.log.info("mcp server ready", server=state.name, tools=len(state.tools))
@@ -91,7 +103,7 @@ class McpRegistry:
         state = self.servers.get(server)
         if state is None:
             raise McpError(f"no MCP server named {server!r}")
-        result = await call_tool(server, state.config, tool, arguments, self.log)
+        result = await call_tool(server, state.config, tool, arguments, self.log, self.access)
         if len(result.text) > MAX_RESULT_CHARS:
             return ToolResult(
                 tool=result.tool,

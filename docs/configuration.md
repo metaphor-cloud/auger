@@ -226,7 +226,35 @@ pass_env = ["GITHUB_PERSONAL_ACCESS_TOKEN"]
 | `pass_env` | `[]` | Names of variables to pass through. Never values. |
 | `env` | `{}` | Extra variables set for the server. |
 | `url` | `""` | The endpoint, for `http`. |
+| `auth` | `none` | `none` or `oauth`, for `http`. |
+| `scope` | `""` | What to ask the authorization server for. Empty asks for its default. |
+| `callback_port` | `7431` | Where the browser comes back to during a sign in. |
 | `timeout_seconds` | `30` | How long one tool call may take. |
 
 An MCP server runs outside the sandbox and speaks for you. Nothing is allowed by default:
 a tool runs only when a policy's `tools` names it.
+
+An `http` server is a destination like any other, so it must be reachable: an enabled
+server joins the egress allowlist, and its traffic goes through the same guard as
+everything else the engine sends.
+
+### Signing in to an OAuth server
+
+```toml
+[mcp.acme]
+transport = "http"
+url = "https://tools.acme.com/mcp"
+auth = "oauth"
+```
+
+Press Sign in under Settings, Tools. A browser opens, you approve, and the token is
+written to `~/.reviewrig/oauth/<name>.json`, which only you can read. The rig registers
+itself with the authorization server on the first sign in.
+
+A background review never opens a browser. It uses the stored token and refreshes it on
+its own. When the token is gone or the refresh fails, the run fails and the server shows
+`sign in needed`, because a browser window that nobody asked for is worse than a run that
+says what it needs.
+
+The sign in obeys the allowlist too. If the authorization server is on another host, add
+it to `egress.allow`. The refusal names the host and port to add.

@@ -8,6 +8,7 @@ subprocesses. This covers the engine itself, which is the process that holds the
 from __future__ import annotations
 
 import httpx
+import httpx2
 
 from reviewrig.log import Logger, create_logger
 from reviewrig.net.allowlist import Allowlist
@@ -57,4 +58,54 @@ def guarded_client(
         timeout=timeout,
         follow_redirects=False,  # A redirect could point off the allowlist.
         **kwargs,  # type: ignore[arg-type]
+    )
+
+
+class GuardedMcpTransport(httpx2.AsyncBaseTransport):
+    """The same guard, for the client library the MCP SDK uses.
+
+    The SDK is built on `httpx2`, which is a separate package from `httpx`. A transport
+    must subclass the base class of its own library, so the check is written twice
+    rather than shared. The rule it applies is the same one.
+    """
+
+    def __init__(
+        self,
+        allowlist: Allowlist,
+        inner: httpx2.AsyncBaseTransport | None = None,
+        log: Logger | None = None,
+    ) -> None:
+        self._allowlist = allowlist
+        self._inner = inner or httpx2.AsyncHTTPTransport()
+        self._log = (log or create_logger("egress")).bind(component="egress")
+
+    async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
+        host = request.url.host
+        port = request.url.port or (443 if request.url.scheme == "https" else 80)
+        if not self._allowlist.allows(host, port):
+            self._log.warn(
+                "egress refused",
+                reason="not_allowlisted",
+                destination=f"{host}:{port}",
+                method=request.method,
+            )
+            raise httpx2.RequestError(f"{host}:{port} is not on the allowlist", request=request)
+        return await self._inner.handle_async_request(request)
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
+
+
+def guarded_mcp_client(
+    allowlist: Allowlist,
+    log: Logger | None = None,
+    auth: httpx2.Auth | None = None,
+    timeout: float = 120.0,
+) -> httpx2.AsyncClient:
+    """The client an MCP server is reached through. It obeys the same allowlist."""
+    return httpx2.AsyncClient(
+        transport=GuardedMcpTransport(allowlist, log=log),
+        timeout=timeout,
+        auth=auth,
+        follow_redirects=False,  # A redirect could point off the allowlist.
     )

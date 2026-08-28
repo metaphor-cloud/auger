@@ -233,6 +233,15 @@ class McpServer(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     #: For `http`.
     url: str = ""
+    #: How the rig proves who it is to an `http` server. `oauth` runs the authorization
+    #: code flow once, in a browser, when the user asks for it. A background review
+    #: never opens a browser: it uses the stored token, or it fails and says so.
+    auth: Literal["none", "oauth"] = "none"
+    #: What to ask the authorization server for. Empty asks for the server's default.
+    scope: str = ""
+    #: Where the browser comes back to. It is registered with the authorization server,
+    #: so it stays the same between sign ins.
+    callback_port: int = Field(default=7431, ge=1024, le=65535)
     #: How long one tool call may take.
     timeout_seconds: float = Field(default=30.0, gt=0)
 
