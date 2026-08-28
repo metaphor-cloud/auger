@@ -257,11 +257,14 @@ class CatalogOut(BaseModel):
 class SetupRequest(BaseModel):
     #: Empty means the model the rig recommends for this machine.
     model: str = ""
+    #: Empty means the embedding model the rig recommends.
+    embed: str = ""
 
 
 class SetupOut(BaseModel):
     ok: bool
     review_model: str
     embed_model: str
+    rerank_model: str
     runtime_path: str
     error: str | None

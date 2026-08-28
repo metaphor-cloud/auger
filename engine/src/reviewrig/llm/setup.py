@@ -23,6 +23,7 @@ from reviewrig.net.download import DownloadError, Progress, client
 
 REVIEW_BACKEND = "local-review"
 EMBED_BACKEND = "local-embed"
+RERANK_BACKEND = "local-rerank"
 
 
 @dataclass
@@ -45,6 +46,7 @@ class SetupResult:
     runtime_path: str = ""
     review_model: str = ""
     embed_model: str = ""
+    rerank_model: str = ""
     error: str | None = None
 
     @property
@@ -58,10 +60,16 @@ def models_dir(home: Path) -> Path:
 
 def plan(memory_gb: float | None = None) -> list[Choice]:
     """Which models this machine should fetch."""
-    return [catalog.recommended_review_model(memory_gb), catalog.EMBED_MODEL]
+    return [
+        catalog.recommended_review_model(memory_gb),
+        catalog.recommended_embed_model(memory_gb),
+        catalog.RERANK_MODEL,
+    ]
 
 
-def apply_to_config(config: Config, review: Choice, embed: Choice) -> Config:
+def apply_to_config(
+    config: Config, review: Choice, embed: Choice, rerank: Choice | None = None
+) -> Config:
     """Point the managed backends at the files that were fetched."""
     config.backend[REVIEW_BACKEND] = (config.backend.get(REVIEW_BACKEND) or Backend()).model_copy(
         update={
@@ -80,6 +88,22 @@ def apply_to_config(config: Config, review: Choice, embed: Choice) -> Config:
             "args": ["--embedding", "--pooling", "last"],
         }
     )
+    if rerank is not None:
+        config.backend[RERANK_BACKEND] = (
+            config.backend.get(RERANK_BACKEND) or Backend(url="http://127.0.0.1:8082/v1")
+        ).model_copy(
+            update={
+                "managed": True,
+                "model": rerank.name,
+                "model_file": rerank.filename,
+                "model_url": rerank.url,
+                "args": ["--reranking"],
+            }
+        )
+        # Reranking is off in the built-in profile. Fetching it is what turns it on.
+        for profile in config.profile.values():
+            if not profile.rerank.backend:
+                profile.rerank = profile.rerank.model_copy(update={"backend": RERANK_BACKEND})
     return config
 
 
@@ -87,6 +111,7 @@ async def install(
     home: Path,
     config: Config,
     review_model: str | None = None,
+    embed_model: str | None = None,
     on_step: Callable[[Step], None] | None = None,
     log: Logger | None = None,
 ) -> SetupResult:
@@ -99,7 +124,8 @@ async def install(
             on_step(step)
 
     review = catalog.by_name(review_model) if review_model else catalog.recommended_review_model()
-    embed = catalog.EMBED_MODEL
+    embed = catalog.by_name(embed_model) if embed_model else catalog.recommended_embed_model()
+    rerank = catalog.RERANK_MODEL
 
     async with client() as http:
         try:
@@ -121,7 +147,7 @@ async def install(
             result.runtime_path = str(existing)
             report(Step("runtime", message=f"Runtime ready: {existing.name}"))
 
-            for choice in (review, embed):
+            for choice in (review, embed, rerank):
                 report(Step("model", choice.name, message=f"Looking up {choice.name}"))
                 resolved = await catalog.resolve(http, choice, log)
 
@@ -151,9 +177,10 @@ async def install(
             report(Step("failed", message=str(error)))
             return result
 
-    apply_to_config(config, review, embed)
+    apply_to_config(config, review, embed, rerank)
     result.review_model = review.name
     result.embed_model = embed.name
+    result.rerank_model = rerank.name
     report(Step("done", message=f"Ready: {review.name}"))
     log.info("setup finished", review=review.name, embed=embed.name)
     return result

@@ -78,16 +78,42 @@ REVIEW_MODELS: tuple[Choice, ...] = (
     ),
 )
 
-EMBED_MODEL = Choice(
-    name="Qwen3-Embedding-0.6B",
-    job_class=JobClass.EMBED,
-    repo="Qwen/Qwen3-Embedding-0.6B-GGUF",
-    filename="Qwen3-Embedding-0.6B-Q8_0.gguf",
-    memory_gb=2.0,
-    description="Turns code into vectors, so retrieval finds code that was renamed.",
+#: Embedding models, most capable first. The rig picks the first one that fits, and the
+#: user can choose the other in the Models view.
+EMBED_MODELS: tuple[Choice, ...] = (
+    Choice(
+        name="nomic-embed-code",
+        job_class=JobClass.EMBED,
+        repo="nomic-ai/nomic-embed-code-GGUF",
+        filename="nomic-embed-code.Q4_K_M.gguf",
+        memory_gb=6.0,
+        description="Built for code. 4.4 GB, and slower to index.",
+    ),
+    Choice(
+        name="Qwen3-Embedding-0.6B",
+        job_class=JobClass.EMBED,
+        repo="Qwen/Qwen3-Embedding-0.6B-GGUF",
+        filename="Qwen3-Embedding-0.6B-Q8_0.gguf",
+        memory_gb=2.0,
+        description="General purpose. 0.64 GB, and quick to index.",
+    ),
 )
 
-CATALOG: tuple[Choice, ...] = (*REVIEW_MODELS, EMBED_MODEL)
+#: Ordering the retrieved code is what separates a caller from a file that merely
+#: mentions the name, so the reranker is small and always fetched.
+RERANK_MODEL = Choice(
+    name="Qwen3-Reranker-0.6B",
+    job_class=JobClass.RERANK,
+    repo="DevQuasar/Qwen.Qwen3-Reranker-0.6B-GGUF",
+    filename="Qwen.Qwen3-Reranker-0.6B.Q8_0.gguf",
+    memory_gb=1.5,
+    description="Puts the retrieved code in order. 0.64 GB.",
+)
+
+#: What the rig fetches when the user does not choose.
+DEFAULT_EMBED_MODEL = EMBED_MODELS[-1]
+
+CATALOG: tuple[Choice, ...] = (*REVIEW_MODELS, *EMBED_MODELS, RERANK_MODEL)
 
 
 def total_memory_bytes() -> int:
@@ -101,13 +127,26 @@ def usable_memory_gb() -> float:
     return total_memory_bytes() / 1e9 * USABLE_FRACTION
 
 
-def recommended_review_model(memory_gb: float | None = None) -> Choice:
-    """The largest review model this machine can hold. Never returns nothing."""
-    available = usable_memory_gb() if memory_gb is None else memory_gb
-    for choice in REVIEW_MODELS:
+def _largest_that_fits(choices: tuple[Choice, ...], available: float) -> Choice:
+    """Never returns nothing. A machine with no fitting model still needs a way forward."""
+    for choice in choices:
         if choice.memory_gb <= available:
             return choice
-    return REVIEW_MODELS[-1]
+    return choices[-1]
+
+
+def recommended_review_model(memory_gb: float | None = None) -> Choice:
+    available = usable_memory_gb() if memory_gb is None else memory_gb
+    return _largest_that_fits(REVIEW_MODELS, available)
+
+
+def recommended_embed_model(memory_gb: float | None = None) -> Choice:
+    """The default is the small one.
+
+    A code embedder is seven times the size and slower to index, and it earns its place
+    only when it retrieves better. Choose it in the Models view, not by accident.
+    """
+    return DEFAULT_EMBED_MODEL
 
 
 def by_name(name: str) -> Choice:

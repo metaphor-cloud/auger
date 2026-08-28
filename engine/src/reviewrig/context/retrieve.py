@@ -37,6 +37,9 @@ MAX_NAMES = 40
 #: A chunk that a grammar named is worth more than a window of lines from a file that
 #: no grammar reads. A licence and a lock file are both windows of lines.
 LINE_CHUNK_WEIGHT = 0.35
+#: The constant in reciprocal rank fusion. 60 is the value the method was published
+#: with, and it flattens the difference between the first few ranks.
+RRF_K = 60
 
 
 @dataclass(frozen=True)
@@ -134,16 +137,31 @@ def _weighted(hit: Hit) -> Hit:
 
 
 def merge(groups: list[list[Hit]], exclude: set[int] = frozenset()) -> list[Hit]:  # type: ignore[assignment]
-    """One list, best score per chunk, highest first."""
+    """One list, combined by rank rather than by score.
+
+    The scores of the two searches are not comparable. Keyword search reports BM25,
+    where a good match is a small negative number, and vector search reports a distance,
+    where a good match is near zero. Any formula that maps both to "bigger is better"
+    still puts them on different scales, and the larger scale wins every time regardless
+    of quality. Measured on this repository, mixing them by score cut recall almost in
+    half against keyword search alone.
+
+    Reciprocal rank fusion avoids the question. Each list contributes 1/(k + rank), so
+    only the order within a list matters, and a chunk that both searches like beats one
+    that only a single search likes.
+    """
+    combined: dict[int, float] = {}
     best: dict[int, Hit] = {}
     for group in groups:
-        for hit in group:
+        for rank, hit in enumerate(group, start=1):
             if hit.chunk_id in exclude:
                 continue
-            current = best.get(hit.chunk_id)
-            if current is None or hit.score > current.score:
-                best[hit.chunk_id] = hit
-    return sorted(best.values(), key=lambda hit: (-hit.score, hit.path, hit.start_line))
+            combined[hit.chunk_id] = combined.get(hit.chunk_id, 0.0) + 1.0 / (RRF_K + rank)
+            best.setdefault(hit.chunk_id, hit)
+    return [
+        Hit(**{**best[chunk_id].__dict__, "score": score})
+        for chunk_id, score in sorted(combined.items(), key=lambda item: -item[1])
+    ]
 
 
 async def context_for_diff(

@@ -97,9 +97,15 @@ async def test_a_refusal_is_logged_with_a_reason(
 async def test_a_transfer_is_logged_with_its_size(
     proxy: EgressProxy, origin: tuple[str, int], capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """The proxy logs once both sides have closed, which is after the client returns."""
     async with httpx.AsyncClient(proxy=proxy.url, timeout=10) as client:
         await client.get(f"http://{origin[0]}:{origin[1]}/v1/models")
-    out = capsys.readouterr().out
+    out = ""
+    for _ in range(100):
+        out += capsys.readouterr().out
+        if '"egress allowed"' in out:
+            break
+        await asyncio.sleep(0.02)
     assert '"message": "egress allowed"' in out
     assert '"received_bytes"' in out
 

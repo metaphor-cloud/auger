@@ -177,7 +177,9 @@ class Rig:
         self.publish("scan.finished", found=len(views), enabled=enabled)
         return views
 
-    async def setup_models(self, review_model: str | None = None) -> object:
+    async def setup_models(
+        self, review_model: str | None = None, embed_model: str | None = None
+    ) -> object:
         """Fetch a runtime and weights, write the config, and start the servers.
 
         This is the path for a machine with nothing installed. It reports every step,
@@ -199,7 +201,12 @@ class Rig:
         self.setup_running = True
         try:
             result = await setup.install(
-                self.settings.home, self.config, review_model, report, self.log
+                self.settings.home,
+                self.config,
+                review_model,
+                embed_model,
+                report,
+                self.log,
             )
         finally:
             self.setup_running = False

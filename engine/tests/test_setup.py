@@ -272,13 +272,13 @@ async def test_the_checksum_comes_from_the_repository(
     @app.get("/api/models/{owner}/{name}/tree/main")
     async def tree(owner: str, name: str) -> JSONResponse:
         return JSONResponse(
-            [{"path": catalog.EMBED_MODEL.filename, "size": 42, "lfs": {"oid": "ab" * 32}}]
+            [{"path": catalog.DEFAULT_EMBED_MODEL.filename, "size": 42, "lfs": {"oid": "ab" * 32}}]
         )
 
     base = await serve(app)
     monkeypatch.setattr(catalog, "HUGGINGFACE", base)
     async with download.client() as http:
-        resolved = await catalog.resolve(http, catalog.EMBED_MODEL)
+        resolved = await catalog.resolve(http, catalog.DEFAULT_EMBED_MODEL)
     assert resolved.sha256 == "ab" * 32
     assert resolved.size_bytes == 42
 
@@ -290,30 +290,51 @@ async def test_a_file_with_no_checksum_is_refused(
 
     @app.get("/api/models/{owner}/{name}/tree/main")
     async def tree(owner: str, name: str) -> JSONResponse:
-        return JSONResponse([{"path": catalog.EMBED_MODEL.filename, "size": 42}])
+        return JSONResponse([{"path": catalog.DEFAULT_EMBED_MODEL.filename, "size": 42}])
 
     base = await serve(app)
     monkeypatch.setattr(catalog, "HUGGINGFACE", base)
     async with download.client() as http:
         with pytest.raises(CatalogError, match="checksum"):
-            await catalog.resolve(http, catalog.EMBED_MODEL)
+            await catalog.resolve(http, catalog.DEFAULT_EMBED_MODEL)
 
 
 # --- the plan ------------------------------------------------------------------------
 
 
-def test_the_plan_holds_a_reviewer_and_an_embedder() -> None:
-    assert [choice.job_class.value for choice in setup.plan(96)] == ["review", "embed"]
+def test_the_plan_holds_a_reviewer_an_embedder_and_a_reranker() -> None:
+    """Ordering is what separates a caller from a file that merely mentions the name."""
+    assert [choice.job_class.value for choice in setup.plan(96)] == [
+        "review",
+        "embed",
+        "rerank",
+    ]
+
+
+def test_the_small_embedder_is_the_default() -> None:
+    """The code embedder is seven times the size. It is a choice, not an accident."""
+    assert catalog.recommended_embed_model(96).name == "Qwen3-Embedding-0.6B"
 
 
 def test_it_points_the_managed_backends_at_what_it_fetched() -> None:
     config = Config()
-    review, embed = setup.plan(96)
-    setup.apply_to_config(config, review, embed)
+    review, embed, rerank = setup.plan(96)
+    setup.apply_to_config(config, review, embed, rerank)
     assert config.backend["local-review"].managed is True
     assert config.backend["local-review"].model_file == review.filename
     assert config.backend["local-embed"].model_file == embed.filename
     assert "--embedding" in config.backend["local-embed"].args
+    assert config.backend["local-rerank"].model_file == rerank.filename
+    assert "--reranking" in config.backend["local-rerank"].args
+
+
+def test_fetching_a_reranker_is_what_turns_reranking_on() -> None:
+    """It is off by default because nothing serves it, not because it is unwanted."""
+    config = Config()
+    assert config.profile["balanced"].rerank.backend == ""
+    review, embed, rerank = setup.plan(96)
+    setup.apply_to_config(config, review, embed, rerank)
+    assert config.profile["balanced"].rerank.backend == "local-rerank"
 
 
 async def test_a_setup_that_cannot_reach_a_release_reports_the_reason(
@@ -326,7 +347,7 @@ async def test_a_setup_that_cannot_reach_a_release_reports_the_reason(
     monkeypatch.setattr(runtime, "RELEASES", "http://127.0.0.1:1/releases")
     monkeypatch.setattr(download, "API_HOSTS", frozenset({"127.0.0.1"}))
     steps: list[setup.Step] = []
-    result = await setup.install(tmp_path, Config(), None, steps.append)
+    result = await setup.install(tmp_path, Config(), None, None, steps.append)
     assert result.ok is False
     assert result.error
     assert steps[-1].stage == "failed"

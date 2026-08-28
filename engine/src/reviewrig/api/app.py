@@ -275,11 +275,12 @@ def create_app(rig: Rig) -> FastAPI:
         """Fetch a runtime and weights for a machine that has neither."""
         if rig.setup_running:
             raise HTTPException(status_code=409, detail="a setup is already running")
-        result = await rig.setup_models(request.model or None)
+        result = await rig.setup_models(request.model or None, request.embed or None)
         return SetupOut(
             ok=result.ok,  # type: ignore[attr-defined]
             review_model=result.review_model,  # type: ignore[attr-defined]
             embed_model=result.embed_model,  # type: ignore[attr-defined]
+            rerank_model=result.rerank_model,  # type: ignore[attr-defined]
             runtime_path=result.runtime_path,  # type: ignore[attr-defined]
             error=result.error,  # type: ignore[attr-defined]
         )
