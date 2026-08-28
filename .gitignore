@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+
+# Node
+node_modules/
+app/dist/
+
+# Rust
+target/
+
+# Tauri sidecar payload, produced by `just build-sidecar`
+app/src-tauri/binaries/
+
+# Local state
+.DS_Store
+.env

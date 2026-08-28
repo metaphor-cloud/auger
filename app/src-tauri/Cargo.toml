@@ -1,0 +1,26 @@
+[package]
+name = "reviewrig"
+version = "0.1.0"
+description = "Background code review rig"
+authors = ["reviewrig contributors"]
+license = "Apache-2.0"
+edition = "2021"
+
+[lib]
+# The `_lib` suffix keeps the library name distinct from the binary name on Windows.
+name = "reviewrig_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rand = "0.8"
+base64 = "0.22"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
