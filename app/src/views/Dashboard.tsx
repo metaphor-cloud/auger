@@ -1,21 +1,21 @@
+import { Alert, AlertDescription, Badge, StatCard, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@metaphor-cloud/ui";
 import { useCallback, useEffect, useState } from "react";
 
 import { getDashboard } from "../engine";
 import type { Dashboard } from "../types";
+import { Fact, Facts, Mono, PageTitle, SeverityBadge, Section, StatusBadge } from "../ui";
 
 const SEVERITIES = ["critical", "high", "medium", "low", "info"];
+const BAR: Record<string, string> = {
+  critical: "bg-danger",
+  high: "bg-warning",
+  medium: "bg-accent",
+  low: "bg-text-tertiary",
+  info: "bg-text-tertiary",
+};
 
 function when(value: string | null) {
   return value ? value.replace("T", " ").slice(0, 16) : "never";
-}
-
-function Tile({ label, value, tone }: { label: string; value: string; tone?: string }) {
-  return (
-    <div className={`tile${tone ? ` tile-${tone}` : ""}`}>
-      <span className="tile-value">{value}</span>
-      <span className="tile-label">{label}</span>
-    </div>
-  );
 }
 
 export default function DashboardView({ version }: { version: number }) {
@@ -35,137 +35,145 @@ export default function DashboardView({ version }: { version: number }) {
     void load();
   }, [load, version]);
 
-  if (error) return <p className="error">{error}</p>;
-  if (data === null) return <p className="muted">Loading</p>;
+  if (error)
+    return (
+      <Alert variant="danger">
+        <AlertDescription>{error}</AlertDescription>
+      </Alert>
+    );
+  if (data === null) return <p className="text-xs text-text-secondary">Loading</p>;
 
   const open = data.findings.total ?? 0;
   const worst = SEVERITIES.find((name) => (data.findings[name] ?? 0) > 0);
   const skipped = Object.entries(data.skipped_reasons);
+  const doing = data.paused
+    ? "Paused. Queued work waits."
+    : data.in_flight.length
+      ? `Reviewing ${data.in_flight.length} of ${data.workers}`
+      : data.pending
+        ? `${data.pending} waiting`
+        : "Idle. Watching for changes.";
 
   return (
-    <section>
-      <header className="view-header">
-        <div>
-          <h2>Overview</h2>
-          <p className="muted">
-            {data.paused
-              ? "Paused. Queued work waits."
-              : data.in_flight.length
-                ? `Reviewing ${data.in_flight.length} of ${data.workers}`
-                : data.pending
-                  ? `${data.pending} waiting`
-                  : "Idle. Watching for changes."}
-          </p>
-        </div>
-      </header>
+    <>
+      <PageTitle title="Overview" description={doing} />
 
       {data.warnings.map((warning) => (
-        <p className="banner" key={warning}>
-          {warning}
-        </p>
+        <Alert variant="warning" className="mb-3" key={warning}>
+          <AlertDescription>{warning}</AlertDescription>
+        </Alert>
       ))}
 
-      <div className="tiles">
-        <Tile label="open findings" value={String(open)} tone={worst ? `sev-${worst}` : undefined} />
-        <Tile label="repositories watched" value={`${data.enabled}/${data.repositories}`} />
-        <Tile label="models running" value={`${data.models_up}/${data.models_total}`} />
-        <Tile label="runs today" value={String(data.runs_today)} />
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          label="open findings"
+          value={open}
+          color={worst === "critical" ? "danger" : worst === "high" ? "warning" : "default"}
+        />
+        <StatCard label="repositories watched" value={`${data.enabled}/${data.repositories}`} />
+        <StatCard
+          label="models running"
+          value={`${data.models_up}/${data.models_total}`}
+          color={data.models_up === 0 ? "danger" : "success"}
+        />
+        <StatCard label="runs today" value={data.runs_today} />
       </div>
 
-      <h3>Findings</h3>
-      {open === 0 ? (
-        <p className="muted">Nothing open.</p>
-      ) : (
-        <div className="bars">
-          {SEVERITIES.filter((name) => data.findings[name]).map((name) => (
-            <div className="bar-row" key={name}>
-              <span className="bar-label">{name}</span>
-              <span
-                className={`bar sev-${name}`}
-                style={{ width: `${Math.max(4, (data.findings[name] / open) * 100)}%` }}
-              />
-              <span className="bar-count">{data.findings[name]}</span>
-            </div>
-          ))}
-        </div>
-      )}
-      <p className="muted">
-        {data.suppressed} suppressed, {data.dismissed} dismissed by triage.
-      </p>
+      <Section title="Findings" description={`${data.suppressed} suppressed, ${data.dismissed} dismissed by triage.`}>
+        {open === 0 ? (
+          <p className="text-xs text-text-secondary">Nothing open.</p>
+        ) : (
+          <div className="flex max-w-lg flex-col gap-1.5">
+            {SEVERITIES.filter((name) => data.findings[name]).map((name) => (
+              <div className="flex items-center gap-3" key={name}>
+                <span className="w-16 text-xs text-text-secondary">{name}</span>
+                <span
+                  className={`h-2 rounded-sm ${BAR[name]}`}
+                  style={{ width: `${Math.max(3, (data.findings[name] / open) * 100)}%` }}
+                />
+                <span className="text-xs tabular-nums text-text-secondary">
+                  {data.findings[name]}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
 
       {data.busiest.length > 0 && (
-        <>
-          <h3>Needs attention</h3>
-          <table>
-            <thead>
-              <tr>
-                <th>Repository</th>
-                <th className="numeric">Open</th>
-                <th>Worst</th>
-                <th>Last run</th>
-              </tr>
-            </thead>
-            <tbody>
+        <Section title="Needs attention">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Repository</TableHead>
+                <TableHead className="text-right">Open</TableHead>
+                <TableHead>Worst</TableHead>
+                <TableHead>Last run</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {data.busiest.map((repo) => (
-                <tr key={repo.path}>
-                  <td title={repo.path}>{repo.name}</td>
-                  <td className="numeric">{repo.open_findings}</td>
-                  <td>
-                    <span className={`badge sev-${repo.worst_severity}`}>
-                      {repo.worst_severity}
-                    </span>
-                  </td>
-                  <td className="muted mono">
-                    {when(repo.last_run_at)}
-                    {repo.last_status ? ` · ${repo.last_status}` : ""}
-                  </td>
-                </tr>
+                <TableRow key={repo.path}>
+                  <TableCell title={repo.path}>{repo.name}</TableCell>
+                  <TableCell className="text-right tabular-nums">{repo.open_findings}</TableCell>
+                  <TableCell>
+                    <SeverityBadge severity={repo.worst_severity} />
+                  </TableCell>
+                  <TableCell>
+                    <Mono>{when(repo.last_run_at)}</Mono>
+                    {repo.last_status && (
+                      <span className="ml-2">
+                        <StatusBadge status={repo.last_status} />
+                      </span>
+                    )}
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
-        </>
+            </TableBody>
+          </Table>
+        </Section>
       )}
 
-      <h3>Work</h3>
-      <dl className="facts">
-        <dt>Runs</dt>
-        <dd>
-          {Object.entries(data.runs_by_status)
-            .map(([status, count]) => `${count} ${status}`)
-            .join(", ") || "none yet"}
-        </dd>
-        {skipped.length > 0 && (
-          <>
-            <dt>Skipped because</dt>
-            <dd>{skipped.map(([reason, count]) => `${reason} ×${count}`).join(", ")}</dd>
-          </>
-        )}
-        <dt>Tokens</dt>
-        <dd className="mono">
-          {(data.prompt_tokens / 1000).toFixed(1)}k in, {(data.completion_tokens / 1000).toFixed(1)}k
-          out
-        </dd>
-        <dt>Last run</dt>
-        <dd className="mono">{when(data.last_run_at)}</dd>
-      </dl>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Section title="Work">
+          <Facts>
+            <Fact label="Runs">
+              {Object.entries(data.runs_by_status).map(([status, count]) => (
+                <span className="mr-2" key={status}>
+                  <Badge variant="outline">
+                    {count} {status}
+                  </Badge>
+                </span>
+              )) || "none yet"}
+            </Fact>
+            {skipped.length > 0 && (
+              <Fact label="Skipped because">
+                {skipped.map(([reason, count]) => `${reason} ×${count}`).join(", ")}
+              </Fact>
+            )}
+            <Fact label="Tokens">
+              <Mono>
+                {(data.prompt_tokens / 1000).toFixed(1)}k in,{" "}
+                {(data.completion_tokens / 1000).toFixed(1)}k out
+              </Mono>
+            </Fact>
+            <Fact label="Last run">
+              <Mono>{when(data.last_run_at)}</Mono>
+            </Fact>
+          </Facts>
+        </Section>
 
-      <h3>Rig</h3>
-      <dl className="facts">
-        <dt>Sandbox</dt>
-        <dd>{data.sandbox.backend}</dd>
-        <dt>Code index</dt>
-        <dd>
-          {data.indexed_files} files, {data.chunks} chunks
-        </dd>
-        <dt>Call graph</dt>
-        <dd>{data.codegraph ? "CodeGraph on" : "off"}</dd>
-        {data.excluded > 0 && (
-          <>
-            <dt>Excluded</dt>
-            <dd>{data.excluded} repositories</dd>
-          </>
-        )}
-      </dl>
-    </section>
+        <Section title="Rig">
+          <Facts>
+            <Fact label="Sandbox">{data.sandbox.backend}</Fact>
+            <Fact label="Code index">
+              {data.indexed_files} files, {data.chunks} chunks
+            </Fact>
+            <Fact label="Call graph">{data.codegraph ? "CodeGraph on" : "off"}</Fact>
+            {data.excluded > 0 && <Fact label="Excluded">{data.excluded} repositories</Fact>}
+          </Facts>
+        </Section>
+      </div>
+    </>
   );
 }

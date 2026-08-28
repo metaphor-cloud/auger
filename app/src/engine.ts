@@ -30,13 +30,24 @@ export function engineUrl(info: EngineInfo, path: string): string {
   return `http://127.0.0.1:${info.port}${path}`;
 }
 
+/** What the engine refused, in its own words. A rejected setting says which one. */
+async function reason(response: Response, method: string, path: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { detail?: unknown };
+    if (typeof body.detail === "string") return body.detail;
+  } catch {
+    // The body was not JSON. Fall back to the status.
+  }
+  return `${method} ${path} returned ${response.status}`;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const info = await engineInfo();
   const response = await fetch(engineUrl(info, path), {
     ...init,
     headers: { ...init.headers, Authorization: `Bearer ${info.token}` },
   });
-  if (!response.ok) throw new Error(`${init.method ?? "GET"} ${path} returned ${response.status}`);
+  if (!response.ok) throw new Error(await reason(response, init.method ?? "GET", path));
   return (await response.json()) as T;
 }
 
@@ -64,11 +75,14 @@ export async function getCatalog(): Promise<Catalog> {
   return request("/models/catalog");
 }
 
-export async function setupModels(model = ""): Promise<{ ok: boolean; error: string | null }> {
+export async function setupModels(
+  model = "",
+  embed = "",
+): Promise<{ ok: boolean; error: string | null }> {
   return request("/models/setup", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model }),
+    body: JSON.stringify({ model, embed }),
   });
 }
 
@@ -146,6 +160,10 @@ export async function checkTools(): Promise<ToolList> {
   return request("/tools/check", { method: "POST" });
 }
 
+export async function signInTool(name: string): Promise<ToolList> {
+  return request(`/tools/${encodeURIComponent(name)}/sign-in`, { method: "POST" });
+}
+
 export async function getSettings(): Promise<Settings> {
   return request("/settings");
 }
@@ -175,6 +193,35 @@ export async function setCodegraph(enabled: boolean): Promise<Settings> {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ enabled }),
+  });
+}
+
+export async function setSetting(
+  path: string,
+  value: unknown,
+  remove = false,
+): Promise<Settings> {
+  return request("/settings/value", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path, value, remove }),
+  });
+}
+
+export async function getConfigText(): Promise<string> {
+  const info = await engineInfo();
+  const response = await fetch(engineUrl(info, "/settings/raw"), {
+    headers: { Authorization: `Bearer ${info.token}` },
+  });
+  if (!response.ok) throw new Error(`GET /settings/raw returned ${response.status}`);
+  return response.text();
+}
+
+export async function writeConfigText(text: string): Promise<Settings> {
+  return request("/settings/raw", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
   });
 }
 

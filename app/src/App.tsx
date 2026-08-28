@@ -1,16 +1,16 @@
+import { Badge, Button, Separator, useThemeContext } from "@metaphor-cloud/ui";
 import { useCallback, useEffect, useState } from "react";
 
 import { getQueue, getSystem, health, pauseQueue, readEvents, resumeQueue } from "./engine";
-import { setTray, notify } from "./host";
+import { notify, setTray } from "./host";
 import type { Queue, SetupProgress, System } from "./types";
-import Findings from "./views/Findings";
 import DashboardView from "./views/Dashboard";
+import Findings from "./views/Findings";
 import Models from "./views/Models";
 import Repositories from "./views/Repositories";
 import Runs from "./views/Runs";
 import SettingsView from "./views/Settings";
 import SystemView from "./views/System";
-import "./App.css";
 
 type Status =
   | { state: "starting" }
@@ -36,9 +36,9 @@ export default function App() {
   const [scanning, setScanning] = useState(false);
   const [system, setSystem] = useState<System | null>(null);
   const [queue, setQueue] = useState<Queue | null>(null);
-  // Every event that changes stored data bumps this, and each view reloads.
   const [version, setVersion] = useState(0);
   const [setup, setSetup] = useState<SetupProgress | null>(null);
+  const { resolved, cycleTheme } = useThemeContext();
 
   const refreshQueue = useCallback(async () => {
     try {
@@ -63,6 +63,7 @@ export default function App() {
           if (event.kind.startsWith("queue.")) void refreshQueue();
           if (event.kind === "setup.progress") setSetup(event.data as SetupProgress);
           if (event.kind === "setup.finished") setSetup(null);
+          if (event.kind === "config.reloaded") setVersion((value) => value + 1);
           if (event.kind === "run.finished" || event.kind === "run.skipped") {
             void refreshQueue();
             setVersion((value) => value + 1);
@@ -93,47 +94,63 @@ export default function App() {
   }
 
   return (
-    <div className="app">
-      <header className="chrome">
-        <h1>reviewrig</h1>
-        <nav>
+    <div className="flex h-full flex-col bg-bg text-text-primary">
+      <header className="flex items-center gap-3 border-b border-border bg-bg-elevated px-4 py-2">
+        <span className="text-sm font-semibold tracking-tight">reviewrig</span>
+        <Separator orientation="vertical" className="h-4" />
+        <nav className="flex flex-1 gap-1 overflow-x-auto">
           {VIEWS.map((name) => (
             <button
               key={name}
-              className={name === view ? "tab active" : "tab"}
               onClick={() => setView(name)}
+              className={
+                name === view
+                  ? "rounded-md bg-accent/15 px-2.5 py-1 text-xs font-medium text-accent"
+                  : "rounded-md px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-bg-card-hover hover:text-text-primary"
+              }
             >
               {name}
             </button>
           ))}
         </nav>
         {queue && (
-          <button className="tab" onClick={() => void togglePause()}>
+          <Button size="sm" variant="ghost" onClick={() => void togglePause()}>
             {queue.paused ? "Resume" : "Pause"}
-            {queue.pending > 0 && <span className="pill">{queue.pending}</span>}
-          </button>
+            {queue.pending > 0 && (
+              <Badge variant="outline" className="ml-1.5">
+                {queue.pending}
+              </Badge>
+            )}
+          </Button>
         )}
-        <span className={`engine engine-${status.state}`}>
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-label="Switch theme"
+          onClick={cycleTheme}
+        >
+          {resolved === "dark" ? "☾" : "☀"}
+        </Button>
+        <span
+          className={
+            status.state === "failed"
+              ? "text-xs text-danger"
+              : "text-xs tabular-nums text-text-tertiary"
+          }
+        >
           {status.state === "starting" && "Starting"}
           {status.state === "ready" && `Engine ${status.version}`}
           {status.state === "failed" && status.reason}
         </span>
       </header>
-      {system?.config_error && (
-        <p className="banner">
-          Your config file was refused, so the rig is running on its defaults:{" "}
-          {system.config_error}
-        </p>
-      )}
-      {system?.sandbox.degraded && <p className="banner">{system.sandbox.warning}</p>}
-      {queue?.paused && <p className="banner">Paused. Queued work waits.</p>}
-      <main>
+
+      <main className="flex-1 overflow-auto px-5 py-5">
         {view === "Overview" && <DashboardView version={version} />}
         {view === "Findings" && <Findings version={version} onCounts={setTray} />}
-        {view === "Repositories" && <Repositories scanning={scanning} />}
+        {view === "Repositories" && <Repositories scanning={scanning} version={version} />}
         {view === "Runs" && <Runs version={version} />}
         {view === "Models" && <Models setup={setup} />}
-        {view === "Settings" && <SettingsView />}
+        {view === "Settings" && <SettingsView version={version} />}
         {view === "System" && <SystemView system={system} />}
       </main>
     </div>

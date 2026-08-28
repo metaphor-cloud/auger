@@ -1,0 +1,115 @@
+/*
+ * reviewrig's own theme.
+ *
+ * The rig sits in the menu bar all day beside an editor, so it is dark by default and
+ * quiet: a slate ground, one blue accent for what the user can act on, and severity
+ * colours that are the only saturated things on the page.
+ */
+
+:root,
+[data-theme="dark"] {
+  --theme-default: dark;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+  --radius: 8px;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --container: 1400px;
+  --section-gap: 2rem;
+
+  --bg: #0b0f14;
+  --bg-elevated: #10151d;
+  --bg-card: #121822;
+  --bg-card-hover: #17202c;
+
+  --border: #1e2937;
+  --border-subtle: #172230;
+
+  --text-primary: #e6edf5;
+  --text-secondary: #8b9bb0;
+  --text-tertiary: #5a6c81;
+
+  --accent: #4c9df0;
+  --accent-light: #74b6ff;
+  --accent-glow: rgba(76, 157, 240, 0.15);
+  --accent-glow-strong: rgba(76, 157, 240, 0.3);
+  --accent-border: rgba(76, 157, 240, 0.25);
+
+  --green: #34c98a;
+  --green-glow: rgba(52, 201, 138, 0.15);
+  --green-border: rgba(52, 201, 138, 0.25);
+  --red: #f0616d;
+  --red-glow: rgba(240, 97, 109, 0.15);
+  --red-border: rgba(240, 97, 109, 0.25);
+  --red-border-strong: rgba(240, 97, 109, 0.45);
+  --orange: #f2a13c;
+  --orange-glow: rgba(242, 161, 60, 0.15);
+  --orange-border: rgba(242, 161, 60, 0.25);
+  --cyan: #3ec5d8;
+
+  --nav-bg: rgba(11, 15, 20, 0.7);
+
+  --switch-thumb: #1a2230;
+  --switch-thumb-checked: #ffffff;
+
+  --sidebar-background: #10151d;
+  --sidebar-foreground: #e6edf5;
+  --sidebar-primary: #4c9df0;
+  --sidebar-primary-foreground: #0b0f14;
+  --sidebar-accent: #34c98a;
+  --sidebar-accent-foreground: #0b0f14;
+  --sidebar-border: #1e2937;
+  --sidebar-ring: #4c9df0;
+
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --bg: #f7f9fc;
+  --bg-elevated: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f1f5fa;
+
+  --border: #dbe3ed;
+  --border-subtle: #e8eef5;
+
+  --text-primary: #131a24;
+  --text-secondary: #56657a;
+  --text-tertiary: #7d8ca0;
+
+  --accent: #1f6fd0;
+  --accent-light: #3c8ae8;
+  --accent-glow: rgba(31, 111, 208, 0.12);
+  --accent-glow-strong: rgba(31, 111, 208, 0.24);
+  --accent-border: rgba(31, 111, 208, 0.25);
+
+  --green: #0f9d63;
+  --green-glow: rgba(15, 157, 99, 0.12);
+  --green-border: rgba(15, 157, 99, 0.25);
+  --red: #d6394a;
+  --red-glow: rgba(214, 57, 74, 0.12);
+  --red-border: rgba(214, 57, 74, 0.25);
+  --red-border-strong: rgba(214, 57, 74, 0.45);
+  --orange: #c8790d;
+  --orange-glow: rgba(200, 121, 13, 0.12);
+  --orange-border: rgba(200, 121, 13, 0.25);
+  --cyan: #0d92a6;
+
+  --nav-bg: rgba(247, 249, 252, 0.75);
+
+  --switch-thumb: #ffffff;
+  --switch-thumb-checked: #ffffff;
+
+  --sidebar-background: #ffffff;
+  --sidebar-foreground: #131a24;
+  --sidebar-primary: #1f6fd0;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #0f9d63;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #dbe3ed;
+  --sidebar-ring: #1f6fd0;
+
+  color-scheme: light;
+}

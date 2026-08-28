@@ -1,0 +1,21 @@
+@import "tailwindcss";
+@import "./theme.css";
+@import "@metaphor-cloud/ui/theme";
+@import "@metaphor-cloud/ui/base";
+
+/* Regenerate the utilities the library's own components reference. */
+@source "../node_modules/@metaphor-cloud/ui/dist";
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+}

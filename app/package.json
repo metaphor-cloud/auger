@@ -13,9 +13,12 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@metaphor-cloud/ui": "^2.1.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/api": "^2",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
     "@eslint/js": "^9",

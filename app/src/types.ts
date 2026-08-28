@@ -12,6 +12,7 @@ export type Policy = {
   model_profile: string;
   hints: string;
   tools: string[];
+  max_tool_calls: number;
   audit_hours: number;
 };
 
@@ -153,6 +154,17 @@ export type PolicyLevel = {
   overrides: Record<string, unknown>;
 };
 
+export type Root = { path: string; exclude: string[]; max_depth: number | null };
+
+export type McpServerSetting = {
+  name: string;
+  transport: string;
+  target: string;
+  enabled: boolean;
+};
+
+export type ForgeSetting = { name: string; host: string; enabled: boolean };
+
 export type Settings = {
   defaults: Policy;
   levels: PolicyLevel[];
@@ -160,6 +172,11 @@ export type Settings = {
   exclude: string[];
   codegraph: boolean;
   codegraph_available: boolean;
+  roots: Root[];
+  mcp: McpServerSetting[];
+  forges: ForgeSetting[];
+  schedule: Record<string, number | string>;
+  allow_hosted: boolean;
 };
 
 export type Tool = {
@@ -176,6 +193,8 @@ export type McpServer = {
   reachable: boolean;
   reason: string | null;
   tools: Tool[];
+  needs_sign_in: boolean;
+  signed_in: boolean;
 };
 
 export type ToolList = { servers: McpServer[]; allowed: string[] };
@@ -188,6 +207,7 @@ export type ModelChoice = {
   memory_gb: number;
   description: string;
   fits: boolean;
+  downloaded: boolean;
 };
 
 export type Catalog = {

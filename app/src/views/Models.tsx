@@ -1,16 +1,70 @@
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Progress,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@metaphor-cloud/ui";
 import { useCallback, useEffect, useState } from "react";
 
 import { checkModels, getCatalog, getModels, setupModels, startModels } from "../engine";
-import type { BackendList, Catalog, SetupProgress } from "../types";
+import type { BackendList, Catalog, ModelChoice, SetupProgress } from "../types";
+import { Fact, Facts, Mono, PageTitle, Section } from "../ui";
 
 const JOB_CLASSES = ["review", "triage", "embed", "rerank"];
 
+function label(model: ModelChoice) {
+  const notes = [`${model.memory_gb.toFixed(0)} GB`];
+  if (model.downloaded) notes.push("downloaded");
+  if (!model.fits) notes.push("too large for this machine");
+  return `${model.name} · ${notes.join(" · ")}`;
+}
+
+function Picker({
+  value,
+  onChange,
+  models,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  models: ModelChoice[];
+  placeholder: string;
+}) {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger className="w-full max-w-xl">
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {models.map((model) => (
+          <SelectItem key={model.name} value={model.name} disabled={!model.fits}>
+            {label(model)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 export default function Models({ setup }: { setup: SetupProgress | null }) {
   const [data, setData] = useState<BackendList | null>(null);
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [review, setReview] = useState("");
+  const [embed, setEmbed] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"" | "check" | "start" | "setup">("");
-  const [catalog, setCatalog] = useState<Catalog | null>(null);
-  const [choice, setChoice] = useState("");
 
   const load = useCallback(async (fetcher: () => Promise<BackendList>) => {
     try {
@@ -21,13 +75,20 @@ export default function Models({ setup }: { setup: SetupProgress | null }) {
     }
   }, []);
 
+  const loadCatalog = useCallback(async () => {
+    const body = await getCatalog();
+    setCatalog(body);
+    setReview((current) => current || body.recommended);
+    setEmbed(
+      (current) =>
+        current || body.models.find((one) => one.job_class === "embed" && one.fits)?.name || "",
+    );
+  }, []);
+
   useEffect(() => {
     void load(getModels);
-    void getCatalog().then((body) => {
-      setCatalog(body);
-      setChoice(body.recommended);
-    });
-  }, [load]);
+    void loadCatalog();
+  }, [load, loadCatalog]);
 
   async function act(which: "check" | "start") {
     setBusy(which);
@@ -35,13 +96,13 @@ export default function Models({ setup }: { setup: SetupProgress | null }) {
     setBusy("");
   }
 
-  async function runSetup() {
+  async function fetchModels() {
     setBusy("setup");
     try {
-      const outcome = await setupModels(choice);
+      const outcome = await setupModels(review, embed);
       if (!outcome.ok) setError(outcome.error);
       await load(getModels);
-      setCatalog(await getCatalog());
+      await loadCatalog();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -49,115 +110,156 @@ export default function Models({ setup }: { setup: SetupProgress | null }) {
     }
   }
 
-  const ready = data?.backends.some((backend) => backend.up) ?? false;
+  const reviewers = catalog?.models.filter((one) => one.job_class === "review") ?? [];
+  const embedders = catalog?.models.filter((one) => one.job_class === "embed") ?? [];
+  const chosen = [review, embed]
+    .map((name) => catalog?.models.find((one) => one.name === name))
+    .filter((one): one is ModelChoice => Boolean(one));
+  const toFetch = chosen.filter((one) => !one.downloaded);
 
   return (
-    <section>
-      <header className="view-header">
-        <div>
-          <h2>Models</h2>
-          <p className="muted">A job asks for a job class. The profile picks the backend.</p>
-        </div>
-        <button onClick={() => act("check")} disabled={busy !== ""}>
+    <>
+      <PageTitle
+        title="Models"
+        description="A job asks for a job class. The profile picks the backend."
+      >
+        <Button size="sm" variant="ghost" onClick={() => act("check")} disabled={busy !== ""}>
           {busy === "check" ? "Checking" : "Check"}
-        </button>
-        <button onClick={() => act("start")} disabled={busy !== ""}>
-          {busy === "start" ? "Starting" : "Start managed"}
-        </button>
-      </header>
+        </Button>
+        <Button size="sm" variant="secondary" onClick={() => act("start")} disabled={busy !== ""}>
+          {busy === "start" ? "Starting" : "Start"}
+        </Button>
+      </PageTitle>
 
-      {error && <p className="error">{error}</p>}
+      {error && (
+        <Alert variant="danger" className="mb-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
-      {catalog && !ready && (
-        <div className="setup">
-          <h3>Set up</h3>
-          <p className="muted">
-            The rig fetches its own model runtime and weights. Nothing else to install.
-            This machine can hold about {catalog.usable_memory_gb} GB.
+      <Section
+        title="Choose and fetch"
+        description={`The rig brings its own runtime and its own weights. This machine can hold about ${
+          catalog?.usable_memory_gb ?? "?"
+        } GB.`}
+      >
+        <div className="space-y-3">
+          <div>
+            <p className="mb-1 text-xs text-text-secondary">Reviewer</p>
+            <Picker
+              value={review}
+              onChange={setReview}
+              models={reviewers}
+              placeholder="Pick a review model"
+            />
+          </div>
+          <div>
+            <p className="mb-1 text-xs text-text-secondary">Embedder</p>
+            <Picker
+              value={embed}
+              onChange={setEmbed}
+              models={embedders}
+              placeholder="Pick an embedding model"
+            />
+          </div>
+          <p className="text-xs text-text-secondary">
+            {chosen.map((one) => `${one.name} (${one.memory_gb.toFixed(0)} GB to run)`).join(", ") ||
+              "Nothing chosen"}
+            {toFetch.length > 0 && ` · ${toFetch.length} to download`}
           </p>
-          <div className="setup-row">
-            <select value={choice} onChange={(event) => setChoice(event.target.value)}>
-              {catalog.models
-                .filter((model) => model.job_class === "review")
-                .map((model) => (
-                  <option key={model.name} value={model.name} disabled={!model.fits}>
-                    {model.name} — {model.description}
-                    {model.fits ? "" : " (too large for this machine)"}
-                  </option>
-                ))}
-            </select>
-            <button onClick={() => void runSetup()} disabled={busy !== ""}>
-              {busy === "setup" ? "Setting up" : "Set up"}
-            </button>
+          <div className="flex items-center gap-3">
+            <Button onClick={() => void fetchModels()} disabled={busy !== "" || !review}>
+              {busy === "setup"
+                ? "Working"
+                : toFetch.length === 0
+                  ? "Use these"
+                  : `Download and use (${toFetch.length})`}
+            </Button>
+            {catalog && !catalog.runtime_installed && (
+              <span className="text-xs text-text-secondary">
+                The model runtime is fetched too, once.
+              </span>
+            )}
           </div>
           {setup && (
-            <p className="muted mono">
-              {setup.total
-                ? `${setup.name} ${(setup.fraction * 100).toFixed(1)}% (${(
-                    setup.received / 1e9
-                  ).toFixed(1)} GB)`
-                : setup.message}
-            </p>
+            <div className="space-y-1">
+              <Mono>
+                {setup.total
+                  ? `${setup.name} ${(setup.fraction * 100).toFixed(1)}% (${(
+                      setup.received / 1e9
+                    ).toFixed(1)} GB)`
+                  : setup.message}
+              </Mono>
+              {setup.total > 0 && <Progress value={setup.fraction * 100} />}
+            </div>
           )}
         </div>
-      )}
-      {data === null ? (
-        <p className="muted">Loading</p>
-      ) : (
-        <>
-          <table>
-            <thead>
-              <tr>
-                <th>Backend</th>
-                <th>Model</th>
-                <th>State</th>
-                <th>Address</th>
-                <th className="numeric">Requests</th>
-                <th className="numeric">Tokens</th>
-              </tr>
-            </thead>
-            <tbody>
+      </Section>
+
+      <Section title="Backends" description="What answers a request, and what it has cost so far.">
+        {data === null ? (
+          <p className="text-xs text-text-secondary">Loading</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Backend</TableHead>
+                <TableHead>Model</TableHead>
+                <TableHead>State</TableHead>
+                <TableHead>Address</TableHead>
+                <TableHead className="text-right">Requests</TableHead>
+                <TableHead className="text-right">Tokens</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {data.backends.map((backend) => (
-                <tr key={backend.name}>
-                  <td>
+                <TableRow key={backend.name}>
+                  <TableCell>
                     {backend.name}
-                    {backend.hosted && <span className="badge hosted">hosted</span>}
-                  </td>
-                  <td className="muted">{backend.model || "any"}</td>
-                  <td>
-                    <span className={`badge ${backend.up ? "mode-complete" : ""}`}>
+                    {backend.hosted && (
+                      <Badge variant="warning" className="ml-2">
+                        hosted
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-text-secondary">{backend.model || "any"}</TableCell>
+                  <TableCell>
+                    <Badge variant={backend.up ? "success" : "outline"}>
                       {backend.up ? "Running" : "Stopped"}
-                    </span>
-                  </td>
-                  <td className="muted path" title={backend.reason ?? backend.url}>
-                    {backend.url}
-                  </td>
-                  <td className="numeric">{backend.requests}</td>
-                  <td className="numeric">
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Mono title={backend.reason ?? backend.url}>{backend.url}</Mono>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{backend.requests}</TableCell>
+                  <TableCell className="text-right tabular-nums">
                     {backend.prompt_tokens + backend.completion_tokens}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
+        )}
+      </Section>
 
-          <h3>Active profile</h3>
-          <dl className="facts">
+      {data !== null && (
+        <Section
+          title="Active profile"
+          description={
+            data.allow_hosted
+              ? "Hosted models are allowed."
+              : "Hosted models are off. Turning one on sends your code off this machine."
+          }
+        >
+          <Facts>
             {JOB_CLASSES.map((jobClass) => (
-              <div key={jobClass} style={{ display: "contents" }}>
-                <dt>{jobClass}</dt>
-                <dd className="mono">{data.active_profile_backends[jobClass] ?? "unset"}</dd>
-              </div>
+              <Fact key={jobClass} label={jobClass}>
+                <Mono>{data.active_profile_backends[jobClass] || "off"}</Mono>
+              </Fact>
             ))}
-          </dl>
-
-          {!data.allow_hosted && (
-            <p className="muted" style={{ marginTop: "1rem" }}>
-              Hosted models are off. Turning one on sends your code off this machine.
-            </p>
-          )}
-        </>
+          </Facts>
+        </Section>
       )}
-    </section>
+    </>
   );
 }

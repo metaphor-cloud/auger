@@ -1,7 +1,9 @@
+import { Alert, AlertDescription, Badge, Button, EmptyState } from "@metaphor-cloud/ui";
 import { useCallback, useEffect, useState } from "react";
 
 import { getFindings, setFindingStatus } from "../engine";
 import type { Finding } from "../types";
+import { Mono, PageTitle, SeverityBadge } from "../ui";
 
 const ORDER = ["critical", "high", "medium", "low", "info"];
 
@@ -53,73 +55,79 @@ export default function Findings({
     await load();
   }
 
-  return (
-    <section>
-      <header className="view-header">
-        <div>
-          <h2>{showSuppressed ? "Suppressed" : "Findings"}</h2>
-          <p className="muted">
-            {ORDER.filter((name) => counts[name])
-              .map((name) => `${counts[name]} ${name}`)
-              .join(", ") || "Nothing open"}
-          </p>
-        </div>
-        <button onClick={() => setShowDismissed((value) => !value)}>
-          {showDismissed ? "Hide dismissed" : "Show dismissed"}
-        </button>
-        <button onClick={() => setShowSuppressed((value) => !value)}>
-          {showSuppressed ? "Show open" : "Show suppressed"}
-        </button>
-      </header>
+  const summary =
+    ORDER.filter((name) => counts[name])
+      .map((name) => `${counts[name]} ${name}`)
+      .join(", ") || "Nothing open";
 
-      {error && <p className="error">{error}</p>}
-      {findings === null && <p className="muted">Loading</p>}
+  return (
+    <>
+      <PageTitle title={showSuppressed ? "Suppressed" : "Findings"} description={summary}>
+        <Button size="sm" variant="ghost" onClick={() => setShowDismissed((value) => !value)}>
+          {showDismissed ? "Hide dismissed" : "Show dismissed"}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setShowSuppressed((value) => !value)}>
+          {showSuppressed ? "Show open" : "Show suppressed"}
+        </Button>
+      </PageTitle>
+
+      {error && (
+        <Alert variant="danger" className="mb-3">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      {findings === null && <p className="text-xs text-text-secondary">Loading</p>}
       {findings !== null && findings.length === 0 && (
-        <p className="empty">
-          {showSuppressed ? "Nothing suppressed." : "No open findings."}
-        </p>
+        <EmptyState
+          title={showSuppressed ? "Nothing suppressed" : "No open findings"}
+          description={
+            showSuppressed
+              ? "Findings you suppress stay out of the list until you bring them back."
+              : "The rig reports here as it reviews. Runs shows what it has looked at."
+          }
+        />
       )}
 
-      <ul className="findings">
+      <ul className="divide-y divide-border-subtle">
         {(findings ?? []).map((finding) => (
           <li key={finding.fingerprint}>
             <button
-              className="finding-head"
+              className="flex w-full items-baseline gap-3 rounded-md px-1 py-2 text-left transition-colors hover:bg-bg-card-hover"
               onClick={() => setOpen(open === finding.fingerprint ? null : finding.fingerprint)}
             >
-              <span className={`badge sev-${finding.severity}`}>{finding.severity}</span>
-              <span className="finding-title">{finding.title}</span>
-              <span className="muted mono">{fileLabel(finding)}</span>
-              <span className="muted">{repoLabel(finding.repo_path)}</span>
-              {finding.source !== "model" && (
-                <span className="badge">{finding.source}</span>
-              )}
-              {finding.triage === "false" && <span className="badge">dismissed</span>}
+              <SeverityBadge severity={finding.severity} />
+              <span className="min-w-0 flex-1 truncate">{finding.title}</span>
+              <Mono>{fileLabel(finding)}</Mono>
+              <span className="text-xs text-text-tertiary">{repoLabel(finding.repo_path)}</span>
+              {finding.source !== "model" && <Badge variant="outline">{finding.source}</Badge>}
+              {finding.triage === "false" && <Badge variant="outline">dismissed</Badge>}
               {finding.times_seen > 1 && (
-                <span className="muted">seen {finding.times_seen}×</span>
+                <span className="text-xs text-text-tertiary">seen {finding.times_seen}×</span>
               )}
             </button>
             {open === finding.fingerprint && (
-              <div className="finding-body">
-                <p>{finding.detail}</p>
+              <div className="max-w-3xl px-1 pb-4 text-xs leading-relaxed">
+                <p className="mb-2 text-text-primary">{finding.detail}</p>
                 {finding.suggestion && (
-                  <p>
-                    <strong>Fix:</strong> {finding.suggestion}
+                  <p className="mb-2 text-text-primary">
+                    <span className="font-medium">Fix:</span> {finding.suggestion}
                   </p>
                 )}
-                <p className="muted mono">
-                  {finding.source}
-                  {finding.triage ? ` · triage ${finding.triage}` : ""} · confidence{" "}
-                  {finding.confidence.toFixed(2)} · last seen {finding.last_seen_at}
+                <p className="mb-3">
+                  <Mono>
+                    {finding.source}
+                    {finding.triage ? ` · triage ${finding.triage}` : ""} · confidence{" "}
+                    {finding.confidence.toFixed(2)} · last seen {finding.last_seen_at}
+                  </Mono>
                 </p>
-                <button onClick={() => void changeStatus(finding)}>
+                <Button size="sm" variant="secondary" onClick={() => void changeStatus(finding)}>
                   {finding.status === "suppressed" ? "Bring back" : "Suppress"}
-                </button>
+                </Button>
               </div>
             )}
           </li>
         ))}
       </ul>
-    </section>
+    </>
   );
 }
