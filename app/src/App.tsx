@@ -7,6 +7,7 @@ import Findings from "./views/Findings";
 import Models from "./views/Models";
 import Repositories from "./views/Repositories";
 import Runs from "./views/Runs";
+import SettingsView from "./views/Settings";
 import SystemView from "./views/System";
 import "./App.css";
 
@@ -15,7 +16,7 @@ type Status =
   | { state: "ready"; version: string }
   | { state: "failed"; reason: string };
 
-const VIEWS = ["Findings", "Repositories", "Runs", "Models", "System"] as const;
+const VIEWS = ["Findings", "Repositories", "Runs", "Models", "Settings", "System"] as const;
 type View = (typeof VIEWS)[number];
 
 const LOUD = new Set(["critical", "high"]);
@@ -113,6 +114,7 @@ export default function App() {
         {view === "Repositories" && <Repositories scanning={scanning} />}
         {view === "Runs" && <Runs version={version} />}
         {view === "Models" && <Models />}
+        {view === "Settings" && <SettingsView />}
         {view === "System" && <SystemView system={system} />}
       </main>
     </div>

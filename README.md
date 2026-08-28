@@ -118,6 +118,33 @@ Only a file whose git blob sha moved is read again. On this repository, a full i
 Search by meaning needs `sqlite-vec` and an embedding backend. Without either, keyword
 search still finds callers, and the rig says so in the System view.
 
+## Pull requests
+
+Turn a forge on and the rig reads its open pull requests. By default it reads only the
+ones assigned to you or waiting on your review.
+
+```toml
+[forge.github]
+enabled = true
+token_env = "GITHUB_TOKEN"          # falls back to `gh auth token`
+```
+
+Two modes decide what happens to the result.
+
+- `draft` writes a review that waits. On GitHub it is a pending review, on GitLab a set
+  of draft notes. Nobody but you sees it until you submit it. This is the default.
+- `complete` submits. Comments appear on the pull request under your name.
+
+A finding becomes a line comment only when the model was confident and knows the line.
+Everything else goes in the summary, marked low confidence, because a wrong comment on
+someone else's pull request costs more than a missed one.
+
+The mode is set at any of the three levels, and the narrow level wins, so one repository
+can turn off a forge-wide `complete`. The Settings view names every repository that runs
+in `complete` mode.
+
+An enabled forge joins the egress allowlist. A forge that is off cannot be reached.
+
 ## Other agents
 
 A review that runs while a coding agent edits the same tree reads a half finished state.

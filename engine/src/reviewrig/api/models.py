@@ -173,3 +173,38 @@ class ReviewRequest(BaseModel):
 class StatusRequest(BaseModel):
     fingerprints: list[str]
     status: Literal["open", "suppressed", "resolved"]
+
+
+class ForgeOut(BaseModel):
+    name: str
+    kind: str
+    host: str
+    enabled: bool
+    reachable: bool
+    user: str
+    reason: str | None
+
+
+class ForgeList(BaseModel):
+    forges: list[ForgeOut]
+
+
+class PolicyLevelOut(BaseModel):
+    """One row of the settings table: a level, its key, and what it sets."""
+
+    level: Literal["defaults", "org", "repo"]
+    key: str
+    overrides: dict[str, object]
+
+
+class SettingsOut(BaseModel):
+    defaults: Policy
+    levels: list[PolicyLevelOut]
+    config_path: str
+
+
+class PolicyChange(BaseModel):
+    level: Literal["defaults", "org", "repo"]
+    #: Empty for `defaults`. An organisation key or a repository path otherwise.
+    key: str = ""
+    changes: dict[str, object]

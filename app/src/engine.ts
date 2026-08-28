@@ -6,9 +6,11 @@ import { takeEvents, type ServerEvent } from "./sse";
 import type {
   BackendList,
   FindingList,
+  ForgeList,
   Queue,
   RepositoryList,
   RunList,
+  Settings,
   System,
 } from "./types";
 
@@ -97,6 +99,26 @@ export async function requestReview(path: string, target = "HEAD"): Promise<Queu
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path, target }),
+  });
+}
+
+export async function getForges(): Promise<ForgeList> {
+  return request("/forges");
+}
+
+export async function getSettings(): Promise<Settings> {
+  return request("/settings");
+}
+
+export async function changeSettings(
+  level: "defaults" | "org" | "repo",
+  key: string,
+  changes: Record<string, unknown>,
+): Promise<Settings> {
+  return request("/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ level, key, changes }),
   });
 }
 

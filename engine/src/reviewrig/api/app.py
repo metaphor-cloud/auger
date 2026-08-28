@@ -28,13 +28,18 @@ from reviewrig.api.models import (
     EgressOut,
     FindingList,
     FindingOut,
+    ForgeList,
+    ForgeOut,
     IndexOut,
+    PolicyChange,
+    PolicyLevelOut,
     QueueOut,
     RepositoryList,
     ReviewRequest,
     RunList,
     RunOut,
     SandboxOut,
+    SettingsOut,
     StatusRequest,
     SystemOut,
 )
@@ -243,6 +248,50 @@ def create_app(rig: Rig) -> FastAPI:
         """Start any managed backend that does not answer. A large model takes a minute."""
         await rig.ensure_models()
         return backend_list()
+
+    @router.get("/forges")
+    async def forges() -> ForgeList:
+        rows: list[ForgeOut] = []
+        for name, settings in sorted(rig.config.forge.items()):
+            entry = rig.forges.entries.get(settings.host.lower())
+            rows.append(
+                ForgeOut(
+                    name=name,
+                    kind=settings.kind,
+                    host=settings.host,
+                    enabled=settings.enabled,
+                    reachable=bool(entry and entry.state.reachable),
+                    user=entry.state.user if entry else "",
+                    reason=rig.forges.problems.get(name) or (entry.state.reason if entry else None),
+                )
+            )
+        return ForgeList(forges=rows)
+
+    @router.get("/settings")
+    async def settings_view() -> SettingsOut:
+        levels = [
+            PolicyLevelOut(level="org", key=key, overrides=value.model_dump(exclude_none=True))
+            for key, value in sorted(rig.config.org.items())
+        ] + [
+            PolicyLevelOut(level="repo", key=key, overrides=value.model_dump(exclude_none=True))
+            for key, value in sorted(rig.config.repo.items())
+        ]
+        return SettingsOut(
+            defaults=rig.config.defaults,
+            levels=levels,
+            config_path=str(rig.config_path),
+        )
+
+    @router.put("/settings")
+    async def change_settings(change: PolicyChange) -> SettingsOut:
+        """Write one level back to the config file, keeping the user's comments."""
+        try:
+            await asyncio.to_thread(
+                rig.apply_policy_change, change.level, change.key, change.changes
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return await settings_view()
 
     @router.get("/findings")
     async def findings(

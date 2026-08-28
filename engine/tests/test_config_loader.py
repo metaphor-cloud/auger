@@ -80,3 +80,13 @@ def test_a_save_round_trips(tmp_path: Path) -> None:
 def test_the_home_follows_the_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("REVIEWRIG_HOME", str(tmp_path))
     assert home_dir() == tmp_path
+
+
+def test_two_configs_do_not_share_their_defaults() -> None:
+    """A shallow copy would let one config's change reach every config after it."""
+    first = Config()
+    second = Config()
+    first.forge["github"].enabled = True
+    first.backend["local-review"].model = "changed"
+    assert second.forge["github"].enabled is False
+    assert second.backend["local-review"].model == "gpt-oss-120b"

@@ -327,3 +327,17 @@ h3 {
   background: var(--soft);
   color: var(--muted);
 }
+
+select,
+input[type="checkbox"] {
+  font: inherit;
+  color: inherit;
+  accent-color: var(--accent);
+}
+
+select {
+  background: transparent;
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  padding: 0.1rem 0.3rem;
+}

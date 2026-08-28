@@ -16,7 +16,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from reviewrig.config import Policy
-from reviewrig.jobs import diff_review
+from reviewrig.forge import PullRequest
+from reviewrig.jobs import JobOutcome, diff_review, pr_review
 from reviewrig.log import Logger, create_logger
 from reviewrig.models import Repository
 from reviewrig.schedule.protocol import RigLike
@@ -38,6 +39,18 @@ class Task:
     base: str | None = field(compare=False, default=None)
     target: str = field(compare=False, default="HEAD")
     attempts: int = field(compare=False, default=0)
+    pull: PullRequest | None = field(compare=False, default=None)
+
+    @classmethod
+    def for_pull(cls, repository: Repository, policy: Policy, pull: PullRequest) -> Task:
+        return cls(
+            priority=policy.priority,
+            repository=repository,
+            policy=policy,
+            kind=pr_review.KIND,
+            target=f"pull/{pull.number}",
+            pull=pull,
+        )
 
     @classmethod
     def review(
@@ -160,6 +173,38 @@ class Scheduler:
             finally:
                 self.queue.task_done()
 
+    async def _execute(self, task: Task) -> JobOutcome | None:
+        rig = self.rig
+        if task.kind == pr_review.KIND and task.pull is not None:
+            found = rig.forges.for_repository(task.repository)
+            if found is None:
+                self.log.warn(
+                    "pull request skipped",
+                    reason="no_forge",
+                    repo=task.repository.slug,
+                )
+                return None
+            entry, repo = found
+            return await pr_review.review_pull(
+                store=rig.store,
+                gateway=rig.gateway,
+                entry=entry,
+                repo=repo,
+                pull=task.pull,
+                repository=task.repository,
+                policy=task.policy,
+                log=self.log,
+            )
+        return await diff_review.review(
+            store=rig.store,
+            gateway=rig.gateway,
+            repository=task.repository,
+            policy=task.policy,
+            base=task.base,
+            target=task.target,
+            log=self.log,
+        )
+
     async def _run(self, task: Task) -> None:
         rig = self.rig
         path = task.repository.path
@@ -198,17 +243,11 @@ class Scheduler:
         self._queued.discard(self.key(task))
         rig.publish("run.started", repo=str(path), slug=task.repository.slug, kind=task.kind)
         try:
-            outcome = await diff_review.review(
-                store=rig.store,
-                gateway=rig.gateway,
-                repository=task.repository,
-                policy=task.policy,
-                base=task.base,
-                target=task.target,
-                log=self.log,
-            )
+            outcome = await self._execute(task)
         finally:
             self._in_flight.discard(path)
+        if outcome is None:
+            return
 
         rig.publish(
             "run.finished",

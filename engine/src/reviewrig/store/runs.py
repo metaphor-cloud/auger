@@ -167,3 +167,16 @@ def set_reviewed_head(store: Store, repo_path: str | Path, head: str) -> None:
             """,
             (str(repo_path), head, now()),
         )
+
+
+def pull_reviewed(store: Store, repo_path: str | Path, head_sha: str) -> bool:
+    """True when this exact pull request head already has a review.
+
+    A pull request that gains no new commit must not be reviewed again on every poll.
+    """
+    rows = store.query(
+        "SELECT 1 FROM runs WHERE repo_path = ? AND kind = 'pr_review' "
+        "AND head = ? AND status = 'ok' LIMIT 1",
+        (str(repo_path), head_sha),
+    )
+    return bool(rows)

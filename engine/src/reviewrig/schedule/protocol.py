@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from reviewrig.config import Config
+from reviewrig.forge import Registry
 from reviewrig.llm import Gateway
 from reviewrig.models import RepositoryView
 from reviewrig.store import Store
@@ -18,6 +19,7 @@ class RigLike(Protocol):
     store: Store
     gateway: Gateway
     config: Config
+    forges: Registry
 
     def publish(self, event: str, **data: object) -> None: ...
 

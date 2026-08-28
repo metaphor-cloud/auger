@@ -10,15 +10,25 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from reviewrig.config import Config, Policy, config_path, ensure_config, load, resolve_policy
+from reviewrig.config import (
+    Config,
+    Overrides,
+    Policy,
+    config_path,
+    ensure_config,
+    load,
+    resolve_policy,
+    save,
+)
 from reviewrig.discovery import scan
 from reviewrig.events import Event, EventBus
+from reviewrig.forge import Registry
 from reviewrig.llm import Gateway, Health, Supervisor, probe_all
 from reviewrig.log import Logger, create_logger
 from reviewrig.models import Repository, RepositoryView
 from reviewrig.net import Allowlist, Destination, EgressProxy
 from reviewrig.sandbox import Selection, select
-from reviewrig.schedule import Scheduler, Task, watch
+from reviewrig.schedule import Scheduler, Task, watch, watch_forges
 from reviewrig.settings import Settings
 from reviewrig.store import Store
 from reviewrig.store.repositories import list_repositories, record_scan
@@ -40,6 +50,7 @@ class Rig:
         self.supervisor = Supervisor(self.models_dir, self.log)
         self.gateway = Gateway(self.config, self.allowlist, self.log)
         self.health: dict[str, Health] = {}
+        self.forges = Registry(self.config, self.gateway.client, self.log)
         self.scheduler = Scheduler(self, self.log)
         self._background: list[asyncio.Task[None]] = []
 
@@ -47,6 +58,7 @@ class Rig:
         """Start the workers and the watcher. The UI can connect before this finishes."""
         await self.scheduler.start(self.config.schedule.max_concurrent_reviews)
         self._background.append(asyncio.create_task(watch(self, self.scheduler, self.log)))
+        self._background.append(asyncio.create_task(watch_forges(self, self.scheduler, self.log)))
 
     async def stop_background(self) -> None:
         for task in self._background:
@@ -89,6 +101,10 @@ class Rig:
             if backend.hosted and not self.config.egress.allow_hosted:
                 continue
             values.append(backend.url)
+        # A forge the user turned on must be reachable. One that is off must not be.
+        for forge in self.config.forge.values():
+            if forge.enabled:
+                values.append(forge.api)
         for value in values:
             destination = Destination.parse(value)
             if destination:
@@ -100,11 +116,34 @@ class Rig:
         # than replacing what they point at.
         self._refresh_allowlist()
         self.gateway.config = self.config
+        self.forges.reload(self.config)
         self.publish("config.reloaded", roots=len(self.config.roots))
         return self.config
 
     def publish(self, event: str, **data: object) -> None:
         self.bus.publish(Event(event, dict(data)))
+
+    def apply_policy_change(self, level: str, key: str, changes: dict[str, object]) -> Config:
+        """Change one settings level and write the file back.
+
+        The write keeps the user's comments, because they edit this file by hand too.
+        """
+        if level == "defaults":
+            self.config.defaults = self.config.defaults.model_copy(update=changes)
+        elif level in ("org", "repo"):
+            if not key:
+                raise ValueError(f"a {level} change needs a key")
+            table = self.config.org if level == "org" else self.config.repo
+            current = table.get(key, Overrides())
+            table[key] = Overrides.model_validate(
+                {**current.model_dump(exclude_none=True), **changes}
+            )
+        else:
+            raise ValueError(f"unknown settings level {level!r}")
+        save(self.config_path, self.config)
+        self.log.info("settings changed", level=level, key=key, fields=sorted(changes))
+        self.publish("config.reloaded", roots=len(self.config.roots))
+        return self.config
 
     def policy_for(self, repository: Repository) -> Policy:
         return resolve_policy(repository, self.config)

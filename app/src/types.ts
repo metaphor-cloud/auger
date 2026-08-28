@@ -132,3 +132,27 @@ export type Queue = {
   paused: boolean;
   workers: number;
 };
+
+export type Forge = {
+  name: string;
+  kind: string;
+  host: string;
+  enabled: boolean;
+  reachable: boolean;
+  user: string;
+  reason: string | null;
+};
+
+export type ForgeList = { forges: Forge[] };
+
+export type PolicyLevel = {
+  level: "defaults" | "org" | "repo";
+  key: string;
+  overrides: Record<string, unknown>;
+};
+
+export type Settings = {
+  defaults: Policy;
+  levels: PolicyLevel[];
+  config_path: string;
+};

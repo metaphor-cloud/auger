@@ -13,6 +13,7 @@ import pytest
 
 from reviewrig.config import Policy
 from reviewrig.config.schema import Backend, Config, ProfileEntry
+from reviewrig.forge import Registry
 from reviewrig.llm import Gateway
 from reviewrig.models import Remote, Repository, RepositoryView
 from reviewrig.net import Allowlist
@@ -33,6 +34,7 @@ class StubRig:
         self.store = store
         self.gateway = gateway
         self.config = config
+        self.forges = Registry(config, gateway.client)
         self.events: list[tuple[str, dict[str, object]]] = []
 
     def publish(self, event: str, **data: object) -> None:

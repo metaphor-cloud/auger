@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 DEFAULT_REMOTE = "git@github.com:acme/thing.git"
 
@@ -164,3 +164,161 @@ def git_commit(path: Path, files: dict[str, str], message: str) -> str:
         env=env,
     )
     return result.stdout.strip()
+
+
+PULL_DIFF = """\
+diff --git a/reader.py b/reader.py
+--- a/reader.py
++++ b/reader.py
+@@ -1,2 +1,3 @@
+ def read(path):
+-    return path
++    handle = open(path)
++    return handle.read()
+"""
+
+
+class FakeGitHub:
+    """The GitHub endpoints the rig uses, over real HTTP."""
+
+    def __init__(self) -> None:
+        self.login = "ru"
+        self.pulls: list[dict[str, Any]] = []
+        self.reviews: list[dict[str, Any]] = []
+        self.diff = PULL_DIFF
+        self.rate_limited = False
+        self.tokens: list[str] = []
+
+    def add_pull(
+        self,
+        number: int = 7,
+        assignees: list[str] | None = None,
+        reviewers: list[str] | None = None,
+        draft: bool = False,
+        sha: str = "abc123",
+    ) -> None:
+        self.pulls.append(
+            {
+                "number": number,
+                "title": f"Change {number}",
+                "html_url": f"https://github.com/acme/thing/pull/{number}",
+                "user": {"login": "someone"},
+                "head": {"sha": sha},
+                "base": {"ref": "main"},
+                "draft": draft,
+                "assignees": [{"login": name} for name in assignees or []],
+                "requested_reviewers": [{"login": name} for name in reviewers or []],
+                "updated_at": "2026-01-01T00:00:00Z",
+            }
+        )
+
+    def app(self) -> FastAPI:
+        app = FastAPI()
+
+        def guard(request: Request) -> JSONResponse | None:
+            self.tokens.append(request.headers.get("authorization", ""))
+            if self.rate_limited:
+                return JSONResponse(
+                    {"message": "rate limited"},
+                    status_code=403,
+                    headers={"x-ratelimit-remaining": "0", "x-ratelimit-reset": "9999"},
+                )
+            return None
+
+        @app.get("/user")
+        async def user(request: Request) -> Any:
+            return guard(request) or {"login": self.login}
+
+        @app.get("/repos/{owner}/{name}/pulls")
+        async def pulls(owner: str, name: str, request: Request) -> Any:
+            return guard(request) or self.pulls
+
+        @app.get("/repos/{owner}/{name}/pulls/{number}")
+        async def one(owner: str, name: str, number: int, request: Request) -> Any:
+            blocked = guard(request)
+            if blocked:
+                return blocked
+            if "diff" in request.headers.get("accept", ""):
+                return Response(content=self.diff, media_type="text/plain")
+            return next(pull for pull in self.pulls if pull["number"] == number)
+
+        @app.post("/repos/{owner}/{name}/pulls/{number}/reviews")
+        async def review(owner: str, name: str, number: int, request: Request) -> Any:
+            blocked = guard(request)
+            if blocked:
+                return blocked
+            body = await request.json()
+            self.reviews.append({"number": number, **body})
+            return {"id": 99, "html_url": f"https://github.com/{owner}/{name}/pull/{number}"}
+
+        return app
+
+
+class FakeGitLab:
+    """The GitLab endpoints the rig uses, over real HTTP."""
+
+    def __init__(self) -> None:
+        self.username = "ru"
+        self.merge_requests: list[dict[str, Any]] = []
+        self.draft_notes: list[str] = []
+        self.published = False
+        self.tokens: list[str] = []
+
+    def add_merge_request(
+        self,
+        iid: int = 3,
+        assignees: list[str] | None = None,
+        reviewers: list[str] | None = None,
+        draft: bool = False,
+    ) -> None:
+        self.merge_requests.append(
+            {
+                "iid": iid,
+                "title": f"Change {iid}",
+                "web_url": f"https://gitlab.com/acme/thing/-/merge_requests/{iid}",
+                "author": {"username": "someone"},
+                "sha": "def456",
+                "target_branch": "main",
+                "draft": draft,
+                "assignees": [{"username": name} for name in assignees or []],
+                "reviewers": [{"username": name} for name in reviewers or []],
+                "updated_at": "2026-01-01T00:00:00Z",
+            }
+        )
+
+    def app(self) -> FastAPI:
+        app = FastAPI()
+
+        @app.get("/user")
+        async def user(request: Request) -> Any:
+            self.tokens.append(request.headers.get("private-token", ""))
+            return {"username": self.username}
+
+        @app.get("/projects/{project:path}/merge_requests")
+        async def merge_requests(project: str) -> Any:
+            return self.merge_requests
+
+        @app.get("/projects/{project:path}/merge_requests/{iid}/changes")
+        async def changes(project: str, iid: int) -> Any:
+            return {
+                "changes": [
+                    {
+                        "new_path": "reader.py",
+                        "old_path": "reader.py",
+                        "diff": "@@ -1,2 +1,3 @@\n-    return path\n+    handle = open(path)\n",
+                    }
+                ]
+            }
+
+        @app.post("/projects/{project:path}/merge_requests/{iid}/draft_notes")
+        async def draft_note(project: str, iid: int, request: Request) -> Any:
+            body = await request.json()
+            self.draft_notes.append(str(body.get("note", "")))
+            return {"id": len(self.draft_notes)}
+
+        @app.post("/projects/{project:path}/merge_requests/{iid}/draft_notes/bulk_publish")
+        async def publish(project: str, iid: int) -> Any:
+            self.published = True
+            return {}
+
+        return app

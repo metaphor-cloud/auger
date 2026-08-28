@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import asyncio
 
+from reviewrig.forge import ForgeError
 from reviewrig.log import Logger, create_logger
 from reviewrig.schedule.protocol import RigLike
 from reviewrig.schedule.scheduler import Scheduler, Task
-from reviewrig.store.runs import reviewed_head
+from reviewrig.store.runs import pull_reviewed, reviewed_head
 from reviewrig.watch import git
 
 
@@ -60,3 +61,59 @@ async def watch(rig: RigLike, scheduler: Scheduler, log: Logger | None = None) -
         except Exception as error:
             log.error("watcher cycle failed", reason="watcher_error", error=error)
         await asyncio.sleep(rig.config.schedule.poll_seconds)
+
+
+async def poll_pull_requests(rig: RigLike, scheduler: Scheduler, log: Logger | None = None) -> int:
+    """Queue a review for every pull request that the policy says the rig should read.
+
+    A pull request whose head has already been reviewed is left alone, so a poll costs
+    nothing while nothing changes.
+    """
+    log = (log or create_logger("schedule")).bind(component="watcher")
+    await rig.forges.refresh_users()
+    queued = 0
+    for view in rig.repositories():
+        policy = view.policy
+        if not policy.enabled or policy.mode == "off":
+            continue
+        found = rig.forges.for_repository(view.repository)
+        if found is None:
+            continue
+        entry, repo = found
+        try:
+            pulls = await entry.forge.pull_requests(repo)
+        except ForgeError as error:
+            log.warn(
+                "pull requests unreadable",
+                reason="forge_failed",
+                repo=view.repository.slug,
+                error=error,
+            )
+            continue
+        for pull in pulls:
+            if pull.draft:
+                continue  # A draft pull request is not ready for a reviewer.
+            if policy.auto_review_assigned_prs and not pull.concerns(entry.state.user):
+                continue
+            if pull_reviewed(rig.store, view.repository.path, pull.head_sha):
+                continue
+            if scheduler.submit(Task.for_pull(view.repository, policy, pull)):
+                queued += 1
+    if queued:
+        log.info("queued pull request reviews", count=queued, pending=scheduler.pending)
+        rig.publish("queue.changed", pending=scheduler.pending)
+    return queued
+
+
+async def watch_forges(rig: RigLike, scheduler: Scheduler, log: Logger | None = None) -> None:
+    """Poll the forges forever. Slower than the local poll, because a forge counts."""
+    log = (log or create_logger("schedule")).bind(component="watcher")
+    while True:
+        try:
+            if rig.forges.entries:
+                await poll_pull_requests(rig, scheduler, log)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            log.error("forge cycle failed", reason="watcher_error", error=error)
+        await asyncio.sleep(rig.config.schedule.forge_poll_seconds)

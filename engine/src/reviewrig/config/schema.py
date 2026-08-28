@@ -182,6 +182,36 @@ DEFAULT_BACKENDS: dict[str, Backend] = {
 }
 
 
+class Forge(BaseModel):
+    """One code forge the rig may read and comment on."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Off until the user turns it on. An enabled forge joins the egress allowlist.
+    enabled: bool = False
+    kind: Literal["github", "gitlab"] = "github"
+    #: The host that appears in a git remote, which is how a repository is matched.
+    host: str = "github.com"
+    #: Where the API lives. A self hosted forge changes both of these.
+    api: str = "https://api.github.com"
+    #: Name of the environment variable that holds the token. Never the token itself.
+    token_env: str = "GITHUB_TOKEN"
+    #: A command line tool that can print a token, used when the variable is unset.
+    token_command: list[str] = Field(default_factory=lambda: ["gh", "auth", "token"])
+
+
+DEFAULT_FORGES: dict[str, Forge] = {
+    "github": Forge(),
+    "gitlab": Forge(
+        kind="gitlab",
+        host="gitlab.com",
+        api="https://gitlab.com/api/v4",
+        token_env="GITLAB_TOKEN",
+        token_command=["glab", "auth", "token"],
+    ),
+}
+
+
 class Schedule(BaseModel):
     """How hard the rig works."""
 
@@ -191,6 +221,9 @@ class Schedule(BaseModel):
     max_concurrent_reviews: int = Field(default=2, ge=1, le=16)
     #: How often the watcher looks for a new commit.
     poll_seconds: int = Field(default=60, ge=5)
+    #: How often the watcher asks the forges for new pull requests. A forge counts
+    #: requests, so this is slower than the local poll.
+    forge_poll_seconds: int = Field(default=300, ge=30)
     #: How long to wait before trying a repository that was busy.
     retry_seconds: int = Field(default=120, ge=5)
 
@@ -211,16 +244,26 @@ class Egress(BaseModel):
     allow_hosted: bool = False
 
 
+def _copy[Model: BaseModel](defaults: dict[str, Model]) -> dict[str, Model]:
+    """A deep copy per config.
+
+    A shallow copy shares the model objects, so turning a forge on for one config would
+    turn it on for every config built afterwards, including the next one a test builds.
+    """
+    return {name: value.model_copy(deep=True) for name, value in defaults.items()}
+
+
 class Config(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     roots: list[Root] = Field(default_factory=list)
     egress: Egress = Field(default_factory=Egress)
     schedule: Schedule = Field(default_factory=Schedule)
+    forge: dict[str, Forge] = Field(default_factory=lambda: _copy(DEFAULT_FORGES))
     defaults: Policy = Field(default_factory=Policy)
     #: The image that every sandboxed step runs in.
     image: str = "reviewrig/analysis:0.1"
-    backend: dict[str, Backend] = Field(default_factory=lambda: dict(DEFAULT_BACKENDS))
+    backend: dict[str, Backend] = Field(default_factory=lambda: _copy(DEFAULT_BACKENDS))
     profile: dict[str, Profile] = Field(default_factory=lambda: {"balanced": Profile()})
     #: Keyed by `host/namespace`, for example `github.com/acme`. A shorter key matches
     #: every repository below it, so `github.com` covers a whole forge.
