@@ -64,6 +64,10 @@ pub fn run() {
                 }
             };
             tray::build(&handle, &status)?;
+            // A development run shows the window at once. A packaged run starts in the
+            // menu bar and waits for the user to ask for it.
+            #[cfg(debug_assertions)]
+            tray::show_window(&handle);
             Ok(())
         })
         .on_window_event(|window, event| {

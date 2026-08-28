@@ -9,7 +9,9 @@ from __future__ import annotations
 import os
 import secrets
 from dataclasses import dataclass
+from pathlib import Path
 
+from reviewrig.config.loader import home_dir
 from reviewrig.log import Level
 
 # The webview is a different origin from the engine, so the browser sends a preflight
@@ -24,6 +26,7 @@ class Settings:
     port: int
     token: str
     log_level: Level
+    home: Path
     allowed_origins: tuple[str, ...] = DEFAULT_ORIGINS
 
     @classmethod
@@ -39,6 +42,7 @@ class Settings:
             # A generated token keeps a developer run usable with no host process.
             token=os.environ.get("REVIEWRIG_TOKEN") or secrets.token_urlsafe(32),
             log_level=level,  # type: ignore[arg-type]
+            home=home_dir(),
             allowed_origins=cls._origins(),
         )
 

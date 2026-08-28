@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import socket
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
 
 import httpx
 import pytest
@@ -10,6 +11,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from reviewrig.api import create_app
+from reviewrig.rig import Rig
 from reviewrig.settings import Settings
 
 
@@ -19,13 +21,33 @@ def token() -> str:
 
 
 @pytest.fixture
-def settings(token: str) -> Settings:
-    return Settings(host="127.0.0.1", port=0, token=token, log_level="debug")
+def home(tmp_path: Path) -> Path:
+    """An isolated reviewrig home with no roots.
+
+    A test must never walk the developer's own tree, so the config starts empty and each
+    test adds the roots it needs.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text('[defaults]\nmode = "draft"\n', encoding="utf-8")
+    return home
 
 
 @pytest.fixture
-def app(settings: Settings) -> FastAPI:
-    return create_app(settings)
+def settings(token: str, home: Path) -> Settings:
+    return Settings(host="127.0.0.1", port=0, token=token, log_level="debug", home=home)
+
+
+@pytest.fixture
+def rig(settings: Settings) -> Iterator[Rig]:
+    rig = Rig(settings)
+    yield rig
+    rig.close()
+
+
+@pytest.fixture
+def app(rig: Rig) -> FastAPI:
+    return create_app(rig)
 
 
 @pytest.fixture

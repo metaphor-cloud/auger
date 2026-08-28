@@ -8,9 +8,11 @@ cannot set a header and a token in a URL leaks into logs and history.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import secrets
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI
 from fastapi.responses import JSONResponse
@@ -20,9 +22,10 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from reviewrig import __version__
-from reviewrig.events import Event, EventBus
-from reviewrig.log import Logger, create_logger
-from reviewrig.settings import Settings
+from reviewrig.api.models import RepositoryList
+from reviewrig.events import Event
+from reviewrig.log import Logger
+from reviewrig.rig import Rig
 
 BEARER = "bearer "
 
@@ -73,13 +76,27 @@ class TokenAuth:
         return None
 
 
-def create_app(settings: Settings, logger: Logger | None = None) -> FastAPI:
-    log = logger or create_logger("api", settings.log_level)
-    bus = EventBus()
-    app = FastAPI(title="reviewrig engine", version=__version__, docs_url=None, redoc_url=None)
-    app.state.settings = settings
-    app.state.bus = bus
-    app.state.log = log
+def create_app(rig: Rig) -> FastAPI:
+    log = rig.log.bind(component="api")
+    settings = rig.settings
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # The first walk can take seconds on a large tree. Run it off the event loop so
+        # the UI can connect and watch the scan events while it runs.
+        task = asyncio.create_task(asyncio.to_thread(rig.scan))
+        yield
+        task.cancel()
+        rig.close()
+
+    app = FastAPI(
+        title="reviewrig engine",
+        version=__version__,
+        docs_url=None,
+        redoc_url=None,
+        lifespan=lifespan,
+    )
+    app.state.rig = rig
     app.add_middleware(TokenAuth, token=settings.token, log=log)
     # Added last, so it wraps the token gate and answers the preflight.
     app.add_middleware(
@@ -95,6 +112,16 @@ def create_app(settings: Settings, logger: Logger | None = None) -> FastAPI:
     async def health() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
 
+    @router.get("/repositories")
+    async def repositories() -> RepositoryList:
+        return RepositoryList.of(await asyncio.to_thread(rig.repositories))
+
+    @router.post("/scan")
+    async def rescan() -> RepositoryList:
+        """Reload the config and walk every root again."""
+        await asyncio.to_thread(rig.reload_config)
+        return RepositoryList.of(await asyncio.to_thread(rig.scan))
+
     @router.get("/events")
     async def events() -> EventSourceResponse:
         # Do not poll `request.is_disconnected()` here. It reads the same ASGI receive
@@ -102,14 +129,14 @@ def create_app(settings: Settings, logger: Logger | None = None) -> FastAPI:
         # readers steal messages from each other. EventSourceResponse cancels this
         # generator when the client goes away.
         async def stream() -> AsyncIterator[dict[str, str]]:
-            with bus.subscribe() as subscription:
-                log.info("event stream opened", subscribers=bus.subscriber_count)
+            with rig.bus.subscribe() as subscription:
+                log.info("event stream opened", subscribers=rig.bus.subscriber_count)
                 try:
                     yield _sse(Event("hello", {"version": __version__}))
                     async for event in subscription:
                         yield _sse(event)
                 finally:
-                    log.info("event stream closed", subscribers=bus.subscriber_count - 1)
+                    log.info("event stream closed", subscribers=rig.bus.subscriber_count - 1)
 
         return EventSourceResponse(stream())
 

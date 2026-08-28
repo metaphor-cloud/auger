@@ -3,29 +3,49 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import { takeEvents, type ServerEvent } from "./sse";
+import type { RepositoryList } from "./types";
 
 export type EngineInfo = { port: number; token: string };
 
+let cached: EngineInfo | null = null;
+
 export async function engineInfo(): Promise<EngineInfo> {
-  return invoke<EngineInfo>("engine_info");
+  cached ??= await invoke<EngineInfo>("engine_info");
+  return cached;
 }
 
 export function engineUrl(info: EngineInfo, path: string): string {
   return `http://127.0.0.1:${info.port}${path}`;
 }
 
-export async function engineFetch(info: EngineInfo, path: string): Promise<Response> {
-  return fetch(engineUrl(info, path), {
-    headers: { Authorization: `Bearer ${info.token}` },
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const info = await engineInfo();
+  const response = await fetch(engineUrl(info, path), {
+    ...init,
+    headers: { ...init.headers, Authorization: `Bearer ${info.token}` },
   });
+  if (!response.ok) throw new Error(`${init.method ?? "GET"} ${path} returned ${response.status}`);
+  return (await response.json()) as T;
+}
+
+export async function health(): Promise<{ status: string; version: string }> {
+  return request("/health");
+}
+
+export async function getRepositories(): Promise<RepositoryList> {
+  return request("/repositories");
+}
+
+export async function rescan(): Promise<RepositoryList> {
+  return request("/scan", { method: "POST" });
 }
 
 /** Read the event stream until the caller aborts it. */
 export async function readEvents(
-  info: EngineInfo,
   onEvent: (event: ServerEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {
+  const info = await engineInfo();
   const response = await fetch(engineUrl(info, "/events"), {
     headers: { Authorization: `Bearer ${info.token}` },
     signal,

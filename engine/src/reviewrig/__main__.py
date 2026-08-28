@@ -15,6 +15,7 @@ from reviewrig import __version__
 from reviewrig.api import create_app
 from reviewrig.log import create_logger
 from reviewrig.parent import watch_parent
+from reviewrig.rig import Rig
 from reviewrig.settings import Settings
 
 
@@ -30,7 +31,7 @@ def main() -> None:
     # The host waits for this line before it polls /health. Keep the field name stable.
     log.info("engine listening", port=port, host=settings.host, version=__version__)
 
-    app = create_app(settings, log.bind(component="api"))
+    app = create_app(Rig(settings, log))
     config = uvicorn.Config(app, log_config=None, access_log=False)
     server = uvicorn.Server(config)
 

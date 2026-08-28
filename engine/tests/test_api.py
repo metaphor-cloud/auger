@@ -73,5 +73,5 @@ async def test_event_stream_delivers_a_published_event(
 ) -> None:
     async with event_stream(base_url, token) as lines:
         await read_event(lines)
-        app.state.bus.publish(Event("run.started", {"repo": "a"}))
+        app.state.rig.bus.publish(Event("run.started", {"repo": "a"}))
         assert await read_event(lines) == ("run.started", {"repo": "a"})

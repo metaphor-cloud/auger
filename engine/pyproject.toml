@@ -10,6 +10,8 @@ dependencies = [
     "uvicorn>=0.32",
     "pydantic>=2.9",
     "sse-starlette>=2.1",
+    "tomlkit>=0.13",
+    "pathspec>=0.12",
 ]
 
 [project.scripts]
