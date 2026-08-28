@@ -150,6 +150,12 @@ async def test_stopping_every_model_leaves_nothing_running(
         def __init__(self, name: str) -> None:
             self.name = name
 
+        def signal(self) -> None:
+            return
+
+        def wait(self, timeout: float = 0.0) -> None:
+            return
+
         def stop(self) -> None:
             return
 

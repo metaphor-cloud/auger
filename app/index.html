@@ -4,6 +4,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Auger</title>
+    <style>
+      /* The first paint happens before the bundle and its stylesheet arrive. Without
+         this the window is white until they do. The values are the `--bg` of the two
+         themes, and index.css takes over the moment it loads. */
+      html,
+      body {
+        margin: 0;
+        background: #0b0f14;
+      }
+      @media (prefers-color-scheme: light) {
+        html:not([data-theme="dark"]),
+        html:not([data-theme="dark"]) body {
+          background: #f7f9fc;
+        }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

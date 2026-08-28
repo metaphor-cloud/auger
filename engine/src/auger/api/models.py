@@ -88,6 +88,11 @@ class BackendOut(BaseModel):
     up: bool
     hosted: bool
     managed: bool
+    #: `running`, `starting`, or `stopped`. A large model takes minutes to load, and a
+    #: window that says "stopped" for those minutes reads as a button that did nothing.
+    state: str = "stopped"
+    #: Whether the weights are on this machine. Nothing can start without them.
+    downloaded: bool = False
     #: This process started it, so this process can stop it. A server the user started
     #: themselves stays theirs, and the window offers no control that would do nothing.
     ours: bool = False

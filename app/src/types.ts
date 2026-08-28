@@ -69,6 +69,8 @@ export type Backend = {
   up: boolean;
   hosted: boolean;
   managed: boolean;
+  state: "running" | "starting" | "stopped";
+  downloaded: boolean;
   ours: boolean;
   models_served: string[];
   reason: string | null;

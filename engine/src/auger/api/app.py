@@ -275,14 +275,19 @@ def _backend_out(rig: Rig, name: str) -> BackendOut:
     backend = rig.config.backend[name]
     health = rig.health.get(name)
     usage = rig.gateway.usage.get(name)
+    ours = name in rig.supervisor.running or rig.supervisor.adopt(backend) is not None
+    up = bool(health and health.up)
+    weights = rig.supervisor.model_path(backend)
     return BackendOut(
         name=name,
         url=backend.url,
         model=backend.model,
-        up=bool(health and health.up),
+        up=up,
         hosted=backend.hosted,
         managed=backend.managed,
-        ours=name in rig.supervisor.running or rig.supervisor.adopt(backend) is not None,
+        state="running" if up else "starting" if ours else "stopped",
+        downloaded=weights is None or weights.exists(),
+        ours=ours,
         models_served=list(health.models) if health else [],
         reason=health.reason if health else "not checked yet",
         requests=usage.requests if usage else 0,

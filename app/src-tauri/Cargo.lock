@@ -212,6 +212,7 @@ name = "auger"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "libc",
  "rand 0.8.8",
  "serde",
  "serde_json",

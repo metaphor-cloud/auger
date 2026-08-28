@@ -33,6 +33,9 @@ const ENGINE_COMMAND_OVERRIDE: &str = "AUGER_ENGINE_CMD";
 
 const START_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// How long the engine gets to stop its model servers before it is ended.
+const STOP_TIMEOUT: Duration = Duration::from_secs(12);
+
 #[derive(Debug, Clone, Serialize)]
 pub struct EngineInfo {
     pub port: u16,
@@ -76,7 +79,29 @@ impl Engine {
         &self.info
     }
 
+    /// Ask the engine to stop, and insist if it will not.
+    ///
+    /// A killed engine never runs its own shutdown, so the model servers it started
+    /// keep tens of gigabytes for as long as the machine is up. The polite signal is
+    /// what gives it the chance to stop them.
     pub fn stop(mut self) {
+        #[cfg(unix)]
+        {
+            // A child pid always fits a pid_t, because that is where it came from.
+            let pid = libc::pid_t::try_from(self.child.id()).unwrap_or(0);
+            // SAFETY: `kill` with a pid this process owns and a valid signal number.
+            unsafe {
+                libc::kill(pid, libc::SIGTERM);
+            }
+            let deadline = std::time::Instant::now() + STOP_TIMEOUT;
+            while std::time::Instant::now() < deadline {
+                match self.child.try_wait() {
+                    Ok(Some(_)) => return,
+                    Ok(None) => thread::sleep(Duration::from_millis(100)),
+                    Err(_) => break,
+                }
+            }
+        }
         let _ = self.child.kill();
         let _ = self.child.wait();
     }

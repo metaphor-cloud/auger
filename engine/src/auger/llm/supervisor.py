@@ -27,8 +27,10 @@ START_TIMEOUT = 180.0
 POLL_SECONDS = 1.0
 #: Where an OpenAI-compatible server usually listens. `llama-server` and
 #: `mlx-openai-server` both default into this range.
-#: How long a server gets to stop politely before it is ended.
-ADOPT_TIMEOUT = 8.0
+#: How long a server gets to stop politely before it is ended. The host waits a little
+#: longer than this before it ends the engine, so the servers go first.
+ADOPT_TIMEOUT = 5.0
+STOP_TIMEOUT = 5.0
 
 COMMON_PORTS = (1337, 1338, 1339, 8080, 8081, 8082, 8083, 1234, 11434, 8000)
 SERVERS = ("llama-server", "mlx_lm.server", "mlx-openai-server")
@@ -56,13 +58,20 @@ class Managed:
     process: subprocess.Popen[bytes]
     port: int
 
-    def stop(self) -> None:
+    def signal(self) -> None:
+        """Ask it to stop. It may take a moment to let go of the weights."""
         if self.process.poll() is None:
             self.process.terminate()
-            try:
-                self.process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
+
+    def wait(self, timeout: float = STOP_TIMEOUT) -> None:
+        try:
+            self.process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+
+    def stop(self) -> None:
+        self.signal()
+        self.wait()
 
 
 def port_of(url: str) -> int:
@@ -328,10 +337,17 @@ class Supervisor:
         return True
 
     def stop_all(self) -> None:
-        """Stop every server this rig started, and every one it left behind before."""
-        for managed in list(self.running.values()):
-            managed.stop()
-            self.log.info("managed server stopped", backend=managed.name)
+        """Stop every server this rig started, and every one it left behind before.
+
+        Every server is asked to stop first, and only then waited for. One after the
+        other would take as long as the sum of them, and the application is quitting.
+        """
+        managed = list(self.running.values())
+        for one in managed:
+            one.signal()
+        for one in managed:
+            one.wait()
+            self.log.info("managed server stopped", backend=one.name)
         self.running.clear()
         for pid in self.adopt_all():
             if self.end(pid):

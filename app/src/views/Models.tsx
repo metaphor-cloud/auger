@@ -103,6 +103,16 @@ export default function Models({
     void loadCatalog();
   }, [load, loadCatalog]);
 
+  const starting = (data?.backends ?? []).some((one) => one.state === "starting");
+
+  useEffect(() => {
+    // A large model takes minutes to load. Without this the table says the same thing
+    // for those minutes, and the button reads as one that did nothing.
+    if (!starting) return;
+    const timer = setInterval(() => void load(checkModels), 3000);
+    return () => clearInterval(timer);
+  }, [starting, load]);
+
   async function act(which: "check" | "start" | "stop") {
     setBusy(which);
     const call =
@@ -147,8 +157,14 @@ export default function Models({
         <Button size="sm" variant="ghost" onClick={() => act("check")} disabled={busy !== ""}>
           {busy === "check" ? "Checking" : "Check"}
         </Button>
-        <Button size="sm" variant="secondary" onClick={() => act("start")} disabled={busy !== ""}>
-          {busy === "start" ? "Starting" : "Start"}
+        <Button
+          size="sm"
+          variant="secondary"
+          title="Start every managed server that does not answer"
+          onClick={() => act("start")}
+          disabled={busy !== "" || starting}
+        >
+          {busy === "start" || starting ? "Loading" : "Start"}
         </Button>
         <Button
           size="sm"
@@ -228,7 +244,11 @@ export default function Models({
 
       <Section
         title="Backends"
-        description="What answers a request, and what it has cost so far. Unload gives the memory back, and the next review starts it again."
+        description={
+          starting
+            ? "A server is loading its weights. A large model takes a few minutes, and this follows it."
+            : "What answers a request, and what it has cost so far. Unload gives the memory back, and the next review starts it again."
+        }
       >
         {data === null ? (
           <p className="text-xs text-text-secondary">Loading</p>
@@ -255,10 +275,31 @@ export default function Models({
                       </Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-text-secondary">{backend.model || "any"}</TableCell>
+                  <TableCell className="text-text-secondary">
+                    {backend.model || "any"}
+                    {!backend.downloaded && (
+                      <span className="ml-1.5 text-[10px] text-warning">
+                        not on this machine
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell>
-                    <Badge variant={backend.up ? "success" : "outline"}>
-                      {backend.up ? "Running" : "Stopped"}
+                    <Badge
+                      variant={
+                        backend.state === "running"
+                          ? "success"
+                          : backend.state === "starting"
+                            ? "warning"
+                            : "outline"
+                      }
+                    >
+                      {backend.state === "running"
+                        ? "Running"
+                        : backend.state === "starting"
+                          ? "Loading"
+                          : backend.downloaded
+                            ? "Stopped"
+                            : "No weights"}
                     </Badge>
                   </TableCell>
                   <TableCell>
