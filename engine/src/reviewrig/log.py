@@ -35,14 +35,23 @@ def serialise(value: object) -> object:
 
 
 class Logger:
-    def __init__(self, context: dict[str, Any], min_level: Level = "info") -> None:
+    def __init__(
+        self,
+        context: dict[str, Any],
+        min_level: Level = "info",
+        stream: Any = None,
+    ) -> None:
         self._context = context
         self._min = _ORDER[min_level]
+        #: Where every line goes, whatever its level. The tracker sets this to stderr,
+        #: because a process that speaks a protocol on stdout cannot log there too.
+        self._stream = stream
 
     def bind(self, **context: Any) -> Self:
         merged = {**self._context, **context}
         clone = type(self)(merged)
         clone._min = self._min
+        clone._stream = self._stream
         return clone
 
     def _emit(self, level: Level, message: str, data: dict[str, Any] | None) -> None:
@@ -51,7 +60,7 @@ class Logger:
         line: dict[str, Any] = {"level": level, "message": message, **self._context}
         if data:
             line["data"] = serialise(data)
-        stream = sys.stderr if level in ("warn", "error") else sys.stdout
+        stream = self._stream or (sys.stderr if level in ("warn", "error") else sys.stdout)
         # The host holds the read end of these pipes. When the host dies, a write raises.
         # Losing a log line is acceptable. Killing the caller is not: the first line the
         # engine writes after the host dies is the one that reports the host is gone.
@@ -71,5 +80,5 @@ class Logger:
         self._emit("error", message, data)
 
 
-def create_logger(component: str, min_level: Level = "info") -> Logger:
-    return Logger({"component": component}, min_level)
+def create_logger(component: str, min_level: Level = "info", stream: Any = None) -> Logger:
+    return Logger({"component": component}, min_level, stream)

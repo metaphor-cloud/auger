@@ -49,7 +49,8 @@ def summarise(store: Store, today: str, top: int = 5) -> Summary:
     open_by_severity = _counts(
         store,
         "SELECT severity, COUNT(*) FROM findings "
-        "WHERE status = 'open' AND (triage IS NULL OR triage != 'false') GROUP BY severity",
+        "WHERE status IN ('open', 'doing') AND (triage IS NULL OR triage != 'false') "
+        "GROUP BY severity",
     )
     summary.findings = {name: open_by_severity.get(name, 0) for name in SEVERITY_ORDER}
     summary.findings["total"] = sum(summary.findings.values())
@@ -86,7 +87,7 @@ def summarise(store: Store, today: str, top: int = 5) -> Summary:
                    WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2
                    WHEN 'low' THEN 3 ELSE 4 END) AS worst
         FROM findings AS f
-        WHERE f.status = 'open' AND (f.triage IS NULL OR f.triage != 'false')
+        WHERE f.status IN ('open', 'doing') AND (f.triage IS NULL OR f.triage != 'false')
         GROUP BY f.repo_path
         ORDER BY worst, open_count DESC
         LIMIT ?

@@ -24,6 +24,7 @@ dependencies = [
 
 [project.scripts]
 reviewrig-engine = "reviewrig.__main__:main"
+reviewrig-tracker = "reviewrig.tracker.__main__:main"
 
 [dependency-groups]
 dev = [

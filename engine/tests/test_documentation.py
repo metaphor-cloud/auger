@@ -68,12 +68,14 @@ def test_every_job_class_is_documented() -> None:
         assert f"`{job_class}`" in models
 
 
-@pytest.mark.parametrize("name", ["install.md", "configuration.md", "models.md", "security.md"])
+@pytest.mark.parametrize(
+    "name", ["install.md", "configuration.md", "models.md", "security.md", "tracker.md"]
+)
 def test_the_documentation_is_there(name: str) -> None:
     assert (DOCS / name).exists()
 
 
 def test_the_readme_links_to_every_page() -> None:
     readme = (DOCS.parent / "README.md").read_text(encoding="utf-8")
-    for name in ("install.md", "configuration.md", "models.md", "security.md"):
+    for name in ("install.md", "configuration.md", "models.md", "security.md", "tracker.md"):
         assert name in readme, f"README.md does not link to docs/{name}"

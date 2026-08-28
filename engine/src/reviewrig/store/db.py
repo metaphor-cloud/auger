@@ -118,6 +118,42 @@ MIGRATIONS: tuple[str, ...] = (
 
     CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     """,
+    """
+    -- A note is what happened to an item since it was recorded. It is append only,
+    -- because a work journal that can be rewritten is not a record of anything.
+    CREATE TABLE finding_notes (
+        id          INTEGER PRIMARY KEY,
+        fingerprint TEXT NOT NULL REFERENCES findings(fingerprint) ON DELETE CASCADE,
+        author      TEXT NOT NULL,
+        written_at  TEXT NOT NULL,
+        text        TEXT NOT NULL
+    );
+    CREATE INDEX finding_notes_item ON finding_notes (fingerprint, id);
+
+    -- An agent asks "have I seen this" before it starts work, so the question has to
+    -- be answered by words, not by a fingerprint the agent cannot guess.
+    CREATE VIRTUAL TABLE findings_fts USING fts5(
+        title, detail, content='findings', content_rowid='rowid'
+    );
+    INSERT INTO findings_fts (rowid, title, detail)
+        SELECT rowid, title, detail FROM findings;
+
+    CREATE TRIGGER findings_after_insert AFTER INSERT ON findings BEGIN
+        INSERT INTO findings_fts (rowid, title, detail)
+        VALUES (new.rowid, new.title, new.detail);
+    END;
+    CREATE TRIGGER findings_after_delete AFTER DELETE ON findings BEGIN
+        INSERT INTO findings_fts (findings_fts, rowid, title, detail)
+        VALUES ('delete', old.rowid, old.title, old.detail);
+    END;
+    -- A repeat finding updates its row, so the index has to follow the update too.
+    CREATE TRIGGER findings_after_update AFTER UPDATE ON findings BEGIN
+        INSERT INTO findings_fts (findings_fts, rowid, title, detail)
+        VALUES ('delete', old.rowid, old.title, old.detail);
+        INSERT INTO findings_fts (rowid, title, detail)
+        VALUES (new.rowid, new.title, new.detail);
+    END;
+    """,
 )
 
 

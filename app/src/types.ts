@@ -103,6 +103,17 @@ export type Finding = {
   run_id: string | null;
 };
 
+export type Note = {
+  id: number;
+  author: string;
+  written_at: string;
+  text: string;
+};
+
+export type NoteList = { notes: Note[] };
+
+export type Recorded = { item: Finding; existed: boolean };
+
 export type FindingList = {
   findings: Finding[];
   counts: Record<string, number>;

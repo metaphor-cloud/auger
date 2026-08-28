@@ -40,9 +40,14 @@ from reviewrig.api.models import (
     McpServerOut,
     McpServerSetting,
     ModelChoiceOut,
+    NoteList,
+    NoteOut,
+    NoteRequest,
     PolicyChange,
     PolicyLevelOut,
     QueueOut,
+    RecordedOut,
+    RecordRequest,
     RepositoryList,
     RepositorySummaryOut,
     ReviewRequest,
@@ -64,10 +69,20 @@ from reviewrig.events import Event
 from reviewrig.log import Logger
 from reviewrig.mcp import OAuthError
 from reviewrig.rig import Rig
-from reviewrig.store.findings import counts, list_findings, set_status
+from reviewrig.store.findings import (
+    ACTIVE,
+    Finding,
+    counts,
+    list_findings,
+    record_one,
+    search_findings,
+    set_status,
+)
 from reviewrig.store.index import chunk_count
+from reviewrig.store.notes import add_note, notes_for
 from reviewrig.store.runs import list_runs
 from reviewrig.store.summary import summarise
+from reviewrig.tracker import PERSON_SOURCE
 
 BEARER = "bearer "
 
@@ -562,15 +577,19 @@ def create_app(rig: Rig) -> FastAPI:
     @router.get("/findings")
     async def findings(
         repo: str | None = None,
-        status: str = "open",
+        status: str = "open,doing",
         limit: int = 500,
         include_dismissed: bool = False,
+        query: str = "",
     ) -> FindingList:
         """Open findings. A finding the model judged false is hidden unless asked for."""
         statuses = [part for part in status.split(",") if part]
-        rows = await asyncio.to_thread(
-            list_findings, rig.store, repo, statuses, limit, include_dismissed
-        )
+        if query.strip():
+            rows = await asyncio.to_thread(search_findings, rig.store, query, repo, statuses, limit)
+        else:
+            rows = await asyncio.to_thread(
+                list_findings, rig.store, repo, statuses, limit, include_dismissed
+            )
         return FindingList(
             findings=[FindingOut.of(finding) for finding in rows],
             counts=await asyncio.to_thread(counts, rig.store, repo),
@@ -581,11 +600,54 @@ def create_app(rig: Rig) -> FastAPI:
         """Suppress a finding, or bring it back. Suppression survives a re-review."""
         await asyncio.to_thread(set_status, rig.store, request.fingerprints, request.status)
         rig.publish("findings.changed", count=len(request.fingerprints), status=request.status)
-        rows = await asyncio.to_thread(list_findings, rig.store, None, ["open"], 500)
+        rows = await asyncio.to_thread(list_findings, rig.store, None, ACTIVE, 500)
         return FindingList(
             findings=[FindingOut.of(finding) for finding in rows],
             counts=await asyncio.to_thread(counts, rig.store, None),
         )
+
+    @router.post("/findings")
+    async def record_item(request: RecordRequest) -> RecordedOut:
+        """Record one work item by hand.
+
+        The same store the tracker writes to, so a person and an agent see one list.
+        """
+        if not request.title.strip():
+            raise HTTPException(status_code=400, detail="an item needs a title")
+        stored, existed = await asyncio.to_thread(
+            record_one,
+            rig.store,
+            Finding(
+                repo_path=request.repo_path,
+                source=PERSON_SOURCE,
+                severity=request.severity,
+                title=request.title.strip(),
+                detail=request.detail.strip(),
+                file=request.file.strip(),
+                line=request.line,
+            ),
+        )
+        rig.publish("findings.changed", count=1, status=stored.status)
+        return RecordedOut(item=FindingOut.of(stored), existed=existed)
+
+    @router.get("/findings/{item}/notes")
+    async def item_notes(item: str) -> NoteList:
+        rows = await asyncio.to_thread(notes_for, rig.store, item)
+        return NoteList(
+            notes=[
+                NoteOut(id=note.id, author=note.author, written_at=note.written_at, text=note.text)
+                for note in rows
+            ]
+        )
+
+    @router.post("/findings/{item}/notes")
+    async def add_item_note(item: str, request: NoteRequest) -> NoteList:
+        """Append one note. A note is never edited, so the journal stays a record."""
+        try:
+            await asyncio.to_thread(add_note, rig.store, item, request.text, PERSON_SOURCE)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return await item_notes(item)
 
     @router.get("/runs")
     async def runs(repo: str | None = None, limit: int = 100) -> RunList:

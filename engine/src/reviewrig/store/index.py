@@ -13,7 +13,6 @@ A model change moves the dimension, and the index is dropped and rebuilt.
 from __future__ import annotations
 
 import json
-import re
 import sqlite3
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -22,10 +21,10 @@ from pathlib import Path
 
 from reviewrig.context.chunker import Chunk
 from reviewrig.store.db import Store
+from reviewrig.store.text import fts_query
 
 VECTOR_TABLE = "chunk_vectors"
 DIMENSION_KEY = "embedding_dimension"
-_FTS_SAFE = re.compile(r"[^\w]+")
 
 
 def now() -> str:
@@ -220,12 +219,6 @@ def search_vectors(
 
 
 # --- keyword and symbol -----------------------------------------------------------
-
-
-def fts_query(text: str) -> str:
-    """Turn free text into an FTS5 query that cannot be a syntax error."""
-    words = [word for word in _FTS_SAFE.split(text) if len(word) > 1]
-    return " OR ".join(f'"{word}"' for word in words[:32])
 
 
 def search_text(store: Store, text: str, repo_path: str | Path, limit: int = 20) -> list[Hit]:

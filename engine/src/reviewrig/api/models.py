@@ -174,7 +174,39 @@ class ReviewRequest(BaseModel):
 
 class StatusRequest(BaseModel):
     fingerprints: list[str]
-    status: Literal["open", "suppressed", "resolved"]
+    status: Literal["open", "doing", "resolved", "suppressed"]
+
+
+class RecordRequest(BaseModel):
+    """One work item, written by a person rather than by a review."""
+
+    repo_path: str
+    title: str
+    detail: str = ""
+    file: str = ""
+    line: int | None = None
+    severity: Literal["critical", "high", "medium", "low", "info"] = "medium"
+
+
+class RecordedOut(BaseModel):
+    item: FindingOut
+    #: True when the same work was already recorded. The window says so.
+    existed: bool
+
+
+class NoteOut(BaseModel):
+    id: int
+    author: str
+    written_at: str
+    text: str
+
+
+class NoteList(BaseModel):
+    notes: list[NoteOut]
+
+
+class NoteRequest(BaseModel):
+    text: str
 
 
 class ForgeOut(BaseModel):

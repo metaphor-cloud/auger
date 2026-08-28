@@ -9,7 +9,8 @@ mounted read only and **no network at all**. The engine reaches your model serve
 an allowlist that logs every request.
 
 [Install](docs/install.md) · [Configuration](docs/configuration.md) ·
-[Models](docs/models.md) · [What it can reach](docs/security.md)
+[Models](docs/models.md) · [Work tracker](docs/tracker.md) ·
+[What it can reach](docs/security.md)
 
 ## What it does
 
@@ -20,6 +21,8 @@ an allowlist that logs every request.
 - Runs Semgrep in the sandbox and asks a model which of its findings are real.
 - Audits a whole repository on a slower timer, for the problems a diff cannot show.
 - Waits when another coding agent is working in a repository.
+- Keeps the work items for each repository, and lets your agent search and write them
+  over MCP, so it knows what it already did. See [docs/tracker.md](docs/tracker.md).
 
 ## How it works
 

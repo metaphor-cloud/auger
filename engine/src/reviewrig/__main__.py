@@ -8,6 +8,7 @@ with anything else on the machine.
 from __future__ import annotations
 
 import socket
+import sys
 
 import uvicorn
 
@@ -20,6 +21,13 @@ from reviewrig.settings import Settings
 
 
 def main() -> None:
+    # The packaged application holds one binary. The tracker is the same program under
+    # another name, so an agent can start it from the bundle.
+    if sys.argv[1:2] == ["tracker"]:
+        from reviewrig.tracker.__main__ import main as tracker
+
+        raise SystemExit(tracker(sys.argv[2:]))
+
     settings = Settings.from_env()
     log = create_logger("engine", settings.log_level)
 

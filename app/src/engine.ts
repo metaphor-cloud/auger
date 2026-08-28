@@ -11,6 +11,8 @@ import type {
   ForgeList,
   Queue,
   RepositoryList,
+  NoteList,
+  Recorded,
   RunList,
   Settings,
   System,
@@ -96,18 +98,46 @@ export async function startModels(): Promise<BackendList> {
 
 export async function getFindings(
   repo?: string,
-  status = "open",
+  status = "open,doing",
   includeDismissed = false,
+  search = "",
 ): Promise<FindingList> {
   const query = new URLSearchParams({ status });
   if (repo) query.set("repo", repo);
   if (includeDismissed) query.set("include_dismissed", "true");
+  if (search.trim()) query.set("query", search.trim());
   return request(`/findings?${query}`);
+}
+
+export async function recordItem(item: {
+  repo_path: string;
+  title: string;
+  detail?: string;
+  file?: string;
+  severity?: string;
+}): Promise<Recorded> {
+  return request("/findings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(item),
+  });
+}
+
+export async function getNotes(fingerprint: string): Promise<NoteList> {
+  return request(`/findings/${fingerprint}/notes`);
+}
+
+export async function addNote(fingerprint: string, text: string): Promise<NoteList> {
+  return request(`/findings/${fingerprint}/notes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
 }
 
 export async function setFindingStatus(
   fingerprints: string[],
-  status: "open" | "suppressed" | "resolved",
+  status: "open" | "doing" | "resolved" | "suppressed",
 ): Promise<FindingList> {
   return request("/findings/status", {
     method: "POST",

@@ -19,7 +19,7 @@ type Status =
 
 const VIEWS = [
   "Overview",
-  "Findings",
+  "Work",
   "Repositories",
   "Runs",
   "Models",
@@ -146,7 +146,7 @@ export default function App() {
 
       <main className="flex-1 overflow-auto px-5 py-5">
         {view === "Overview" && <DashboardView version={version} />}
-        {view === "Findings" && <Findings version={version} onCounts={setTray} />}
+        {view === "Work" && <Findings version={version} onCounts={setTray} />}
         {view === "Repositories" && <Repositories scanning={scanning} version={version} />}
         {view === "Runs" && <Runs version={version} />}
         {view === "Models" && <Models setup={setup} />}

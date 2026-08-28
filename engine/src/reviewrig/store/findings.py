@@ -21,9 +21,12 @@ from pathlib import Path
 from typing import Literal, cast
 
 from reviewrig.store.db import Store
+from reviewrig.store.text import fts_query
 
 Severity = Literal["critical", "high", "medium", "low", "info"]
-Status = Literal["open", "suppressed", "resolved"]
+Status = Literal["open", "doing", "resolved", "suppressed"]
+#: What a person or an agent means by "not finished". `doing` is work in flight.
+ACTIVE: tuple[str, ...] = ("open", "doing")
 
 SEVERITY_ORDER: dict[str, int] = {
     "critical": 0,
@@ -90,48 +93,69 @@ def record(store: Store, findings: Sequence[Finding], timestamp: str | None = No
     A suppressed finding stays suppressed. That is the whole value of suppressing it.
     """
     stamp = timestamp or now()
-    rows = [
-        (
-            finding.fingerprint,
-            finding.repo_path,
-            finding.source,
-            finding.severity,
-            finding.title,
-            finding.detail,
-            finding.suggestion,
-            finding.file,
-            finding.line,
-            finding.confidence,
-            finding.triage,
-            stamp,
-            stamp,
-            finding.run_id,
-        )
-        for finding in findings
-    ]
+    rows = [_row(finding, stamp) for finding in findings]
     if not rows:
         return 0
     with store.write() as connection:
-        connection.executemany(
-            """
-            INSERT INTO findings (
-                fingerprint, repo_path, source, severity, title, detail, suggestion,
-                file, line, confidence, triage, first_seen_at, last_seen_at, run_id
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(fingerprint) DO UPDATE SET
-                severity     = excluded.severity,
-                detail       = excluded.detail,
-                suggestion   = excluded.suggestion,
-                line         = excluded.line,
-                confidence   = excluded.confidence,
-                last_seen_at = excluded.last_seen_at,
-                run_id       = excluded.run_id,
-                times_seen   = findings.times_seen + 1
-            """,
-            rows,
-        )
+        connection.executemany(UPSERT, rows)
     return len(rows)
+
+
+UPSERT = """
+    INSERT INTO findings (
+        fingerprint, repo_path, source, severity, title, detail, suggestion,
+        file, line, confidence, triage, first_seen_at, last_seen_at, run_id
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(fingerprint) DO UPDATE SET
+        severity     = excluded.severity,
+        detail       = excluded.detail,
+        suggestion   = excluded.suggestion,
+        line         = excluded.line,
+        confidence   = excluded.confidence,
+        last_seen_at = excluded.last_seen_at,
+        run_id       = excluded.run_id,
+        times_seen   = findings.times_seen + 1
+"""
+
+
+def _row(finding: Finding, stamp: str) -> tuple[object, ...]:
+    return (
+        finding.fingerprint,
+        finding.repo_path,
+        finding.source,
+        finding.severity,
+        finding.title,
+        finding.detail,
+        finding.suggestion,
+        finding.file,
+        finding.line,
+        finding.confidence,
+        finding.triage,
+        stamp,
+        stamp,
+        finding.run_id,
+    )
+
+
+def record_one(
+    store: Store, finding: Finding, timestamp: str | None = None
+) -> tuple[Finding, bool]:
+    """Store one item and say whether it was already there.
+
+    An agent asks for this before it starts work. "You recorded this on Tuesday and
+    it is still open" is the answer that stops it from doing the work twice.
+    """
+    stamp = timestamp or now()
+    with store.write() as connection:
+        before = connection.execute(
+            "SELECT 1 FROM findings WHERE fingerprint = ?", (finding.fingerprint,)
+        ).fetchone()
+        connection.execute(UPSERT, _row(finding, stamp))
+        row = connection.execute(
+            "SELECT * FROM findings WHERE fingerprint = ?", (finding.fingerprint,)
+        ).fetchone()
+    return _to_finding(row), before is not None
 
 
 def _to_finding(row: sqlite3.Row) -> Finding:
@@ -159,7 +183,7 @@ def _to_finding(row: sqlite3.Row) -> Finding:
 def list_findings(
     store: Store,
     repo_path: str | Path | None = None,
-    statuses: Iterable[str] = ("open",),
+    statuses: Iterable[str] = ACTIVE,
     limit: int = 500,
     include_dismissed: bool = False,
 ) -> list[Finding]:
@@ -194,6 +218,53 @@ def list_findings(
     return [_to_finding(row) for row in rows]
 
 
+def search_findings(
+    store: Store,
+    text: str,
+    repo_path: str | Path | None = None,
+    statuses: Iterable[str] = (),
+    limit: int = 20,
+) -> list[Finding]:
+    """Items that match free text, best match first.
+
+    This is how an agent asks whether it has met a problem before. It searches the
+    title and the detail, because it knows what it was working on, not the fingerprint.
+    """
+    query = fts_query(text)
+    if not query:
+        return []
+    clauses = ["findings_fts MATCH ?"]
+    parameters: list[object] = [query]
+    if repo_path is not None:
+        clauses.append("f.repo_path = ?")
+        parameters.append(str(repo_path))
+    wanted = list(statuses)
+    if wanted:
+        clauses.append(f"f.status IN ({','.join('?' * len(wanted))})")
+        parameters.extend(wanted)
+    parameters.append(limit)
+    try:
+        rows = store.query(
+            f"""
+            SELECT f.*, bm25(findings_fts) AS rank
+            FROM findings_fts
+            JOIN findings AS f ON f.rowid = findings_fts.rowid
+            WHERE {" AND ".join(clauses)}
+            ORDER BY rank
+            LIMIT ?
+            """,
+            parameters,
+        )
+    except sqlite3.Error:
+        return []
+    return [_to_finding(row) for row in rows]
+
+
+def get_finding(store: Store, fingerprint: str) -> Finding | None:
+    rows = store.query("SELECT * FROM findings WHERE fingerprint = ?", (fingerprint,))
+    return _to_finding(rows[0]) if rows else None
+
+
 def set_status(store: Store, fingerprints: Sequence[str], status: Status) -> int:
     if not fingerprints:
         return 0
@@ -222,7 +293,7 @@ def set_triage(store: Store, fingerprint: str, verdict: str, reason: str = "") -
 
 def counts(store: Store, repo_path: str | Path | None = None) -> dict[str, int]:
     """Open findings per severity, plus a total. The tray shows this."""
-    where = "WHERE status = 'open' AND (triage IS NULL OR triage != 'false')"
+    where = "WHERE status IN ('open', 'doing') AND (triage IS NULL OR triage != 'false')"
     parameters: list[object] = []
     if repo_path is not None:
         where += " AND repo_path = ?"
