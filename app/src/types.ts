@@ -175,3 +175,30 @@ export type McpServer = {
 };
 
 export type ToolList = { servers: McpServer[]; allowed: string[] };
+
+export type ModelChoice = {
+  name: string;
+  job_class: string;
+  repo: string;
+  filename: string;
+  memory_gb: number;
+  description: string;
+  fits: boolean;
+};
+
+export type Catalog = {
+  models: ModelChoice[];
+  recommended: string;
+  usable_memory_gb: number;
+  runtime_installed: boolean;
+  setup_running: boolean;
+};
+
+export type SetupProgress = {
+  stage: string;
+  name: string;
+  received: number;
+  total: number;
+  fraction: number;
+  message: string;
+};

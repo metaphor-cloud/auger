@@ -128,8 +128,24 @@ class Gateway:
             raise MissingBackendError(f"no profile named {name!r}")
         return profile
 
+    def available(self, job_class: JobClass, profile_name: str = "balanced") -> bool:
+        """Whether this profile has a backend for this job class at all.
+
+        An empty entry turns a job class off. Reranking is off by default, and asking
+        for it anyway would log a failure on every review.
+        """
+        try:
+            entry = self.profile(profile_name).entry(job_class)
+        except ModelError:
+            return False
+        return bool(entry.backend) and entry.backend in self.config.backend
+
     def resolve(self, job_class: JobClass, profile_name: str) -> Resolved:
         entry = self.profile(profile_name).entry(job_class)
+        if not entry.backend:
+            raise MissingBackendError(
+                f"profile {profile_name!r} has no backend for {job_class.value}"
+            )
         backend = self.config.backend.get(entry.backend)
         if backend is None:
             raise MissingBackendError(

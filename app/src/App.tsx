@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { getQueue, getSystem, health, pauseQueue, readEvents, resumeQueue } from "./engine";
 import { setTray, notify } from "./host";
-import type { Queue, System } from "./types";
+import type { Queue, SetupProgress, System } from "./types";
 import Findings from "./views/Findings";
 import Models from "./views/Models";
 import Repositories from "./views/Repositories";
@@ -29,6 +29,7 @@ export default function App() {
   const [queue, setQueue] = useState<Queue | null>(null);
   // Every event that changes stored data bumps this, and each view reloads.
   const [version, setVersion] = useState(0);
+  const [setup, setSetup] = useState<SetupProgress | null>(null);
 
   const refreshQueue = useCallback(async () => {
     try {
@@ -51,6 +52,8 @@ export default function App() {
           if (event.kind === "scan.started") setScanning(true);
           if (event.kind === "scan.finished") setScanning(false);
           if (event.kind.startsWith("queue.")) void refreshQueue();
+          if (event.kind === "setup.progress") setSetup(event.data as SetupProgress);
+          if (event.kind === "setup.finished") setSetup(null);
           if (event.kind === "run.finished" || event.kind === "run.skipped") {
             void refreshQueue();
             setVersion((value) => value + 1);
@@ -119,7 +122,7 @@ export default function App() {
         {view === "Findings" && <Findings version={version} onCounts={setTray} />}
         {view === "Repositories" && <Repositories scanning={scanning} />}
         {view === "Runs" && <Runs version={version} />}
-        {view === "Models" && <Models />}
+        {view === "Models" && <Models setup={setup} />}
         {view === "Settings" && <SettingsView />}
         {view === "System" && <SystemView system={system} />}
       </main>

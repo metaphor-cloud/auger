@@ -232,3 +232,36 @@ class ToolList(BaseModel):
     servers: list[McpServerOut]
     #: What the default policy allows. Empty means no tool runs by default.
     allowed: list[str]
+
+
+class ModelChoiceOut(BaseModel):
+    name: str
+    job_class: str
+    repo: str
+    filename: str
+    memory_gb: float
+    description: str
+    fits: bool
+
+
+class CatalogOut(BaseModel):
+    """What the rig can fetch for itself, and what this machine can hold."""
+
+    models: list[ModelChoiceOut]
+    recommended: str
+    usable_memory_gb: float
+    runtime_installed: bool
+    setup_running: bool
+
+
+class SetupRequest(BaseModel):
+    #: Empty means the model the rig recommends for this machine.
+    model: str = ""
+
+
+class SetupOut(BaseModel):
+    ok: bool
+    review_model: str
+    embed_model: str
+    runtime_path: str
+    error: str | None

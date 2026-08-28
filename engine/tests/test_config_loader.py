@@ -89,7 +89,7 @@ def test_two_configs_do_not_share_their_defaults() -> None:
     first.forge["github"].enabled = True
     first.backend["local-review"].model = "changed"
     assert second.forge["github"].enabled is False
-    assert second.backend["local-review"].model == "gpt-oss-120b"
+    assert second.backend["local-review"].model == "gpt-oss"
 
 
 def test_a_config_that_is_refused_says_why(tmp_path: Path) -> None:

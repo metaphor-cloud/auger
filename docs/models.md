@@ -1,5 +1,23 @@
 # Models
 
+## The rig brings its own
+
+Open the Models view and press **Set up**. The rig fetches a `llama.cpp` release build
+for this machine, fetches weights that fit its memory, writes the config, and starts the
+servers. Nothing else to install.
+
+It picks the model by memory: about 80 GB of usable memory gets `gpt-oss-120b`, and a
+laptop gets `gpt-oss-20b`. A model the machine cannot hold is shown and cannot be chosen,
+because an hour of downloading for weights that will not load is an hour wasted.
+
+Everything it fetches is verified against a sha256 published by the repository. A
+download that fails part way carries on from where it stopped, and a file that does not
+match its checksum is deleted.
+
+The runtime goes in `~/.reviewrig/runtime`, the weights in `~/.reviewrig/models`.
+
+## Or use a server you already run
+
 A job asks for a job class. The profile picks the backend. No job names a model, so
 changing one is a single config line.
 
@@ -10,10 +28,10 @@ changing one is a single config line.
 | `embed` | Turns code into vectors for retrieval | `Qwen3-Embedding-0.6B` |
 | `rerank` | Orders retrieved code | `Qwen3-Reranker-0.6B` |
 
-## Use a server you already run
+## Point a backend at your own server
 
 The rig prefers one: it holds the model you chose, and it may already be warm. Point a
-backend at it.
+backend at it, and the setup above becomes unnecessary.
 
 ```toml
 [backend.local-review]
@@ -24,11 +42,11 @@ model = "whatever-you-loaded"
 Anything that speaks the OpenAI API works: `llama-server`, `mlx-openai-server`, LM
 Studio, Ollama's compatible endpoint.
 
-## Let the rig run one
+## What managed means
 
-Set `managed = true`. The rig starts `llama-server` or `mlx-openai-server`, whichever it
-finds, when nothing answers at the URL. It says plainly when it cannot: no server binary,
-or no weights.
+`managed = true` tells the rig to start that backend when nothing answers at its URL. It
+uses the runtime it installed, or one already on the machine, and it says plainly when it
+cannot: no runtime, or no weights, each with the step to take next.
 
 ```toml
 [backend.local-review]
@@ -36,10 +54,6 @@ managed = true
 model_file = "gpt-oss-120b-mxfp4.gguf"
 model_url = "https://huggingface.co/.../gpt-oss-120b-mxfp4.gguf"
 ```
-
-Weights go in `~/.reviewrig/models`. A download reports progress and verifies its
-checksum. A failed download leaves no file, because a file that looks complete and is
-wrong fails later, inside a review, with a message that says nothing useful.
 
 ## How much memory
 

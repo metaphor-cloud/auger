@@ -60,13 +60,34 @@ async def test_discovery_finds_a_server_the_user_already_runs(
     assert [health.url for health in found] == [f"{base}/v1"]
 
 
-def test_it_will_not_start_without_a_server_binary(
+def test_it_will_not_start_without_a_runtime(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The message must say what to do, not what is missing."""
+    from reviewrig.sandbox import which
+
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
-    health = Supervisor(tmp_path).start("review", Backend(managed=True, model_file="m.gguf"))
+    monkeypatch.setattr(which, "EXTRA_PATHS", ())
+    health = Supervisor(tmp_path / "models").start(
+        "review", Backend(managed=True, model_file="m.gguf")
+    )
     assert health.up is False
-    assert "no local model server" in (health.reason or "")
+    assert "Set up" in (health.reason or "")
+
+
+def test_it_prefers_the_runtime_the_rig_installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A first run has nothing on PATH, so the rig's own copy is the only one."""
+    from reviewrig.sandbox import which
+
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    monkeypatch.setattr(which, "EXTRA_PATHS", ())
+    own = tmp_path / "runtime" / "b1" / "build" / "bin" / "llama-server"
+    own.parent.mkdir(parents=True)
+    own.write_text("#!/bin/sh\n", encoding="utf-8")
+    own.chmod(0o755)
+    assert Supervisor(tmp_path / "models").server_command() == str(own)
 
 
 def test_it_will_not_start_without_weights(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

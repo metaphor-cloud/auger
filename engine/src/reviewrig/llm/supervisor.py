@@ -8,7 +8,6 @@ answers, and it says plainly why when it cannot.
 from __future__ import annotations
 
 import asyncio
-import shutil
 import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -19,6 +18,7 @@ import httpx
 
 from reviewrig.config.schema import Backend
 from reviewrig.log import Logger, create_logger
+from reviewrig.sandbox.which import find
 
 PROBE_TIMEOUT = 2.0
 START_TIMEOUT = 180.0
@@ -106,11 +106,21 @@ class Supervisor:
         self.log = (log or create_logger("llm")).bind(component="supervisor")
         self.running: dict[str, Managed] = {}
 
-    @staticmethod
-    def server_command() -> str | None:
+    def server_command(self) -> str | None:
+        """The server to run: one the user has, or the one the rig installed itself.
+
+        A graphical application has a narrow PATH, and a first run has nothing installed
+        at all, so neither `PATH` alone nor `which` alone is enough.
+        """
+        from reviewrig.llm import runtime
+
+        own = runtime.resolve(self.models_dir.parent)
+        if own is not None:
+            return str(own)
         for candidate in SERVERS:
-            if shutil.which(candidate):
-                return candidate
+            found = find(candidate)
+            if found:
+                return found
         return None
 
     def model_path(self, backend: Backend) -> Path | None:
@@ -138,14 +148,14 @@ class Supervisor:
         server = self.server_command()
         if server is None:
             reason = (
-                "no local model server found. Install llama.cpp or mlx-openai-server, "
-                "or point this backend at a server you already run."
+                "no model runtime yet. Press Set up in the Models view, and the rig will "
+                "fetch one, or point this backend at a server you already run."
             )
             self.log.warn("managed start skipped", reason="no_server", backend=name)
             return Health(name=name, url=backend.url, up=False, reason=reason, managed=True)
         model_path = self.model_path(backend)
         if model_path is None or not model_path.exists():
-            reason = f"weights not found at {model_path}. Download them first."
+            reason = f"weights not found at {model_path}. Press Set up in the Models view."
             self.log.warn(
                 "managed start skipped", reason="no_weights", backend=name, path=str(model_path)
             )

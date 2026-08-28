@@ -130,57 +130,48 @@ class Backend(BaseModel):
 class ProfileEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    backend: str
+    #: Empty turns this job class off.
+    backend: str = ""
     max_tokens: int = Field(default=4096, ge=1)
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
 
 
 class Profile(BaseModel):
-    """One entry per job class."""
+    """One entry per job class.
+
+    An entry with an empty `backend` turns that job class off. Reranking is off by
+    default, because it needs a reranker model and retrieval works without one.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    triage: ProfileEntry = ProfileEntry(backend="local-triage", max_tokens=2048)
+    triage: ProfileEntry = ProfileEntry(backend="local-review", max_tokens=2048)
     review: ProfileEntry = ProfileEntry(backend="local-review", max_tokens=8192)
     embed: ProfileEntry = ProfileEntry(backend="local-embed", max_tokens=512)
-    rerank: ProfileEntry = ProfileEntry(backend="local-rerank", max_tokens=512)
+    rerank: ProfileEntry = ProfileEntry(backend="", max_tokens=512)
 
     def entry(self, job_class: JobClass) -> ProfileEntry:
         return getattr(self, job_class.value)  # type: ignore[no-any-return]
 
 
-#: What the rig uses when the user has written no backend of their own. Every one is a
-#: local server. `gpt-oss-120b` in its native MXFP4 form needs about 63 GB, which fits
-#: in the unified memory of a workstation. The Q8 form needs about 120 GB and does not.
+#: What the rig uses when the user has written no backend of their own. Both are local,
+#: both are managed, and `reviewrig.llm.setup` fetches the weights and fills in the file
+#: name that suits this machine.
 DEFAULT_BACKENDS: dict[str, Backend] = {
     "local-review": Backend(
         url="http://127.0.0.1:8080/v1",
-        model="gpt-oss-120b",
+        model="gpt-oss",
         managed=True,
-        model_file="gpt-oss-120b-mxfp4.gguf",
-    ),
-    "local-triage": Backend(
-        url="http://127.0.0.1:8081/v1",
-        model="qwen3-30b-a3b",
-        managed=True,
-        model_file="qwen3-30b-a3b-q4_k_m.gguf",
-        max_concurrent=8,
+        model_file="gpt-oss-120b-MXFP4.gguf",
+        max_concurrent=2,
     ),
     "local-embed": Backend(
-        url="http://127.0.0.1:8082/v1",
-        model="Qwen3-Embedding-0.6B",
+        url="http://127.0.0.1:8081/v1",
+        model="qwen3-embedding",
         managed=True,
-        model_file="qwen3-embedding-0.6b-f16.gguf",
+        model_file="Qwen3-Embedding-0.6B-Q8_0.gguf",
         max_concurrent=8,
         args=["--embedding", "--pooling", "last"],
-    ),
-    "local-rerank": Backend(
-        url="http://127.0.0.1:8083/v1",
-        model="Qwen3-Reranker-0.6B",
-        managed=True,
-        model_file="qwen3-reranker-0.6b-f16.gguf",
-        max_concurrent=8,
-        args=["--reranking"],
     ),
 }
 

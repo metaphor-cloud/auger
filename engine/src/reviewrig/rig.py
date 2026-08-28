@@ -53,6 +53,7 @@ class Rig:
         self.supervisor = Supervisor(self.models_dir, self.log)
         self.gateway = Gateway(self.config, self.allowlist, self.log)
         self.health: dict[str, Health] = {}
+        self.setup_running = False
         self.forges = Registry(self.config, self.gateway.client, self.log)
         self.tools = McpRegistry(self.config, self.log)
         self.scheduler = Scheduler(self, self.log)
@@ -175,6 +176,39 @@ class Rig:
         self.log.info("scan finished", found=len(views), enabled=enabled)
         self.publish("scan.finished", found=len(views), enabled=enabled)
         return views
+
+    async def setup_models(self, review_model: str | None = None) -> object:
+        """Fetch a runtime and weights, write the config, and start the servers.
+
+        This is the path for a machine with nothing installed. It reports every step,
+        because the weights are tens of gigabytes and a silent hour looks like a hang.
+        """
+        from reviewrig.llm import setup
+
+        def report(step: setup.Step) -> None:
+            self.publish(
+                "setup.progress",
+                stage=step.stage,
+                name=step.name,
+                received=step.received_bytes,
+                total=step.total_bytes,
+                fraction=round(step.fraction, 4),
+                message=step.message,
+            )
+
+        self.setup_running = True
+        try:
+            result = await setup.install(
+                self.settings.home, self.config, review_model, report, self.log
+            )
+        finally:
+            self.setup_running = False
+        if result.ok:
+            save(self.config_path, self.config)
+            self._refresh_allowlist()
+            await self.ensure_models()
+        self.publish("setup.finished", ok=result.ok, error=result.error)
+        return result
 
     async def check_tools(self) -> None:
         """Read the tool list from every attached MCP server."""

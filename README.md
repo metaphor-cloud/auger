@@ -67,9 +67,15 @@ not change the rules or the output format. The full reference is in
 
 ## Models
 
+The rig brings its own. Press Set up in the Models view and it fetches a `llama.cpp`
+build for this machine, fetches weights that fit its memory, and starts the servers.
+Nothing else to install. Everything it fetches is checked against a published sha256, and
+a download that drops carries on from where it stopped.
+
+If you already run a model server, point a backend at it instead and skip all of that.
+
 A job asks for a job class (`review`, `triage`, `embed`, `rerank`) and the profile
-decides which backend answers. Changing a model is one line. The rig prefers a server you
-already run, and starts one of its own only when nothing answers.
+decides which backend answers. Changing a model is one line.
 
 Hosted models are off, and they take two switches to turn on, because turning one on
 sends your code off the machine. See [docs/models.md](docs/models.md).

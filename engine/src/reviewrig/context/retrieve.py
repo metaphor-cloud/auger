@@ -18,6 +18,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from reviewrig.config.schema import JobClass
 from reviewrig.llm import Gateway, ModelError
 from reviewrig.log import Logger, create_logger
 from reviewrig.store import Store
@@ -166,7 +167,7 @@ async def context_for_diff(
     seen = {hit.chunk_id for hit in inside}
     groups = [callers(store, repository, names)]
 
-    if gateway is not None:
+    if gateway is not None and gateway.available(JobClass.EMBED, profile):
         try:
             vectors = await gateway.embed([diff[:8000]], profile=profile)
         except ModelError as error:
@@ -183,7 +184,8 @@ async def context_for_diff(
     candidates = merge(groups, exclude=seen)[:CANDIDATES]
     context = ReviewContext(hits=candidates[:limit], symbols=names)
 
-    if gateway is not None and len(candidates) > limit:
+    reranks = gateway is not None and gateway.available(JobClass.RERANK, profile)
+    if reranks and gateway is not None and len(candidates) > limit:
         try:
             scores = await gateway.rerank(diff[:4000], [hit.text for hit in candidates], profile)
         except ModelError as error:

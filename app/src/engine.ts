@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { takeEvents, type ServerEvent } from "./sse";
 import type {
   BackendList,
+  Catalog,
   FindingList,
   ForgeList,
   Queue,
@@ -52,6 +53,18 @@ export async function getRepositories(): Promise<RepositoryList> {
 
 export async function getModels(): Promise<BackendList> {
   return request("/models");
+}
+
+export async function getCatalog(): Promise<Catalog> {
+  return request("/models/catalog");
+}
+
+export async function setupModels(model = ""): Promise<{ ok: boolean; error: string | null }> {
+  return request("/models/setup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model }),
+  });
 }
 
 export async function checkModels(): Promise<BackendList> {

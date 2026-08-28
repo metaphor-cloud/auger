@@ -25,6 +25,7 @@ from reviewrig import __version__
 from reviewrig.api.models import (
     BackendList,
     BackendOut,
+    CatalogOut,
     EgressOut,
     FindingList,
     FindingOut,
@@ -32,6 +33,7 @@ from reviewrig.api.models import (
     ForgeOut,
     IndexOut,
     McpServerOut,
+    ModelChoiceOut,
     PolicyChange,
     PolicyLevelOut,
     QueueOut,
@@ -41,6 +43,8 @@ from reviewrig.api.models import (
     RunOut,
     SandboxOut,
     SettingsOut,
+    SetupOut,
+    SetupRequest,
     StatusRequest,
     SystemOut,
     ToolList,
@@ -238,6 +242,44 @@ def create_app(rig: Rig) -> FastAPI:
             if "balanced" in rig.config.profile
             else {},
             allow_hosted=rig.config.egress.allow_hosted,
+        )
+
+    @router.get("/models/catalog")
+    async def model_catalog() -> CatalogOut:
+        from reviewrig.llm import catalog, runtime
+
+        usable = catalog.usable_memory_gb()
+        return CatalogOut(
+            models=[
+                ModelChoiceOut(
+                    name=choice.name,
+                    job_class=choice.job_class.value,
+                    repo=choice.repo,
+                    filename=choice.filename,
+                    memory_gb=choice.memory_gb,
+                    description=choice.description,
+                    fits=choice.memory_gb <= usable,
+                )
+                for choice in catalog.CATALOG
+            ],
+            recommended=catalog.recommended_review_model().name,
+            usable_memory_gb=round(usable, 1),
+            runtime_installed=runtime.resolve(rig.settings.home) is not None,
+            setup_running=rig.setup_running,
+        )
+
+    @router.post("/models/setup")
+    async def setup_models(request: SetupRequest) -> SetupOut:
+        """Fetch a runtime and weights for a machine that has neither."""
+        if rig.setup_running:
+            raise HTTPException(status_code=409, detail="a setup is already running")
+        result = await rig.setup_models(request.model or None)
+        return SetupOut(
+            ok=result.ok,  # type: ignore[attr-defined]
+            review_model=result.review_model,  # type: ignore[attr-defined]
+            embed_model=result.embed_model,  # type: ignore[attr-defined]
+            runtime_path=result.runtime_path,  # type: ignore[attr-defined]
+            error=result.error,  # type: ignore[attr-defined]
         )
 
     @router.get("/models")

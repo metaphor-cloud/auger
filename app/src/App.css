@@ -352,3 +352,22 @@ section > button {
   cursor: pointer;
   margin-top: 0.5rem;
 }
+
+.setup {
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  padding: 0.25rem 1rem 1rem;
+  margin-bottom: 1.5rem;
+  background: var(--soft);
+}
+
+.setup-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.setup-row select {
+  flex: 1;
+  min-width: 0;
+}

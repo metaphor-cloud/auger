@@ -11,6 +11,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from reviewrig.config.schema import JobClass
 from reviewrig.context.chunker import Chunk, chunk_file
 from reviewrig.context.languages import indexable
 from reviewrig.llm import Gateway, ModelError
@@ -101,7 +102,7 @@ async def reindex(
         pending_ids += ids
         pending_texts += [chunk.text for chunk in chunks]
 
-    if gateway is not None and pending_texts:
+    if gateway is not None and pending_texts and gateway.available(JobClass.EMBED, profile):
         outcome.chunks_embedded = await _embed(
             store, gateway, pending_ids, pending_texts, profile, log
         )
