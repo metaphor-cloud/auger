@@ -4,6 +4,8 @@ root := justfile_directory()
 # In development the host runs the engine from the checkout. In a bundle it runs the
 # PyInstaller build from the resource directory.
 engine_cmd := "uv run --project " + root + "/engine reviewrig-engine"
+runtime := `command -v container || command -v podman || command -v docker || echo docker`
+image := "reviewrig/analysis:0.1"
 
 default:
     @just --list
@@ -42,6 +44,10 @@ fix:
     cd {{root}}/engine && uv run ruff check --fix .
     cd {{root}}/engine && uv run ruff format .
     cd {{root}}/app/src-tauri && cargo fmt
+
+# Build the analysis image that every review step runs in. Needs network.
+build-image:
+    cd {{root}}/sandbox && {{runtime}} build --tag {{image}} .
 
 # Freeze the engine into app/src-tauri/binaries/engine.
 build-sidecar:

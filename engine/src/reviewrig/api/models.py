@@ -41,3 +41,27 @@ class RepositoryList(BaseModel):
             repositories=[RepositoryOut.of(view) for view in views],
             enabled=sum(1 for view in views if view.policy.enabled),
         )
+
+
+class SandboxOut(BaseModel):
+    backend: str
+    degraded: bool
+    warning: str | None
+
+
+class EgressOut(BaseModel):
+    proxy_url: str
+    allowed: list[str]
+    allowed_requests: int
+    refused_requests: int
+    failed_requests: int
+    recently_refused: list[str]
+
+
+class SystemOut(BaseModel):
+    """What the UI shows about the rig itself, including what it must warn about."""
+
+    version: str
+    sandbox: SandboxOut
+    egress: EgressOut
+    image: str

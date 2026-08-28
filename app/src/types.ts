@@ -28,3 +28,25 @@ export type RepositoryList = {
   repositories: Repository[];
   enabled: number;
 };
+
+export type Sandbox = {
+  backend: string;
+  degraded: boolean;
+  warning: string | null;
+};
+
+export type Egress = {
+  proxy_url: string;
+  allowed: string[];
+  allowed_requests: number;
+  refused_requests: number;
+  failed_requests: number;
+  recently_refused: string[];
+};
+
+export type System = {
+  version: string;
+  sandbox: Sandbox;
+  egress: Egress;
+  image: string;
+};

@@ -1,9 +1,10 @@
 from reviewrig.config.loader import config_path, ensure_config, home_dir, load, save
 from reviewrig.config.policy import resolve_policy
-from reviewrig.config.schema import Config, Mode, Overrides, Policy, Root
+from reviewrig.config.schema import Config, Egress, Mode, Overrides, Policy, Root
 
 __all__ = [
     "Config",
+    "Egress",
     "Mode",
     "Overrides",
     "Policy",

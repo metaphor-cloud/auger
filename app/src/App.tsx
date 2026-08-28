@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 
-import { health, readEvents } from "./engine";
+import { getSystem, health, readEvents } from "./engine";
+import type { System } from "./types";
 import Repositories from "./views/Repositories";
+import SystemView from "./views/System";
 import "./App.css";
 
 type Status =
@@ -9,13 +11,14 @@ type Status =
   | { state: "ready"; version: string }
   | { state: "failed"; reason: string };
 
-const VIEWS = ["Repositories"] as const;
+const VIEWS = ["Repositories", "System"] as const;
 type View = (typeof VIEWS)[number];
 
 export default function App() {
   const [status, setStatus] = useState<Status>({ state: "starting" });
   const [view, setView] = useState<View>("Repositories");
   const [scanning, setScanning] = useState(false);
+  const [system, setSystem] = useState<System | null>(null);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -24,6 +27,7 @@ export default function App() {
       try {
         const info = await health();
         setStatus({ state: "ready", version: info.version });
+        setSystem(await getSystem());
         await readEvents((event) => {
           if (event.kind === "scan.started") setScanning(true);
           if (event.kind === "scan.finished") setScanning(false);
@@ -62,7 +66,11 @@ export default function App() {
           {status.state === "failed" && status.reason}
         </span>
       </header>
-      <main>{view === "Repositories" && <Repositories scanning={scanning} />}</main>
+      {system?.sandbox.degraded && <p className="banner">{system.sandbox.warning}</p>}
+      <main>
+        {view === "Repositories" && <Repositories scanning={scanning} />}
+        {view === "System" && <SystemView system={system} />}
+      </main>
     </div>
   );
 }

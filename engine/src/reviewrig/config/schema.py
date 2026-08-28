@@ -88,11 +88,27 @@ class Overrides(BaseModel):
     audit_hours: int | None = Field(default=None, ge=0)
 
 
+class Egress(BaseModel):
+    """Which destinations the rig may reach.
+
+    A sandboxed step has no network at all, so this governs the engine and the
+    subprocesses it starts. Model backends and enabled forges add themselves, so this
+    list only holds what a user adds by hand.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    allow: list[str] = Field(default_factory=list)
+
+
 class Config(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     roots: list[Root] = Field(default_factory=list)
+    egress: Egress = Field(default_factory=Egress)
     defaults: Policy = Field(default_factory=Policy)
+    #: The image that every sandboxed step runs in.
+    image: str = "reviewrig/analysis:0.1"
     #: Keyed by `host/namespace`, for example `github.com/acme`. A shorter key matches
     #: every repository below it, so `github.com` covers a whole forge.
     org: dict[str, Overrides] = Field(default_factory=dict)

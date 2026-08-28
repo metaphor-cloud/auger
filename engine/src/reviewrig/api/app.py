@@ -22,7 +22,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from reviewrig import __version__
-from reviewrig.api.models import RepositoryList
+from reviewrig.api.models import EgressOut, RepositoryList, SandboxOut, SystemOut
 from reviewrig.events import Event
 from reviewrig.log import Logger
 from reviewrig.rig import Rig
@@ -82,11 +82,13 @@ def create_app(rig: Rig) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        await rig.proxy.start()
         # The first walk can take seconds on a large tree. Run it off the event loop so
         # the UI can connect and watch the scan events while it runs.
         task = asyncio.create_task(asyncio.to_thread(rig.scan))
         yield
         task.cancel()
+        await rig.proxy.stop()
         rig.close()
 
     app = FastAPI(
@@ -111,6 +113,27 @@ def create_app(rig: Rig) -> FastAPI:
     @router.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
+
+    @router.get("/system")
+    async def system() -> SystemOut:
+        stats = rig.proxy.stats
+        return SystemOut(
+            version=__version__,
+            sandbox=SandboxOut(
+                backend=rig.selection.sandbox.name,
+                degraded=rig.selection.degraded,
+                warning=rig.selection.warning,
+            ),
+            egress=EgressOut(
+                proxy_url=rig.proxy.url,
+                allowed=[str(destination) for destination in rig.allowlist],
+                allowed_requests=stats.allowed,
+                refused_requests=stats.refused,
+                failed_requests=stats.failed,
+                recently_refused=list(stats.refused_hosts),
+            ),
+            image=rig.config.image,
+        )
 
     @router.get("/repositories")
     async def repositories() -> RepositoryList:

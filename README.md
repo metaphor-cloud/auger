@@ -4,9 +4,9 @@ A background code review rig. Point it at the directories that hold your git
 repositories. It finds every repository, watches them, and reviews the changes with
 local large language models. Findings appear in a menu bar application.
 
-Your code stays on your machine. Analysis runs in a container with the repository
-mounted read only and with no network route except an allowlist proxy to your own model
-server.
+Your code stays on your machine. Analysis runs in a container that has the repository
+mounted read only and no network at all. The engine reaches your model server through an
+allowlist proxy that logs every request.
 
 **Status: early. Nothing works yet. See the milestones below.**
 
@@ -19,10 +19,29 @@ Three parts.
 - An **engine** written in Python. It holds every piece of review logic: discovery,
   policy, scheduling, jobs, retrieval, findings, and tool integration.
 - A **sandbox** per job. Apple `container` on macOS 26, else Podman, else Docker, else
-  Seatbelt with a warning.
+  Seatbelt with a warning that the UI keeps showing.
 
-Model servers run on the host, never in the sandbox, because a container on macOS cannot
-reach Metal or the Apple Neural Engine.
+Model servers run on the host, never in the sandbox, for two reasons. A container on
+macOS cannot reach Metal or the Apple Neural Engine. And a container with no network at
+all cannot leak anything, which is a stronger guarantee than an address allowlist.
+
+Every sandboxed step runs with the repository read only at `/work`, a tmpfs at
+`/scratch`, no capabilities, user `nobody`, a memory cap, and a time limit.
+
+## Egress
+
+The engine is the only process that talks to a model, so it is the only process that
+could leak code. Its HTTP client refuses any destination that is not on the allowlist
+before a byte leaves. Subprocesses, such as a forge command line tool or an MCP server,
+run with `HTTPS_PROXY` pointed at an internal proxy that checks the same list and logs
+every request with its destination, its size, and its verdict.
+
+```toml
+[egress]
+allow = ["127.0.0.1:8080"]   # model backends and enabled forges add themselves
+```
+
+The System view shows the list, the counts, and anything that was refused.
 
 ## Configuration
 

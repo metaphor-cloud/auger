@@ -14,6 +14,8 @@ from reviewrig.discovery import scan
 from reviewrig.events import Event, EventBus
 from reviewrig.log import Logger, create_logger
 from reviewrig.models import Repository
+from reviewrig.net import Allowlist, Destination, EgressProxy
+from reviewrig.sandbox import Selection, select
 from reviewrig.settings import Settings
 from reviewrig.store import Store
 from reviewrig.store.repositories import list_repositories, record_scan
@@ -35,12 +37,21 @@ class Rig:
         self.config_path = ensure_config(config_path(settings.home), self.log)
         self.config: Config = load(self.config_path, self.log)
         self.store = Store.open(settings.home)
+        self.selection: Selection = select(self.log)
+        self.allowlist = Allowlist.from_values(self.config.egress.allow)
+        self.proxy = EgressProxy(self.allowlist, self.log)
 
     def close(self) -> None:
         self.store.close()
 
     def reload_config(self) -> Config:
         self.config = load(self.config_path, self.log)
+        # The allowlist lives in the config, and the proxy holds a reference to it, so
+        # a reload must edit the list in place rather than replace it.
+        for value in self.config.egress.allow:
+            destination = Destination.parse(value)
+            if destination:
+                self.allowlist.add(destination)
         self.publish("config.reloaded", roots=len(self.config.roots))
         return self.config
 
