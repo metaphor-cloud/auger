@@ -120,6 +120,7 @@ async def review_pull(
         diff=diff,
         hints=policy.hints,
         instructions=policy.instructions,
+        rules=policy.system_prompt,
     )
     try:
         completion, _ = await complete_with_tools(

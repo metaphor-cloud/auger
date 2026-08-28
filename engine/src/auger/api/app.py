@@ -73,7 +73,7 @@ from auger.api.models import (
 from auger.config.schema import JobClass
 from auger.events import Event
 from auger.jobs.presets import PRESETS, matching
-from auger.jobs.prompt import SYSTEM, system_prompt
+from auger.jobs.prompt import SYSTEM, missing_from, system_prompt
 from auger.log import Logger
 from auger.mcp import OAuthError
 from auger.rig import Rig
@@ -696,27 +696,31 @@ def create_app(rig: Rig) -> FastAPI:
         )
 
     @router.get("/prompt")
-    async def prompt(instructions: str | None = None) -> PromptOut:
+    async def prompt(rules: str | None = None, instructions: str | None = None) -> PromptOut:
         """What the reviewer is told, word for word.
 
-        A person cannot judge a review without seeing what was asked for. Pass
-        `instructions` to preview a change before it is saved.
+        A person cannot judge a review without seeing what was asked for, and cannot
+        change what it looks for without editing it. Pass `rules` or `instructions` to
+        read a change before it is saved.
         """
-        mine = rig.config.defaults.instructions if instructions is None else instructions
+        mine = rig.config.defaults.system_prompt if rules is None else rules
+        extra = rig.config.defaults.instructions if instructions is None else instructions
         return PromptOut(
-            system=system_prompt(mine),
-            rules=SYSTEM,
-            instructions=mine,
+            system=system_prompt(extra, mine),
+            rules=mine or SYSTEM,
+            instructions=extra,
+            shipped=SYSTEM,
             preset=matching(mine),
             presets=[
                 PresetOut(
                     key=one.key,
                     name=one.name,
                     summary=one.summary,
-                    instructions=one.instructions,
+                    system=one.system,
                 )
                 for one in PRESETS
             ],
+            missing=missing_from(mine),
         )
 
     @router.get("/transcript")

@@ -10,6 +10,7 @@ export type Policy = {
   idle_seconds: number;
   priority: number;
   model_profile: string;
+  system_prompt: string;
   hints: string;
   tools: string[];
   max_tool_calls: number;
@@ -112,15 +113,17 @@ export type Preset = {
   key: string;
   name: string;
   summary: string;
-  instructions: string;
+  system: string;
 };
 
 export type Prompt = {
   system: string;
   rules: string;
   instructions: string;
+  shipped: string;
   preset: string;
   presets: Preset[];
+  missing: string[];
 };
 
 export type Turn = {

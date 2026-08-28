@@ -92,6 +92,7 @@ hints = "Treat a leaked credential as critical. Ignore style."
 | `model_profile` | `balanced` | Which profile picks the models. |
 | `instructions` | `""` | Your own instructions to the reviewer. Trusted, and they can change the rules. |
 | `hints` | `""` | Notes that live with the repository. Data, and they only set priorities. |
+| `system_prompt` | `""` | The whole system prompt. Empty means the one auger ships. |
 | `tools` | `[]` | MCP tools this repository may use, as `server.tool` or `server.*`. |
 | `max_tool_calls` | `8` | How many tool calls one review may make. |
 | `audit_hours` | `24` | How often a whole repository audit runs. `0` turns audits off. |
@@ -115,13 +116,20 @@ network call. Treat anything that writes a credential to a log as critical.
 instructions = "This is a prototype. Report only what would lose data."
 ```
 
-Settings, Review holds a set of ready-made instructions: security first, correctness
-only, performance, demanding, and one that reports only what you would stop a release
-for. Pick one, edit it, or write your own. The same view shows the whole system prompt
-as the model receives it.
+### The system prompt
 
-The rules and the answer format are not editable. The parser depends on the shape of
-the answer, and a prompt that changed it would produce a review nothing could read.
+`system_prompt` is the whole thing the reviewer is told, and it is yours. Settings,
+Review edits it directly, and ships six to start from: as it comes, security first,
+correctness only, performance, demanding, and one that reports only what you would stop
+a release for.
+
+One thing has to survive an edit. The parser reads the answer, so a prompt that stops
+asking for `findings`, `severity`, `file`, and `title` gives a review that nothing can
+read, and every run records a bad answer. The window says so before you save, and it
+saves anyway, because it is your prompt.
+
+`instructions` is separate, and it is what a level adds on top. An organisation or one
+repository can add a line without rewriting the whole prompt.
 
 `hints` live with the repository, and a repository you did not write is not you. They go
 in the user message, wrapped and labelled as data. They set priorities and they do not

@@ -283,18 +283,18 @@ export default function App() {
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 overflow-hidden">
+      <main className="min-w-0 flex-1 overflow-hidden overscroll-none">
         {view === "Work" && (
           <Work version={version} onCounts={setTray} onOpenRuns={() => setView("Runs")} />
         )}
         {view === "Transcript" && <TranscriptView version={version} />}
         {view === "Runs" && (
-          <div className="h-full overflow-auto px-5 py-5">
+          <div className="h-full overscroll-none overflow-auto px-5 py-5">
             <Runs version={version} />
           </div>
         )}
         {view === "Settings" && (
-          <div className="h-full overflow-auto px-5 py-5">
+          <div className="h-full overscroll-none overflow-auto px-5 py-5">
             <SettingsView version={version} setup={setup} system={system} />
           </div>
         )}

@@ -65,9 +65,13 @@ class Policy(BaseModel):
     idle_seconds: int = Field(default=300, ge=0)
     priority: Priority = 5
     model_profile: str = "balanced"
-    #: Your own instructions to the reviewer: what to look for, what to ignore, how
-    #: to judge severity. This comes from your config file, so it is trusted and it
-    #: goes in the system message where it can change the rules.
+    #: The whole system prompt. Empty means the one auger ships. It is yours: the
+    #: rules, the tone, and what counts as a defect. Only the answer format has to
+    #: survive, because the parser reads what comes back.
+    system_prompt: str = ""
+    #: What this level adds on top of the prompt, so an organisation or one repository
+    #: can add a line without rewriting all of it. Trusted, and it goes in the system
+    #: message where it can change the rules.
     instructions: str = ""
     #: Notes that live with the repository. They set priorities, and they are treated
     #: as data, because a repository you did not write could otherwise redirect the
@@ -92,6 +96,7 @@ class Overrides(BaseModel):
     idle_seconds: int | None = Field(default=None, ge=0)
     priority: Priority | None = None
     model_profile: str | None = None
+    system_prompt: str | None = None
     instructions: str | None = None
     hints: str | None = None
     tools: list[str] | None = None

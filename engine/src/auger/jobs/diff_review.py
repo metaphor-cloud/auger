@@ -159,6 +159,7 @@ async def review(
         hints=policy.hints,
         context=context.as_text(),
         instructions=policy.instructions,
+        rules=policy.system_prompt,
     )
     try:
         completion, tool_run = await complete_with_tools(

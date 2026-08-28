@@ -232,22 +232,27 @@ class PresetOut(BaseModel):
     key: str
     name: str
     summary: str
-    instructions: str
+    #: The whole prompt this preset is.
+    system: str
 
 
 class PromptOut(BaseModel):
     """The system prompt, as the model receives it."""
 
-    #: The whole thing, rules and instructions together.
+    #: The whole thing: the prompt, plus whatever this level adds on top.
     system: str
-    #: The part the rig owns. The parser depends on the shape of the answer, so this
-    #: is not editable.
+    #: The prompt itself, which is the user's to change.
     rules: str
-    #: The part the user owns.
+    #: What this level adds on top of it.
     instructions: str
-    #: Which ready-made set these instructions are, or `custom`.
+    #: The prompt auger ships, to reset to.
+    shipped: str
+    #: Which ready-made prompt this is, or `custom`.
     preset: str
     presets: list[PresetOut]
+    #: What an edited prompt stopped asking for. Not empty means the parser will not be
+    #: able to read the answer.
+    missing: list[str]
 
 
 class TurnOut(BaseModel):

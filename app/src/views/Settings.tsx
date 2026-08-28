@@ -273,18 +273,19 @@ export default function SettingsView({
           </Section>
 
           <Section
-            title="What to look for"
+            title="The system prompt"
             description={
               <>
-                Pick a set, or write your own. It narrows what the reviewer reports, adds
-                something to look for, or changes how it judges severity. A repository&apos;s
-                own <code>hints</code> are separate, and are treated as data.
+                What the reviewer is told, word for word. Start from one of these or write
+                your own: the rules, the tone, and what counts as a defect are all yours.
+                A repository&apos;s own <code>hints</code> are separate, and are treated as
+                data.
               </>
             }
           >
             <PromptEditor
-              instructions={settings.defaults.instructions}
-              onSave={(next) => void change("defaults", "", { instructions: next })}
+              rules={settings.defaults.system_prompt}
+              onSave={(next) => void change("defaults", "", { system_prompt: next })}
             />
           </Section>
 

@@ -10,6 +10,9 @@ html,
 body,
 #root {
   height: 100%;
+  /* A desktop window has nothing behind it to reveal, so a rubber band at the edge of
+     a list only shows the empty page under the application. */
+  overscroll-behavior: none;
 }
 
 body {

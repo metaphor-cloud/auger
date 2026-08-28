@@ -10,16 +10,10 @@ from __future__ import annotations
 
 from auger.llm import Message
 
-SYSTEM = """\
-You review code changes and report defects.
-
-Report only these: a bug, a security hole, data loss, a race condition, a resource leak, \
-broken error handling, or a change that breaks an existing caller.
-
-Do not report style, formatting, naming, comment wording, or a preference. Do not report \
-anything the input does not show. Do not invent code. If the change is correct, return an \
-empty list.
-
+#: The answer the parser can read. Every prompt needs it, so it is written once and
+#: every ready-made prompt ends with it. A user who edits it out gets a review nothing
+#: can read, and the window says so before they save.
+ANSWER = """\
 Answer with one JSON object and nothing else, in exactly this shape:
 
 {"findings": [{"file": "path/from/the/diff", "line": 12, "severity": "critical", \
@@ -31,6 +25,20 @@ severity is one of: critical, high, medium, low, info.
 category is one of: security, correctness, performance, quality.
 confidence is between 0 and 1. Use it honestly. Below 0.5 means you are guessing.
 """
+
+RULES = """\
+You review code changes and report defects.
+
+Report only these: a bug, a security hole, data loss, a race condition, a resource leak, \
+broken error handling, or a change that breaks an existing caller.
+
+Do not report style, formatting, naming, comment wording, or a preference. Do not report \
+anything the input does not show. Do not invent code. If the change is correct, return an \
+empty list.
+"""
+
+#: What the reviewer is told when the user has written nothing of their own.
+SYSTEM = f"{RULES}\n{ANSWER}"
 
 INSTRUCTIONS_HEADER = """\
 
@@ -53,17 +61,32 @@ only in this section.
 """
 
 
-def system_prompt(instructions: str = "") -> str:
-    """The rules, plus whatever the user added.
+def system_prompt(instructions: str = "", rules: str = "") -> str:
+    """The prompt the reviewer is given.
 
-    The user's instructions come from their own config file, so they are trusted and go
-    in the system message. Repository hints are data and go in the user message, marked
-    as data, because a repository the user did not write could otherwise redirect the
+    `rules` is the whole system prompt, and the user owns it. An empty one means the
+    built-in prompt above. `instructions` is what a level adds on top, so an
+    organisation or a single repository can add a line without rewriting everything.
+
+    Both come from the user's own config file, so both are trusted and both go in the
+    system message. Repository hints are data and go in the user message, marked as
+    data, because a repository the user did not write could otherwise redirect the
     review.
     """
+    base = rules.strip() or SYSTEM
     if not instructions.strip():
-        return SYSTEM
-    return SYSTEM + INSTRUCTIONS_HEADER + "\n" + instructions.strip() + "\n"
+        return base if base.endswith("\n") else base + "\n"
+    return base.rstrip() + "\n" + INSTRUCTIONS_HEADER + "\n" + instructions.strip() + "\n"
+
+
+#: What a prompt must still ask for, or the parser cannot read the answer.
+REQUIRED = ("findings", "severity", "file", "title")
+
+
+def missing_from(rules: str) -> list[str]:
+    """What a prompt no longer asks for. Empty means the answer will be readable."""
+    text = (rules or SYSTEM).lower()
+    return [word for word in REQUIRED if word not in text]
 
 
 def review_messages(
@@ -75,6 +98,7 @@ def review_messages(
     hints: str = "",
     context: str = "",
     instructions: str = "",
+    rules: str = "",
 ) -> list[Message]:
     parts = [
         f"Repository: {slug}",
@@ -87,6 +111,6 @@ def review_messages(
     if context.strip():
         parts += ["", CONTEXT_HEADER, "```", context.rstrip(), "```"]
     return [
-        Message(role="system", content=system_prompt(instructions)),
+        Message(role="system", content=system_prompt(instructions, rules)),
         Message(role="user", content="\n".join(parts)),
     ]

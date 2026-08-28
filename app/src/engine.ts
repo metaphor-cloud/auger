@@ -109,9 +109,12 @@ export async function markOpened(fingerprint: string): Promise<FindingList> {
   return request(`/findings/${fingerprint}/opened`, { method: "POST" });
 }
 
-export async function getPrompt(instructions?: string): Promise<Prompt> {
-  const query = instructions === undefined ? "" : `?instructions=${encodeURIComponent(instructions)}`;
-  return request(`/prompt${query}`);
+export async function getPrompt(rules?: string, instructions?: string): Promise<Prompt> {
+  const query = new URLSearchParams();
+  if (rules !== undefined) query.set("rules", rules);
+  if (instructions !== undefined) query.set("instructions", instructions);
+  const suffix = query.toString();
+  return request(suffix ? `/prompt?${suffix}` : "/prompt");
 }
 
 export async function getTranscript(after = 0, limit = 60): Promise<TranscriptList> {

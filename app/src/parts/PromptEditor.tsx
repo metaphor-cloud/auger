@@ -1,52 +1,64 @@
-/** What the reviewer is told.
+/** The system prompt.
  *
- * The rules and the output contract belong to the rig, because the parser depends on
- * the shape of the answer. What a review is *for* belongs to the user: one of the
- * ready-made sets, their own words, or both. The whole prompt is on show either way,
- * because nobody can judge a review without seeing what was asked for.
+ * The prompt is the product: what counts as a defect, what to ignore, how hard to
+ * judge. All of it is a sentence somebody wrote, and all of it is the user's to
+ * rewrite. Start from one of the ready-made ones, or from nothing.
+ *
+ * One thing has to survive an edit. The parser reads the answer, so a prompt that
+ * stops asking for the shape gives a review nothing can read. That is said plainly
+ * before the save, and the save is still allowed: it is their prompt.
  */
 
-import { Button, Textarea } from "@metaphor-cloud/ui";
+import { Alert, AlertDescription, Button, Textarea } from "@metaphor-cloud/ui";
 import { useCallback, useEffect, useState } from "react";
 
 import { getPrompt } from "../engine";
 import type { Prompt } from "../types";
 
 export default function PromptEditor({
-  instructions,
+  rules,
   onSave,
 }: {
-  instructions: string;
-  onSave: (instructions: string) => void;
+  rules: string;
+  onSave: (rules: string) => void;
 }) {
   const [prompt, setPrompt] = useState<Prompt | null>(null);
-  const [draft, setDraft] = useState(instructions);
-  const [showing, setShowing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [ready, setReady] = useState(false);
 
-  const load = useCallback(async (text: string) => {
-    setPrompt(await getPrompt(text));
+  const load = useCallback(async (text: string | undefined) => {
+    const body = await getPrompt(text);
+    setPrompt(body);
+    return body;
   }, []);
 
+  // The saved prompt may be empty, meaning the one auger ships. The editor shows the
+  // real words either way, because an empty box teaches nobody anything.
   useEffect(() => {
-    setDraft(instructions);
-  }, [instructions]);
+    void load(rules === "" ? undefined : rules).then((body) => {
+      setDraft(body.rules);
+      setReady(true);
+    });
+  }, [load, rules]);
 
   useEffect(() => {
-    void load(draft);
-  }, [load, draft]);
+    if (ready) void load(draft);
+  }, [load, draft, ready]);
 
-  const saved = draft.trim() === instructions.trim();
+  const shipped = prompt?.shipped ?? "";
+  const saved = draft.trim() === (rules.trim() || shipped.trim());
+  const missing = prompt?.missing ?? [];
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-1.5">
         {(prompt?.presets ?? []).map((preset) => {
-          const on = preset.instructions.trim() === draft.trim();
+          const on = preset.system.trim() === draft.trim();
           return (
             <button
               key={preset.key}
               title={preset.summary}
-              onClick={() => setDraft(preset.instructions)}
+              onClick={() => setDraft(preset.system)}
               className="rounded-full border px-2.5 py-0.5 text-[11px] transition-colors"
               style={{
                 borderColor: on ? "var(--color-accent)" : "var(--color-border-subtle)",
@@ -60,39 +72,45 @@ export default function PromptEditor({
         })}
       </div>
       <p className="text-xs text-text-secondary">
-        {prompt?.presets.find((one) => one.instructions.trim() === draft.trim())?.summary ??
-          "Your own words."}
+        {prompt?.presets.find((one) => one.system.trim() === draft.trim())?.summary ??
+          "Your own prompt."}
       </p>
 
       <Textarea
-        rows={7}
-        className="font-mono text-[11px]"
+        rows={18}
+        className="font-mono text-[11px] leading-relaxed"
         value={draft}
-        placeholder="Report security defects and data loss. Ignore performance."
+        spellCheck={false}
         onChange={(event) => setDraft(event.target.value)}
       />
 
+      {missing.length > 0 && (
+        <Alert variant="warning">
+          <AlertDescription>
+            This prompt no longer asks for {missing.join(", ")}. The reviewer will answer,
+            and nothing will be able to read it, so every run will record a bad answer.
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="flex items-center gap-2">
-        <Button size="sm" disabled={saved} onClick={() => onSave(draft)}>
+        <Button
+          size="sm"
+          disabled={saved}
+          onClick={() => onSave(draft.trim() === shipped.trim() ? "" : draft)}
+        >
           {saved ? "Saved" : "Save"}
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => setShowing((value) => !value)}>
-          {showing ? "Hide the whole prompt" : "Show the whole prompt"}
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={draft.trim() === shipped.trim()}
+          onClick={() => setDraft(shipped)}
+        >
+          Back to the one auger ships
         </Button>
         {!saved && <span className="text-[11px] text-warning">Not saved yet</span>}
       </div>
-
-      {showing && prompt && (
-        <div>
-          <p className="mb-1 text-[11px] uppercase tracking-wider text-text-tertiary">
-            What the model is sent. The rules and the answer format are the rig&apos;s, and
-            they cannot be edited: the parser depends on them.
-          </p>
-          <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded border border-border-subtle bg-bg p-3 font-mono text-[11px] leading-relaxed text-text-secondary">
-            {prompt.system}
-          </pre>
-        </div>
-      )}
     </div>
   );
 }

@@ -127,7 +127,7 @@ export default function TranscriptView({ version }: { version: number }) {
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overscroll-none overflow-auto">
         {turns.length === 0 && (
           <p className="px-4 py-8 text-center text-xs text-text-tertiary">
             Nothing has been asked yet. Press Start, and every exchange appears here as
