@@ -11,6 +11,7 @@ from typing import Protocol
 from reviewrig.config import Config
 from reviewrig.forge import Registry
 from reviewrig.llm import Gateway
+from reviewrig.mcp import McpRegistry
 from reviewrig.models import RepositoryView
 from reviewrig.store import Store
 
@@ -20,6 +21,7 @@ class RigLike(Protocol):
     gateway: Gateway
     config: Config
     forges: Registry
+    tools: McpRegistry
 
     def publish(self, event: str, **data: object) -> None: ...
 

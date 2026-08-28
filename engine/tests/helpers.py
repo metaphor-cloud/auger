@@ -43,6 +43,9 @@ class FakeModelServer:
         self.reply: str | None = None
         #: Length of the vector returned per input. 0 turns embedding off.
         self.dimension = 8
+        #: Tool calls the assistant asks for, until `tool_call_rounds` runs out.
+        self.tool_calls: list[dict[str, Any]] = []
+        self.tool_call_rounds = 99
         self.concurrent = 0
         self.peak_concurrent = 0
 
@@ -59,9 +62,14 @@ class FakeModelServer:
             if (early := self._failure()) is not None:
                 return early
             content = self.reply if self.reply is not None else f"answer:{body['model']}"
+            message: dict[str, Any] = {"role": "assistant", "content": content}
+            if self.tool_calls and self.tool_call_rounds > 0:
+                self.tool_call_rounds -= 1
+                message["tool_calls"] = self.tool_calls
+                message["content"] = ""
             return JSONResponse(
                 {
-                    "choices": [{"message": {"role": "assistant", "content": content}}],
+                    "choices": [{"message": message}],
                     "usage": {"prompt_tokens": 11, "completion_tokens": 7},
                 }
             )

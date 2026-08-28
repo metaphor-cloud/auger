@@ -8,6 +8,7 @@ is never over-committed.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -42,12 +43,28 @@ class EgressBlockedError(ModelError):
 
 
 @dataclass(frozen=True)
+class ToolCall:
+    id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class Message:
     role: str
     content: str
+    #: Set on a `tool` message, to say which call it answers.
+    tool_call_id: str | None = None
+    #: Set on an `assistant` message that asked for tools, so the model sees its own turn.
+    tool_calls: tuple[dict[str, Any], ...] = ()
 
-    def as_dict(self) -> dict[str, str]:
-        return {"role": self.role, "content": self.content}
+    def as_dict(self) -> dict[str, Any]:
+        body: dict[str, Any] = {"role": self.role, "content": self.content}
+        if self.tool_call_id:
+            body["tool_call_id"] = self.tool_call_id
+        if self.tool_calls:
+            body["tool_calls"] = list(self.tool_calls)
+        return body
 
 
 @dataclass(frozen=True)
@@ -57,6 +74,9 @@ class Completion:
     model: str
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    tool_calls: tuple[ToolCall, ...] = ()
+    #: The assistant turn as the model sent it, so a tool loop can send it back.
+    raw_tool_calls: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass
@@ -189,6 +209,7 @@ class Gateway:
         messages: list[Message],
         profile: str = "balanced",
         response_format: dict[str, Any] | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> Completion:
         resolved = self.resolve(job_class, profile)
         payload: dict[str, Any] = {
@@ -200,6 +221,9 @@ class Gateway:
         }
         if response_format:
             payload["response_format"] = response_format
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
         body = await self._post(resolved, "/chat/completions", payload)
         return _completion(body, resolved, self.usage[resolved.name])
 
@@ -244,11 +268,33 @@ def _worth_retrying(error: Exception) -> bool:
     return isinstance(error, httpx.RequestError)
 
 
+def _tool_calls(message: dict[str, Any]) -> tuple[tuple[ToolCall, ...], tuple[dict[str, Any], ...]]:
+    raw = message.get("tool_calls") or []
+    calls: list[ToolCall] = []
+    for entry in raw:
+        function = entry.get("function") or {}
+        try:
+            arguments = json.loads(function.get("arguments") or "{}")
+        except json.JSONDecodeError:
+            arguments = {}
+        if function.get("name"):
+            calls.append(
+                ToolCall(
+                    id=str(entry.get("id", "")),
+                    name=str(function["name"]),
+                    arguments=arguments if isinstance(arguments, dict) else {},
+                )
+            )
+    return tuple(calls), tuple(raw)
+
+
 def _completion(body: Any, resolved: Resolved, usage: Usage) -> Completion:
     try:
-        text = body["choices"][0]["message"]["content"] or ""
+        message = body["choices"][0]["message"]
+        text = message.get("content") or ""
     except (KeyError, IndexError, TypeError) as error:
         raise ModelError(f"{resolved.name} returned no message") from error
+    calls, raw_calls = _tool_calls(message)
     counts = body.get("usage") or {}
     prompt = int(counts.get("prompt_tokens", 0))
     completion = int(counts.get("completion_tokens", 0))
@@ -260,4 +306,6 @@ def _completion(body: Any, resolved: Resolved, usage: Usage) -> Completion:
         model=resolved.backend.model,
         prompt_tokens=prompt,
         completion_tokens=completion,
+        tool_calls=calls,
+        raw_tool_calls=raw_calls,
     )

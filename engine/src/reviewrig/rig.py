@@ -25,6 +25,7 @@ from reviewrig.events import Event, EventBus
 from reviewrig.forge import Registry
 from reviewrig.llm import Gateway, Health, Supervisor, probe_all
 from reviewrig.log import Logger, create_logger
+from reviewrig.mcp import McpRegistry
 from reviewrig.models import Repository, RepositoryView
 from reviewrig.net import Allowlist, Destination, EgressProxy
 from reviewrig.sandbox import Selection, select
@@ -51,6 +52,7 @@ class Rig:
         self.gateway = Gateway(self.config, self.allowlist, self.log)
         self.health: dict[str, Health] = {}
         self.forges = Registry(self.config, self.gateway.client, self.log)
+        self.tools = McpRegistry(self.config, self.log)
         self.scheduler = Scheduler(self, self.log)
         self._background: list[asyncio.Task[None]] = []
 
@@ -117,6 +119,7 @@ class Rig:
         self._refresh_allowlist()
         self.gateway.config = self.config
         self.forges.reload(self.config)
+        self.tools.reload(self.config)
         self.publish("config.reloaded", roots=len(self.config.roots))
         return self.config
 
@@ -158,6 +161,12 @@ class Rig:
         self.log.info("scan finished", found=len(views), enabled=enabled)
         self.publish("scan.finished", found=len(views), enabled=enabled)
         return views
+
+    async def check_tools(self) -> None:
+        """Read the tool list from every attached MCP server."""
+        await self.tools.refresh()
+        ready = sum(1 for state in self.tools.servers.values() if state.reachable)
+        self.publish("tools.checked", ready=ready, total=len(self.tools.servers))
 
     async def check_models(self) -> dict[str, Health]:
         """Ask every backend which models it holds. Starts nothing."""

@@ -156,3 +156,21 @@ export type Settings = {
   levels: PolicyLevel[];
   config_path: string;
 };
+
+export type Tool = {
+  server: string;
+  name: string;
+  qualified: string;
+  description: string;
+};
+
+export type McpServer = {
+  name: string;
+  transport: string;
+  target: string;
+  reachable: boolean;
+  reason: string | null;
+  tools: Tool[];
+};
+
+export type ToolList = { servers: McpServer[]; allowed: string[] };

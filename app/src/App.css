@@ -341,3 +341,14 @@ select {
   border-radius: 5px;
   padding: 0.1rem 0.3rem;
 }
+
+section > button {
+  border: 1px solid var(--edge);
+  background: transparent;
+  color: inherit;
+  border-radius: 6px;
+  padding: 0.25rem 0.7rem;
+  font: inherit;
+  cursor: pointer;
+  margin-top: 0.5rem;
+}

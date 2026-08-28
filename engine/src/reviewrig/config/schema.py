@@ -67,8 +67,10 @@ class Policy(BaseModel):
     model_profile: str = "balanced"
     #: Free text that tells the reviewer what matters in this repository.
     hints: str = ""
-    #: Names of MCP tools that a job may call. Empty means no tool.
+    #: MCP tools a job may call, as `server.tool` or `server.*`. Empty means none.
     tools: list[str] = Field(default_factory=list)
+    #: How many tool calls one review may make.
+    max_tool_calls: int = Field(default=8, ge=0, le=64)
     #: Run a whole repository audit this often. 0 turns audits off.
     audit_hours: int = Field(default=24, ge=0)
 
@@ -86,6 +88,7 @@ class Overrides(BaseModel):
     model_profile: str | None = None
     hints: str | None = None
     tools: list[str] | None = None
+    max_tool_calls: int | None = Field(default=None, ge=0, le=64)
     audit_hours: int | None = Field(default=None, ge=0)
 
 
@@ -212,6 +215,30 @@ DEFAULT_FORGES: dict[str, Forge] = {
 }
 
 
+class McpServer(BaseModel):
+    """An MCP server the user attached.
+
+    A server runs outside the sandbox and speaks for the user, so it is a trust
+    boundary. Nothing is attached by default, and nothing it returns is treated as an
+    instruction.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    transport: Literal["stdio", "http"] = "stdio"
+    #: For `stdio`.
+    command: str = ""
+    args: list[str] = Field(default_factory=list)
+    #: Environment for the server process. Names of variables to pass through, not values.
+    pass_env: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    #: For `http`.
+    url: str = ""
+    #: How long one tool call may take.
+    timeout_seconds: float = Field(default=30.0, gt=0)
+
+
 class Schedule(BaseModel):
     """How hard the rig works."""
 
@@ -260,6 +287,7 @@ class Config(BaseModel):
     egress: Egress = Field(default_factory=Egress)
     schedule: Schedule = Field(default_factory=Schedule)
     forge: dict[str, Forge] = Field(default_factory=lambda: _copy(DEFAULT_FORGES))
+    mcp: dict[str, McpServer] = Field(default_factory=dict)
     defaults: Policy = Field(default_factory=Policy)
     #: The image that every sandboxed step runs in.
     image: str = "reviewrig/analysis:0.1"

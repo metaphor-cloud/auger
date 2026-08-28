@@ -17,8 +17,10 @@ from reviewrig.config.schema import JobClass
 from reviewrig.context import ReviewContext, context_for_diff, reindex
 from reviewrig.jobs.parse import RawFinding, parse_findings
 from reviewrig.jobs.prompt import review_messages
+from reviewrig.jobs.tools import complete_with_tools
 from reviewrig.llm import Gateway, ModelError
 from reviewrig.log import Logger, create_logger
+from reviewrig.mcp import McpRegistry
 from reviewrig.models import Repository
 from reviewrig.store import Store
 from reviewrig.store.findings import Finding, record
@@ -106,6 +108,7 @@ async def review(
     policy: Policy,
     base: str | None = None,
     target: str = "HEAD",
+    tools: McpRegistry | None = None,
     log: Logger | None = None,
 ) -> ReviewOutcome:
     """Review one change. Never raises: a failure is recorded on the run."""
@@ -144,7 +147,9 @@ async def review(
         context=context.as_text(),
     )
     try:
-        completion = await gateway.complete(JobClass.REVIEW, messages, profile=policy.model_profile)
+        completion, tool_run = await complete_with_tools(
+            gateway, tools, JobClass.REVIEW, messages, policy, log
+        )
     except ModelError as error:
         return _failed(store, run, log, "model_failed", str(error), started)
 
@@ -171,6 +176,7 @@ async def review(
         completion_tokens=completion.completion_tokens,
         context_chunks=len(context.hits),
         reranked=context.reranked,
+        tool_calls=tool_run.calls,
     )
     return ReviewOutcome(finish(store, run), findings, problems, context)
 

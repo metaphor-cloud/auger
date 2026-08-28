@@ -12,6 +12,7 @@ from reviewrig.config import Config, Policy
 from reviewrig.forge import Entry, ForgeState, Registry
 from reviewrig.forge.github import GitHub
 from reviewrig.llm import Gateway
+from reviewrig.mcp import McpRegistry
 from reviewrig.models import Remote, Repository, RepositoryView
 from reviewrig.schedule import Scheduler, poll_pull_requests
 from reviewrig.store import Store
@@ -27,6 +28,7 @@ class StubRig:
         self.store = store
         self.config = config
         self.forges = registry
+        self.tools = McpRegistry(config)
         self.gateway: Gateway = None  # type: ignore[assignment]
         self.policy = policy
         self.events: list[tuple[str, dict[str, object]]] = []

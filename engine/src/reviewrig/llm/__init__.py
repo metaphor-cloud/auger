@@ -7,6 +7,7 @@ from reviewrig.llm.gateway import (
     Message,
     MissingBackendError,
     ModelError,
+    ToolCall,
     Usage,
 )
 from reviewrig.llm.supervisor import Health, Supervisor, discover, probe, probe_all
@@ -23,6 +24,7 @@ __all__ = [
     "ModelError",
     "Progress",
     "Supervisor",
+    "ToolCall",
     "Usage",
     "discover",
     "download",

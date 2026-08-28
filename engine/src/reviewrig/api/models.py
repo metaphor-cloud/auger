@@ -208,3 +208,25 @@ class PolicyChange(BaseModel):
     #: Empty for `defaults`. An organisation key or a repository path otherwise.
     key: str = ""
     changes: dict[str, object]
+
+
+class ToolOut(BaseModel):
+    server: str
+    name: str
+    qualified: str
+    description: str
+
+
+class McpServerOut(BaseModel):
+    name: str
+    transport: str
+    target: str
+    reachable: bool
+    reason: str | None
+    tools: list[ToolOut]
+
+
+class ToolList(BaseModel):
+    servers: list[McpServerOut]
+    #: What the default policy allows. Empty means no tool runs by default.
+    allowed: list[str]

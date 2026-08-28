@@ -31,6 +31,7 @@ from reviewrig.api.models import (
     ForgeList,
     ForgeOut,
     IndexOut,
+    McpServerOut,
     PolicyChange,
     PolicyLevelOut,
     QueueOut,
@@ -42,6 +43,8 @@ from reviewrig.api.models import (
     SettingsOut,
     StatusRequest,
     SystemOut,
+    ToolList,
+    ToolOut,
 )
 from reviewrig.config.schema import JobClass
 from reviewrig.events import Event
@@ -167,9 +170,11 @@ def create_app(rig: Rig) -> FastAPI:
         # the network. Neither should hold up the UI.
         boot = asyncio.create_task(_boot(rig))
         models = asyncio.create_task(rig.check_models())
+        tools_ready = asyncio.create_task(rig.check_tools())
         yield
         boot.cancel()
         models.cancel()
+        tools_ready.cancel()
         await rig.proxy.stop()
         await rig.aclose()
 
@@ -266,6 +271,36 @@ def create_app(rig: Rig) -> FastAPI:
                 )
             )
         return ForgeList(forges=rows)
+
+    @router.get("/tools")
+    async def tools() -> ToolList:
+        return ToolList(
+            servers=[
+                McpServerOut(
+                    name=name,
+                    transport=state.config.transport,
+                    target=state.config.url or state.config.command,
+                    reachable=state.reachable,
+                    reason=state.reason,
+                    tools=[
+                        ToolOut(
+                            server=tool.server,
+                            name=tool.name,
+                            qualified=tool.qualified,
+                            description=tool.description,
+                        )
+                        for tool in state.tools
+                    ],
+                )
+                for name, state in sorted(rig.tools.servers.items())
+            ],
+            allowed=list(rig.config.defaults.tools),
+        )
+
+    @router.post("/tools/check")
+    async def check_tools() -> ToolList:
+        await rig.check_tools()
+        return await tools()
 
     @router.get("/settings")
     async def settings_view() -> SettingsOut:

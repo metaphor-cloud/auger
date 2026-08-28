@@ -193,6 +193,7 @@ class Scheduler:
                 pull=task.pull,
                 repository=task.repository,
                 policy=task.policy,
+                tools=rig.tools,
                 log=self.log,
             )
         return await diff_review.review(
@@ -202,6 +203,7 @@ class Scheduler:
             policy=task.policy,
             base=task.base,
             target=task.target,
+            tools=rig.tools,
             log=self.log,
         )
 

@@ -145,6 +145,33 @@ in `complete` mode.
 
 An enabled forge joins the egress allowlist. A forge that is off cannot be reached.
 
+## Your own tools
+
+Attach an MCP server and a review can call it, so the rig works with the pull request
+tooling you already use.
+
+```toml
+[mcp.github]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-github"]
+pass_env = ["GITHUB_PERSONAL_ACCESS_TOKEN"]   # names, never values
+
+[repo."~/git/acme/payments"]
+tools = ["github.get_pull_request", "github.list_commits"]
+```
+
+Three rules make this safe.
+
+- **Nothing is allowed by default.** A tool runs only when a policy names it, as
+  `server.tool` or `server.*`.
+- **A server sees only what you named.** It gets `PATH`, `HOME`, and the variables in
+  `pass_env`. The engine token and every forge token stay in the engine.
+- **Tool output is data.** It is wrapped, labelled, and the prompt says it is never an
+  instruction and never changes the output format.
+
+The loop is bounded by `max_tool_calls`, because a model that keeps asking for tools is
+a review that never reports.
+
 ## Other agents
 
 A review that runs while a coding agent edits the same tree reads a half finished state.

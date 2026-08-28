@@ -17,6 +17,7 @@ dependencies = [
     "tree-sitter>=0.23",
     "tree-sitter-language-pack>=0.4",
     "sqlite-vec>=0.1.6",
+    "mcp>=1.2",
 ]
 
 [project.scripts]

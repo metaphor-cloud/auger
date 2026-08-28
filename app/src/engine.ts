@@ -12,6 +12,7 @@ import type {
   RunList,
   Settings,
   System,
+  ToolList,
 } from "./types";
 
 export type EngineInfo = { port: number; token: string };
@@ -104,6 +105,14 @@ export async function requestReview(path: string, target = "HEAD"): Promise<Queu
 
 export async function getForges(): Promise<ForgeList> {
   return request("/forges");
+}
+
+export async function getTools(): Promise<ToolList> {
+  return request("/tools");
+}
+
+export async function checkTools(): Promise<ToolList> {
+  return request("/tools/check", { method: "POST" });
 }
 
 export async function getSettings(): Promise<Settings> {

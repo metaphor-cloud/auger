@@ -19,8 +19,10 @@ from reviewrig.config.schema import JobClass
 from reviewrig.forge import Comment, Entry, ForgeError, PostedReview, PullRequest, Repo
 from reviewrig.jobs.parse import parse_findings
 from reviewrig.jobs.prompt import review_messages
+from reviewrig.jobs.tools import complete_with_tools
 from reviewrig.llm import Gateway, ModelError
 from reviewrig.log import Logger, create_logger
+from reviewrig.mcp import McpRegistry
 from reviewrig.models import Repository
 from reviewrig.store import Store
 from reviewrig.store.findings import Finding, record
@@ -91,6 +93,7 @@ async def review_pull(
     pull: PullRequest,
     repository: Repository,
     policy: Policy,
+    tools: McpRegistry | None = None,
     log: Logger | None = None,
 ) -> PullOutcome:
     """Review one pull request and post the result. Never raises."""
@@ -118,7 +121,9 @@ async def review_pull(
         hints=policy.hints,
     )
     try:
-        completion = await gateway.complete(JobClass.REVIEW, messages, profile=policy.model_profile)
+        completion, _ = await complete_with_tools(
+            gateway, tools, JobClass.REVIEW, messages, policy, log
+        )
     except ModelError as error:
         return _stop(store, run, log, "model_failed", str(error), started, failed=True)
 

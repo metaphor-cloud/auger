@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { changeSettings, getForges, getSettings } from "../engine";
-import type { Forge, Mode, PolicyLevel, Settings } from "../types";
+import { changeSettings, checkTools, getForges, getSettings, getTools } from "../engine";
+import type { Forge, McpServer, Mode, PolicyLevel, Settings } from "../types";
 
 const MODES: Mode[] = ["off", "draft", "complete"];
 
@@ -27,12 +27,17 @@ function ModeSelect({
 export default function SettingsView() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [forges, setForges] = useState<Forge[]>([]);
+  const [servers, setServers] = useState<McpServer[]>([]);
+  const [allowed, setAllowed] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       setSettings(await getSettings());
       setForges((await getForges()).forges);
+      const tools = await getTools();
+      setServers(tools.servers);
+      setAllowed(tools.allowed);
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -186,6 +191,55 @@ export default function SettingsView() {
         Turn a forge on in the config file. The rig then reads its pull requests and adds it
         to the egress allowlist.
       </p>
+
+      <h3>Tools</h3>
+      {servers.length === 0 ? (
+        <p className="muted">
+          No MCP server attached. Add an <code>[mcp.&quot;name&quot;]</code> section to the
+          config file. A server runs outside the sandbox and speaks for you.
+        </p>
+      ) : (
+        <>
+          <table>
+            <thead>
+              <tr>
+                <th>Server</th>
+                <th>Runs</th>
+                <th>State</th>
+                <th>Tools</th>
+              </tr>
+            </thead>
+            <tbody>
+              {servers.map((server) => (
+                <tr key={server.name}>
+                  <td>{server.name}</td>
+                  <td className="muted mono path" title={server.target}>
+                    {server.target}
+                  </td>
+                  <td>
+                    <span className={`badge ${server.reachable ? "mode-complete" : ""}`}>
+                      {server.reachable ? "ready" : "unavailable"}
+                    </span>
+                  </td>
+                  <td className="muted mono" title={server.reason ?? ""}>
+                    {server.reachable
+                      ? server.tools.map((tool) => tool.name).join(", ")
+                      : server.reason}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="muted">
+            Allowed by default: {allowed.length ? allowed.join(", ") : "nothing"}. A tool
+            runs only when a policy names it, as <code>server.tool</code> or{" "}
+            <code>server.*</code>.
+          </p>
+          <button onClick={() => void checkTools().then((body) => setServers(body.servers))}>
+            Check servers
+          </button>
+        </>
+      )}
     </section>
   );
 }
