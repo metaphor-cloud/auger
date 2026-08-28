@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from reviewrig.config.schema import Policy
 
 
 @dataclass(frozen=True)
@@ -44,3 +48,11 @@ class Repository:
     @property
     def slug(self) -> str:
         return self.remote.slug if self.remote else str(self.path)
+
+
+@dataclass(frozen=True)
+class RepositoryView:
+    """A repository with the settings that apply to it."""
+
+    repository: Repository
+    policy: Policy

@@ -33,6 +33,14 @@ class HostedRefusedError(ModelError):
     """The backend sends code off the machine and the user has not allowed that."""
 
 
+class EgressBlockedError(ModelError):
+    """The backend address is not on the allowlist.
+
+    This is a `ModelError` on purpose. A caller that handles a model failure must handle
+    this too, or a typo in a backend URL would crash a worker instead of failing one run.
+    """
+
+
 @dataclass(frozen=True)
 class Message:
     role: str
@@ -146,10 +154,13 @@ class Gateway:
                     response.raise_for_status()
                     usage.requests += 1
                     return response.json()
-                except EgressRefused:
+                except EgressRefused as refused:
                     # The allowlist refused it. A retry cannot help and must not happen.
                     usage.failures += 1
-                    raise
+                    raise EgressBlockedError(
+                        f"backend {resolved.name!r} points at {url}, which is not on the "
+                        "egress allowlist"
+                    ) from refused
                 except (httpx.HTTPStatusError, httpx.RequestError) as error:
                     last = error
                     if delay is None or not _worth_retrying(error):

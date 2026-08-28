@@ -3,7 +3,14 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import { takeEvents, type ServerEvent } from "./sse";
-import type { BackendList, RepositoryList, System } from "./types";
+import type {
+  BackendList,
+  FindingList,
+  Queue,
+  RepositoryList,
+  RunList,
+  System,
+} from "./types";
 
 export type EngineInfo = { port: number; token: string };
 
@@ -50,6 +57,47 @@ export async function checkModels(): Promise<BackendList> {
 
 export async function startModels(): Promise<BackendList> {
   return request("/models/start", { method: "POST" });
+}
+
+export async function getFindings(repo?: string, status = "open"): Promise<FindingList> {
+  const query = new URLSearchParams({ status });
+  if (repo) query.set("repo", repo);
+  return request(`/findings?${query}`);
+}
+
+export async function setFindingStatus(
+  fingerprints: string[],
+  status: "open" | "suppressed" | "resolved",
+): Promise<FindingList> {
+  return request("/findings/status", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fingerprints, status }),
+  });
+}
+
+export async function getRuns(repo?: string): Promise<RunList> {
+  return request(repo ? `/runs?repo=${encodeURIComponent(repo)}` : "/runs");
+}
+
+export async function getQueue(): Promise<Queue> {
+  return request("/queue");
+}
+
+export async function pauseQueue(): Promise<Queue> {
+  return request("/queue/pause", { method: "POST" });
+}
+
+export async function resumeQueue(): Promise<Queue> {
+  return request("/queue/resume", { method: "POST" });
+}
+
+export async function requestReview(path: string, target = "HEAD"): Promise<Queue> {
+  return request("/review", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path, target }),
+  });
 }
 
 export async function rescan(): Promise<RepositoryList> {

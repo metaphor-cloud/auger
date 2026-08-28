@@ -72,3 +72,55 @@ export type BackendList = {
   active_profile_backends: Record<string, string>;
   allow_hosted: boolean;
 };
+
+export type Finding = {
+  fingerprint: string;
+  repo_path: string;
+  source: string;
+  severity: string;
+  title: string;
+  detail: string;
+  suggestion: string;
+  file: string;
+  line: number | null;
+  confidence: number;
+  status: string;
+  triage: string | null;
+  first_seen_at: string;
+  last_seen_at: string;
+  times_seen: number;
+  run_id: string | null;
+};
+
+export type FindingList = {
+  findings: Finding[];
+  counts: Record<string, number>;
+};
+
+export type Run = {
+  id: string;
+  repo_path: string;
+  kind: string;
+  status: string;
+  reason: string | null;
+  base: string | null;
+  head: string | null;
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number | null;
+  finding_count: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  backend: string | null;
+  error: string | null;
+  attempts: number;
+};
+
+export type RunList = { runs: Run[] };
+
+export type Queue = {
+  pending: number;
+  in_flight: string[];
+  paused: boolean;
+  workers: number;
+};

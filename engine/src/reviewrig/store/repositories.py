@@ -15,7 +15,7 @@ from reviewrig.store.db import Store
 
 
 def now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
 def _row_to_repository(row: dict[str, object] | Sequence[object]) -> Repository:
@@ -60,7 +60,17 @@ def record_scan(store: Store, found: Iterable[Repository], timestamp: str | None
             """,
             rows,
         )
-        connection.execute("UPDATE repositories SET present = 0 WHERE last_seen_at != ?", (stamp,))
+        # Mark absence by path, not by timestamp. Two scans inside one second share a
+        # timestamp, and a timestamp comparison would then leave stale rows present.
+        paths = [row[0] for row in rows]
+        if paths:
+            connection.execute(
+                "UPDATE repositories SET present = 0 WHERE path NOT IN "
+                f"({','.join('?' * len(paths))})",
+                paths,
+            )
+        else:
+            connection.execute("UPDATE repositories SET present = 0")
     return len(rows)
 
 

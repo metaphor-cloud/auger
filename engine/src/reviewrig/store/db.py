@@ -32,6 +32,56 @@ MIGRATIONS: tuple[str, ...] = (
     );
     CREATE INDEX repositories_org ON repositories (host, namespace);
     """,
+    """
+    CREATE TABLE runs (
+        id                TEXT PRIMARY KEY,
+        repo_path         TEXT NOT NULL,
+        kind              TEXT NOT NULL,
+        status            TEXT NOT NULL,
+        reason            TEXT,
+        base              TEXT,
+        head              TEXT,
+        started_at        TEXT NOT NULL,
+        finished_at       TEXT,
+        duration_ms       INTEGER,
+        finding_count     INTEGER NOT NULL DEFAULT 0,
+        prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+        completion_tokens INTEGER NOT NULL DEFAULT 0,
+        backend           TEXT,
+        error             TEXT
+    );
+    CREATE INDEX runs_repo ON runs (repo_path, started_at DESC);
+
+    CREATE TABLE findings (
+        fingerprint   TEXT PRIMARY KEY,
+        repo_path     TEXT NOT NULL,
+        source        TEXT NOT NULL,
+        severity      TEXT NOT NULL,
+        title         TEXT NOT NULL,
+        detail        TEXT NOT NULL,
+        suggestion    TEXT NOT NULL DEFAULT '',
+        file          TEXT NOT NULL,
+        line          INTEGER,
+        confidence    REAL NOT NULL DEFAULT 0,
+        status        TEXT NOT NULL DEFAULT 'open',
+        triage        TEXT,
+        first_seen_at TEXT NOT NULL,
+        last_seen_at  TEXT NOT NULL,
+        times_seen    INTEGER NOT NULL DEFAULT 1,
+        run_id        TEXT
+    );
+    CREATE INDEX findings_repo ON findings (repo_path, status, severity);
+
+    CREATE TABLE repo_state (
+        repo_path          TEXT PRIMARY KEY,
+        last_reviewed_head TEXT,
+        last_reviewed_at   TEXT,
+        last_audit_at      TEXT
+    );
+    """,
+    """
+    ALTER TABLE runs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 1;
+    """,
 )
 
 

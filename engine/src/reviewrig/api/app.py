@@ -14,7 +14,7 @@ import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 from starlette.datastructures import Headers
@@ -26,14 +26,23 @@ from reviewrig.api.models import (
     BackendList,
     BackendOut,
     EgressOut,
+    FindingList,
+    FindingOut,
+    QueueOut,
     RepositoryList,
+    ReviewRequest,
+    RunList,
+    RunOut,
     SandboxOut,
+    StatusRequest,
     SystemOut,
 )
 from reviewrig.config.schema import JobClass
 from reviewrig.events import Event
 from reviewrig.log import Logger
 from reviewrig.rig import Rig
+from reviewrig.store.findings import counts, list_findings, set_status
+from reviewrig.store.runs import list_runs
 
 BEARER = "bearer "
 
@@ -84,6 +93,26 @@ class TokenAuth:
         return None
 
 
+async def _boot(rig: Rig) -> None:
+    """Walk the roots, then start the workers.
+
+    The order matters. The watcher reads the stored repositories, so starting it before
+    the first walk would let it work from the last run's list, which may name a
+    repository that no root covers any more.
+    """
+    await asyncio.to_thread(rig.scan)
+    await rig.start_background()
+
+
+def _queue_out(rig: Rig) -> QueueOut:
+    return QueueOut(
+        pending=rig.scheduler.pending,
+        in_flight=rig.scheduler.in_flight,
+        paused=rig.scheduler.paused,
+        workers=rig.config.schedule.max_concurrent_reviews,
+    )
+
+
 def _backend_out(rig: Rig, name: str) -> BackendOut:
     backend = rig.config.backend[name]
     health = rig.health.get(name)
@@ -113,10 +142,10 @@ def create_app(rig: Rig) -> FastAPI:
         await rig.proxy.start()
         # The first walk can take seconds on a large tree, and the model probe waits on
         # the network. Neither should hold up the UI.
-        scan = asyncio.create_task(asyncio.to_thread(rig.scan))
+        boot = asyncio.create_task(_boot(rig))
         models = asyncio.create_task(rig.check_models())
         yield
-        scan.cancel()
+        boot.cancel()
         models.cancel()
         await rig.proxy.stop()
         await rig.aclose()
@@ -195,6 +224,59 @@ def create_app(rig: Rig) -> FastAPI:
         """Start any managed backend that does not answer. A large model takes a minute."""
         await rig.ensure_models()
         return backend_list()
+
+    @router.get("/findings")
+    async def findings(
+        repo: str | None = None, status: str = "open", limit: int = 500
+    ) -> FindingList:
+        statuses = [part for part in status.split(",") if part]
+        rows = await asyncio.to_thread(list_findings, rig.store, repo, statuses, limit)
+        return FindingList(
+            findings=[FindingOut.of(finding) for finding in rows],
+            counts=await asyncio.to_thread(counts, rig.store, repo),
+        )
+
+    @router.post("/findings/status")
+    async def change_status(request: StatusRequest) -> FindingList:
+        """Suppress a finding, or bring it back. Suppression survives a re-review."""
+        await asyncio.to_thread(set_status, rig.store, request.fingerprints, request.status)
+        rig.publish("findings.changed", count=len(request.fingerprints), status=request.status)
+        rows = await asyncio.to_thread(list_findings, rig.store, None, ["open"], 500)
+        return FindingList(
+            findings=[FindingOut.of(finding) for finding in rows],
+            counts=await asyncio.to_thread(counts, rig.store, None),
+        )
+
+    @router.get("/runs")
+    async def runs(repo: str | None = None, limit: int = 100) -> RunList:
+        rows = await asyncio.to_thread(list_runs, rig.store, repo, limit)
+        return RunList(runs=[RunOut.of(run) for run in rows])
+
+    @router.get("/queue")
+    async def queue() -> QueueOut:
+        return _queue_out(rig)
+
+    @router.post("/queue/pause")
+    async def pause() -> QueueOut:
+        rig.scheduler.pause()
+        rig.publish("queue.paused", pending=rig.scheduler.pending)
+        return _queue_out(rig)
+
+    @router.post("/queue/resume")
+    async def resume() -> QueueOut:
+        rig.scheduler.resume()
+        rig.publish("queue.resumed", pending=rig.scheduler.pending)
+        return _queue_out(rig)
+
+    @router.post("/review")
+    async def request_review(request: ReviewRequest) -> QueueOut:
+        """Queue a review by hand. The watcher queues the rest on its own."""
+        repository = rig.find_repository(request.path)
+        if repository is None:
+            raise HTTPException(status_code=404, detail=f"no repository at {request.path}")
+        rig.submit_review(repository, base=request.base, target=request.target)
+        rig.publish("queue.changed", pending=rig.scheduler.pending)
+        return _queue_out(rig)
 
     @router.get("/repositories")
     async def repositories() -> RepositoryList:

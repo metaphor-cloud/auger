@@ -4,11 +4,12 @@
 //! stays hidden until the user asks for it.
 
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
-use tauri::tray::TrayIconBuilder;
+use tauri::tray::{TrayIcon, TrayIconBuilder};
 use tauri::{AppHandle, Manager, Runtime};
 
 pub const OPEN: &str = "open";
 pub const QUIT: &str = "quit";
+pub const TRAY_ID: &str = "main";
 
 pub fn build<R: Runtime>(app: &AppHandle<R>, status: &str) -> tauri::Result<()> {
     let status_item = MenuItem::with_id(app, "status", status, false, None::<&str>)?;
@@ -25,7 +26,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>, status: &str) -> tauri::Result<()> 
         ],
     )?;
 
-    TrayIconBuilder::with_id("main")
+    TrayIconBuilder::with_id(TRAY_ID)
         .icon(app.default_window_icon().cloned().expect("bundled icon"))
         .icon_as_template(true)
         .tooltip("reviewrig")
@@ -51,4 +52,28 @@ pub fn show_window<R: Runtime>(app: &AppHandle<R>) {
         let _ = window.show();
         let _ = window.set_focus();
     }
+}
+
+/// Show the open finding count beside the icon.
+///
+/// The rig runs all day with its window closed, so the menu bar is where the user learns
+/// that something needs them. A count of zero shows no text, to keep the bar quiet.
+pub fn set_status<R: Runtime>(app: &AppHandle<R>, open: u32, loud: u32) {
+    let Some(tray) = app.tray_by_id(TRAY_ID) else {
+        return;
+    };
+    let title = match (open, loud) {
+        (0, _) => String::new(),
+        (open, 0) => format!("{open}"),
+        (open, loud) => format!("{open} ({loud})"),
+    };
+    apply(&tray, &title, open, loud);
+}
+
+fn apply<R: Runtime>(tray: &TrayIcon<R>, title: &str, open: u32, loud: u32) {
+    let _ = tray.set_title(Some(title));
+    let _ = tray.set_tooltip(Some(&match open {
+        0 => "reviewrig: nothing open".to_string(),
+        _ => format!("reviewrig: {open} open, {loud} that need attention"),
+    }));
 }

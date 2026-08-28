@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 import pytest
 
 from reviewrig.config.schema import Backend, Config, JobClass, Profile, ProfileEntry
-from reviewrig.llm import Gateway, Message, ModelError
+from reviewrig.llm import EgressBlockedError, Gateway, Message, ModelError
 from reviewrig.llm.gateway import MissingBackendError
 from reviewrig.net import Allowlist
 from tests.helpers import FakeModelServer
@@ -142,8 +142,22 @@ async def test_the_allowlist_stops_a_backend_that_was_not_approved(
     config.profile["balanced"].review = ProfileEntry(backend="review")
     gateway = Gateway(config, Allowlist())
     try:
-        with pytest.raises(Exception, match="allowlist"):
+        with pytest.raises(EgressBlockedError, match="allowlist"):
             await gateway.complete(JobClass.REVIEW, HELLO)
     finally:
         await gateway.aclose()
     assert fake.requests == []
+
+
+async def test_a_blocked_backend_is_a_model_error_so_one_run_fails_and_not_the_rig(
+    fake: FakeModelServer, serve: Serve
+) -> None:
+    base = await serve(fake.app())
+    config = Config(backend={"review": Backend(url=f"{base}/v1", model="review-model")})
+    config.profile["balanced"].review = ProfileEntry(backend="review")
+    gateway = Gateway(config, Allowlist())
+    try:
+        with pytest.raises(ModelError):
+            await gateway.complete(JobClass.REVIEW, HELLO)
+    finally:
+        await gateway.aclose()

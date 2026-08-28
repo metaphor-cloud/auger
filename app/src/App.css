@@ -233,3 +233,97 @@ h3 {
 .view-header button + button {
   margin-left: 0.5rem;
 }
+
+.pill {
+  margin-left: 0.35rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  font-size: 0.7rem;
+}
+
+.findings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.findings li {
+  border-bottom: 1px solid var(--soft);
+}
+
+.finding-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.5rem 0.25rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.finding-head:hover {
+  background: var(--soft);
+}
+
+.finding-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finding-body {
+  padding: 0 0.25rem 0.9rem 0.25rem;
+  max-width: 48rem;
+}
+
+.finding-body p {
+  margin: 0 0 0.5rem;
+}
+
+.finding-body button {
+  border: 1px solid var(--edge);
+  background: transparent;
+  color: inherit;
+  border-radius: 6px;
+  padding: 0.25rem 0.7rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sev-critical {
+  background: color-mix(in srgb, var(--bad) 20%, transparent);
+  color: var(--bad);
+}
+
+.sev-high {
+  background: color-mix(in srgb, var(--warn) 20%, transparent);
+  color: var(--warn);
+}
+
+.sev-medium {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+.run-ok {
+  background: color-mix(in srgb, var(--good) 18%, transparent);
+  color: var(--good);
+}
+
+.run-failed {
+  background: color-mix(in srgb, var(--bad) 18%, transparent);
+  color: var(--bad);
+}
+
+.run-skipped {
+  background: var(--soft);
+  color: var(--muted);
+}

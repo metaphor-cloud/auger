@@ -104,8 +104,26 @@ sends your code off the machine.
 
 ## Other agents
 
-The rig watches for other coding agents in a repository, by process, by git lock, and by
-recent writes. It skips a busy repository and waits for the idle timer.
+A review that runs while a coding agent edits the same tree reads a half finished state.
+The rig therefore leaves a repository alone when any of these hold:
+
+- A coding agent has its working directory inside it. The check reads the process name,
+  the first word of its command line, and the script behind an interpreter, because an
+  agent may report a version string as its name or ship as a shell wrapper.
+- Git has an operation in flight: `index.lock`, a merge, a rebase, a bisect.
+- Something wrote to the tree less than `idle_seconds` ago.
+
+Every skip is recorded with its reason, so a repository that is never reviewed is
+visible instead of silently absent. Repeats of the same reason share one row and a
+count.
+
+## What a review reads
+
+Git runs on the host with hooks, external diff drivers, textconv, and every config file
+turned off, and it never writes to your repository. A `clone` cannot carry a config file,
+so a hostile repository has no path from its content to a command through these calls.
+Anything that does run repository-provided code, a build, a dependency install, or a
+linter that loads repository rules, runs in the sandbox instead.
 
 ## Development
 

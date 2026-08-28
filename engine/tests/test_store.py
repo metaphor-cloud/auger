@@ -81,3 +81,21 @@ def test_a_failed_write_rolls_back(tmp_path: Path) -> None:
         pass
     assert len(list_repositories(store)) == 1
     store.close()
+
+
+def test_two_scans_inside_one_second_still_mark_absence(tmp_path: Path) -> None:
+    """A timestamp comparison would fail here, because both scans share a timestamp."""
+    store = Store.open(tmp_path)
+    record_scan(store, [repository("/x/a"), repository("/x/b")], timestamp="t1")
+    record_scan(store, [repository("/x/a")], timestamp="t1")
+    assert [found.path for found in list_repositories(store)] == [Path("/x/a")]
+    store.close()
+
+
+def test_an_empty_scan_marks_everything_absent(tmp_path: Path) -> None:
+    store = Store.open(tmp_path)
+    record_scan(store, [repository("/x/a")], timestamp="t1")
+    record_scan(store, [], timestamp="t1")
+    assert list_repositories(store) == []
+    assert len(list_repositories(store, present_only=False)) == 1
+    store.close()

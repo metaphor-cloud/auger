@@ -1,6 +1,7 @@
 from reviewrig.llm.downloader import DownloadError, Progress, download
 from reviewrig.llm.gateway import (
     Completion,
+    EgressBlockedError,
     Gateway,
     HostedRefusedError,
     Message,
@@ -13,6 +14,7 @@ from reviewrig.llm.supervisor import Health, Supervisor, discover, probe, probe_
 __all__ = [
     "Completion",
     "DownloadError",
+    "EgressBlockedError",
     "Gateway",
     "Health",
     "HostedRefusedError",

@@ -25,6 +25,27 @@ fn engine_info(state: tauri::State<'_, EngineState>) -> Result<EngineInfo, Strin
         .ok_or_else(|| "the engine is not running".to_string())
 }
 
+/// The UI holds the event stream, so it tells the host what the tray should say.
+#[tauri::command]
+// Tauri fixes this signature. A command takes its handle by value.
+#[allow(clippy::needless_pass_by_value)]
+fn set_tray_status(app: tauri::AppHandle, open: u32, critical: u32) {
+    tray::set_status(&app, open, critical);
+}
+
+/// A finding that needs attention reaches the user even with the window closed.
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn notify(app: tauri::AppHandle, title: String, body: String) -> Result<(), String> {
+    use tauri_plugin_notification::NotificationExt;
+    app.notification()
+        .builder()
+        .title(title)
+        .body(body)
+        .show()
+        .map_err(|error| error.to_string())
+}
+
 /// Start the host. This call returns when the user quits.
 ///
 /// # Panics
@@ -34,8 +55,13 @@ fn engine_info(state: tauri::State<'_, EngineState>) -> Result<EngineInfo, Strin
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .manage(EngineState::default())
-        .invoke_handler(tauri::generate_handler![engine_info])
+        .invoke_handler(tauri::generate_handler![
+            engine_info,
+            set_tray_status,
+            notify
+        ])
         .setup(|app| {
             // The menu bar is the product. Keep the dock clear.
             #[cfg(target_os = "macos")]

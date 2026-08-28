@@ -1,9 +1,12 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-import { getSystem, health, readEvents } from "./engine";
-import type { System } from "./types";
+import { getQueue, getSystem, health, pauseQueue, readEvents, resumeQueue } from "./engine";
+import { setTray, notify } from "./host";
+import type { Queue, System } from "./types";
+import Findings from "./views/Findings";
 import Models from "./views/Models";
 import Repositories from "./views/Repositories";
+import Runs from "./views/Runs";
 import SystemView from "./views/System";
 import "./App.css";
 
@@ -12,14 +15,27 @@ type Status =
   | { state: "ready"; version: string }
   | { state: "failed"; reason: string };
 
-const VIEWS = ["Repositories", "Models", "System"] as const;
+const VIEWS = ["Findings", "Repositories", "Runs", "Models", "System"] as const;
 type View = (typeof VIEWS)[number];
+
+const LOUD = new Set(["critical", "high"]);
 
 export default function App() {
   const [status, setStatus] = useState<Status>({ state: "starting" });
-  const [view, setView] = useState<View>("Repositories");
+  const [view, setView] = useState<View>("Findings");
   const [scanning, setScanning] = useState(false);
   const [system, setSystem] = useState<System | null>(null);
+  const [queue, setQueue] = useState<Queue | null>(null);
+  // Every event that changes stored data bumps this, and each view reloads.
+  const [version, setVersion] = useState(0);
+
+  const refreshQueue = useCallback(async () => {
+    try {
+      setQueue(await getQueue());
+    } catch {
+      // The queue is a detail. A failure here must not blank the window.
+    }
+  }, []);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -29,9 +45,22 @@ export default function App() {
         const info = await health();
         setStatus({ state: "ready", version: info.version });
         setSystem(await getSystem());
+        await refreshQueue();
         await readEvents((event) => {
           if (event.kind === "scan.started") setScanning(true);
           if (event.kind === "scan.finished") setScanning(false);
+          if (event.kind.startsWith("queue.")) void refreshQueue();
+          if (event.kind === "run.finished" || event.kind === "run.skipped") {
+            void refreshQueue();
+            setVersion((value) => value + 1);
+          }
+          if (event.kind === "finding.new") {
+            const data = event.data as { severity: string; title: string; slug: string };
+            setVersion((value) => value + 1);
+            if (LOUD.has(data.severity)) {
+              void notify(`${data.severity}: ${data.title}`, data.slug);
+            }
+          }
         }, abort.signal);
       } catch (cause) {
         if (abort.signal.aborted) return;
@@ -44,7 +73,11 @@ export default function App() {
 
     void connect();
     return () => abort.abort();
-  }, []);
+  }, [refreshQueue]);
+
+  async function togglePause() {
+    setQueue(queue?.paused ? await resumeQueue() : await pauseQueue());
+  }
 
   return (
     <div className="app">
@@ -61,6 +94,12 @@ export default function App() {
             </button>
           ))}
         </nav>
+        {queue && (
+          <button className="tab" onClick={() => void togglePause()}>
+            {queue.paused ? "Resume" : "Pause"}
+            {queue.pending > 0 && <span className="pill">{queue.pending}</span>}
+          </button>
+        )}
         <span className={`engine engine-${status.state}`}>
           {status.state === "starting" && "Starting"}
           {status.state === "ready" && `Engine ${status.version}`}
@@ -68,8 +107,11 @@ export default function App() {
         </span>
       </header>
       {system?.sandbox.degraded && <p className="banner">{system.sandbox.warning}</p>}
+      {queue?.paused && <p className="banner">Paused. Queued work waits.</p>}
       <main>
+        {view === "Findings" && <Findings version={version} onCounts={setTray} />}
         {view === "Repositories" && <Repositories scanning={scanning} />}
+        {view === "Runs" && <Runs version={version} />}
         {view === "Models" && <Models />}
         {view === "System" && <SystemView system={system} />}
       </main>

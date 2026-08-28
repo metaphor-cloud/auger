@@ -7,27 +7,21 @@ reload the config and one place that publishes state changes.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import asyncio
+from pathlib import Path
 
 from reviewrig.config import Config, Policy, config_path, ensure_config, load, resolve_policy
 from reviewrig.discovery import scan
 from reviewrig.events import Event, EventBus
 from reviewrig.llm import Gateway, Health, Supervisor, probe_all
 from reviewrig.log import Logger, create_logger
-from reviewrig.models import Repository
+from reviewrig.models import Repository, RepositoryView
 from reviewrig.net import Allowlist, Destination, EgressProxy
 from reviewrig.sandbox import Selection, select
+from reviewrig.schedule import Scheduler, Task, watch
 from reviewrig.settings import Settings
 from reviewrig.store import Store
 from reviewrig.store.repositories import list_repositories, record_scan
-
-
-@dataclass(frozen=True)
-class RepositoryView:
-    """A repository with the settings that apply to it."""
-
-    repository: Repository
-    policy: Policy
 
 
 class Rig:
@@ -46,8 +40,37 @@ class Rig:
         self.supervisor = Supervisor(self.models_dir, self.log)
         self.gateway = Gateway(self.config, self.allowlist, self.log)
         self.health: dict[str, Health] = {}
+        self.scheduler = Scheduler(self, self.log)
+        self._background: list[asyncio.Task[None]] = []
+
+    async def start_background(self) -> None:
+        """Start the workers and the watcher. The UI can connect before this finishes."""
+        await self.scheduler.start(self.config.schedule.max_concurrent_reviews)
+        self._background.append(asyncio.create_task(watch(self, self.scheduler, self.log)))
+
+    async def stop_background(self) -> None:
+        for task in self._background:
+            task.cancel()
+        await asyncio.gather(*self._background, return_exceptions=True)
+        self._background.clear()
+        await self.scheduler.stop()
+
+    def submit_review(
+        self, repository: Repository, base: str | None = None, target: str = "HEAD"
+    ) -> bool:
+        return self.scheduler.submit(
+            Task.review(repository, self.policy_for(repository), base=base, target=target)
+        )
+
+    def find_repository(self, path: str) -> Repository | None:
+        wanted = Path(path).expanduser().absolute()
+        for view in self.repositories():
+            if view.repository.path == wanted:
+                return view.repository
+        return None
 
     async def aclose(self) -> None:
+        await self.stop_background()
         self.supervisor.stop_all()
         await self.gateway.aclose()
         self.close()
@@ -80,8 +103,8 @@ class Rig:
         self.publish("config.reloaded", roots=len(self.config.roots))
         return self.config
 
-    def publish(self, kind: str, **data: object) -> None:
-        self.bus.publish(Event(kind, dict(data)))
+    def publish(self, event: str, **data: object) -> None:
+        self.bus.publish(Event(event, dict(data)))
 
     def policy_for(self, repository: Repository) -> Policy:
         return resolve_policy(repository, self.config)

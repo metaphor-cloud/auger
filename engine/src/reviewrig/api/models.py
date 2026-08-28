@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 from reviewrig.config import Policy
-from reviewrig.rig import RepositoryView
+from reviewrig.models import RepositoryView
+from reviewrig.store.findings import Finding
+from reviewrig.store.runs import Run
 
 
 class RepositoryOut(BaseModel):
@@ -87,3 +91,77 @@ class BackendList(BaseModel):
     profiles: dict[str, dict[str, str]]
     active_profile_backends: dict[str, str]
     allow_hosted: bool
+
+
+class FindingOut(BaseModel):
+    fingerprint: str
+    repo_path: str
+    source: str
+    severity: str
+    title: str
+    detail: str
+    suggestion: str
+    file: str
+    line: int | None
+    confidence: float
+    status: str
+    triage: str | None
+    first_seen_at: str
+    last_seen_at: str
+    times_seen: int
+    run_id: str | None
+
+    @classmethod
+    def of(cls, finding: Finding) -> FindingOut:
+        return cls(**{name: getattr(finding, name) for name in cls.model_fields})
+
+
+class FindingList(BaseModel):
+    findings: list[FindingOut]
+    counts: dict[str, int]
+
+
+class RunOut(BaseModel):
+    id: str
+    repo_path: str
+    kind: str
+    status: str
+    reason: str | None
+    base: str | None
+    head: str | None
+    started_at: str
+    finished_at: str | None
+    duration_ms: int | None
+    finding_count: int
+    prompt_tokens: int
+    completion_tokens: int
+    backend: str | None
+    error: str | None
+    attempts: int
+
+    @classmethod
+    def of(cls, run: Run) -> RunOut:
+        return cls(**{name: getattr(run, name) for name in cls.model_fields})
+
+
+class RunList(BaseModel):
+    runs: list[RunOut]
+
+
+class QueueOut(BaseModel):
+    pending: int
+    in_flight: list[str]
+    paused: bool
+    workers: int
+
+
+class ReviewRequest(BaseModel):
+    path: str
+    base: str | None = None
+    #: `HEAD` reviews the last commit. `WORKTREE` reviews what is not committed yet.
+    target: str = "HEAD"
+
+
+class StatusRequest(BaseModel):
+    fingerprints: list[str]
+    status: Literal["open", "suppressed", "resolved"]

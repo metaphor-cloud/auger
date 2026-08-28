@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,8 @@ class FakeModelServer:
         self.fail_times = 0
         self.fail_status = 503
         self.delay_seconds = 0.0
+        #: What the assistant answers. None gives the default echo.
+        self.reply: str | None = None
         self.concurrent = 0
         self.peak_concurrent = 0
 
@@ -53,11 +56,10 @@ class FakeModelServer:
             body = await self._record(request)
             if (early := self._failure()) is not None:
                 return early
+            content = self.reply if self.reply is not None else f"answer:{body['model']}"
             return JSONResponse(
                 {
-                    "choices": [
-                        {"message": {"role": "assistant", "content": f"answer:{body['model']}"}}
-                    ],
+                    "choices": [{"message": {"role": "assistant", "content": content}}],
                     "usage": {"prompt_tokens": 11, "completion_tokens": 7},
                 }
             )
@@ -104,3 +106,59 @@ class FakeModelServer:
             return None
         self.fail_times -= 1
         return JSONResponse({"error": "busy"}, status_code=self.fail_status)
+
+
+def git_init(path: Path, remote: str | None = DEFAULT_REMOTE) -> Path:
+    """A real git repository, so the git reader is tested against real git."""
+    path.mkdir(parents=True, exist_ok=True)
+    env = {
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
+        "GIT_AUTHOR_NAME": "Test",
+        "GIT_AUTHOR_EMAIL": "test@example.com",
+        "GIT_COMMITTER_NAME": "Test",
+        "GIT_COMMITTER_EMAIL": "test@example.com",
+    }
+
+    def run(*args: str) -> None:
+        subprocess.run(["git", "-C", str(path), *args], check=True, capture_output=True, env=env)
+
+    run("init", "--quiet", "--initial-branch=main")
+    if remote:
+        run("remote", "add", "origin", remote)
+    return path
+
+
+def git_commit(path: Path, files: dict[str, str], message: str) -> str:
+    """Write files, commit them, and return the new commit sha."""
+    env = {
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
+        "GIT_AUTHOR_NAME": "Test",
+        "GIT_AUTHOR_EMAIL": "test@example.com",
+        "GIT_COMMITTER_NAME": "Test",
+        "GIT_COMMITTER_EMAIL": "test@example.com",
+        "GIT_AUTHOR_DATE": "2026-01-01T00:00:00Z",
+        "GIT_COMMITTER_DATE": "2026-01-01T00:00:00Z",
+    }
+    for name, content in files.items():
+        target = path / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True, env=env)
+    subprocess.run(
+        ["git", "-C", str(path), "commit", "--quiet", "-m", message],
+        check=True,
+        capture_output=True,
+        env=env,
+    )
+    result = subprocess.run(
+        ["git", "-C", str(path), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    return result.stdout.strip()

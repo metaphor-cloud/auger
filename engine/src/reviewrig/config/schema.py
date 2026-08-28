@@ -182,6 +182,19 @@ DEFAULT_BACKENDS: dict[str, Backend] = {
 }
 
 
+class Schedule(BaseModel):
+    """How hard the rig works."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Reviews that may run at once, across every repository.
+    max_concurrent_reviews: int = Field(default=2, ge=1, le=16)
+    #: How often the watcher looks for a new commit.
+    poll_seconds: int = Field(default=60, ge=5)
+    #: How long to wait before trying a repository that was busy.
+    retry_seconds: int = Field(default=120, ge=5)
+
+
 class Egress(BaseModel):
     """Which destinations the rig may reach.
 
@@ -203,6 +216,7 @@ class Config(BaseModel):
 
     roots: list[Root] = Field(default_factory=list)
     egress: Egress = Field(default_factory=Egress)
+    schedule: Schedule = Field(default_factory=Schedule)
     defaults: Policy = Field(default_factory=Policy)
     #: The image that every sandboxed step runs in.
     image: str = "reviewrig/analysis:0.1"
