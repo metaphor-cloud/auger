@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { getSystem, health, readEvents } from "./engine";
 import type { System } from "./types";
+import Models from "./views/Models";
 import Repositories from "./views/Repositories";
 import SystemView from "./views/System";
 import "./App.css";
@@ -11,7 +12,7 @@ type Status =
   | { state: "ready"; version: string }
   | { state: "failed"; reason: string };
 
-const VIEWS = ["Repositories", "System"] as const;
+const VIEWS = ["Repositories", "Models", "System"] as const;
 type View = (typeof VIEWS)[number];
 
 export default function App() {
@@ -69,6 +70,7 @@ export default function App() {
       {system?.sandbox.degraded && <p className="banner">{system.sandbox.warning}</p>}
       <main>
         {view === "Repositories" && <Repositories scanning={scanning} />}
+        {view === "Models" && <Models />}
         {view === "System" && <SystemView system={system} />}
       </main>
     </div>

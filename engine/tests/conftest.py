@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import socket
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 
 import httpx
@@ -39,10 +39,10 @@ def settings(token: str, home: Path) -> Settings:
 
 
 @pytest.fixture
-def rig(settings: Settings) -> Iterator[Rig]:
+async def rig(settings: Settings) -> AsyncIterator[Rig]:
     rig = Rig(settings)
     yield rig
-    rig.close()
+    await rig.aclose()
 
 
 @pytest.fixture
@@ -74,5 +74,28 @@ async def base_url(app: FastAPI) -> AsyncIterator[str]:
     try:
         yield f"http://127.0.0.1:{port}"
     finally:
+        server.should_exit = True
+        await task
+
+
+@pytest.fixture
+async def serve() -> AsyncIterator[Callable[[object], Awaitable[str]]]:
+    """Serve an ASGI application on a loopback port for the duration of a test."""
+    servers: list[tuple[uvicorn.Server, asyncio.Task[None]]] = []
+
+    async def start(app: object) -> str:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+        server = uvicorn.Server(uvicorn.Config(app, log_config=None, access_log=False))  # type: ignore[arg-type]
+        task = asyncio.create_task(server.serve(sockets=[sock]))
+        while not server.started:
+            await asyncio.sleep(0.01)
+        servers.append((server, task))
+        return f"http://127.0.0.1:{port}"
+
+    yield start
+    for server, task in servers:
         server.should_exit = True
         await task

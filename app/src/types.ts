@@ -50,3 +50,25 @@ export type System = {
   egress: Egress;
   image: string;
 };
+
+export type Backend = {
+  name: string;
+  url: string;
+  model: string;
+  up: boolean;
+  hosted: boolean;
+  managed: boolean;
+  models_served: string[];
+  reason: string | null;
+  requests: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  failures: number;
+};
+
+export type BackendList = {
+  backends: Backend[];
+  profiles: Record<string, Record<string, string>>;
+  active_profile_backends: Record<string, string>;
+  allow_hosted: boolean;
+};

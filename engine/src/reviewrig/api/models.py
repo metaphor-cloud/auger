@@ -65,3 +65,25 @@ class SystemOut(BaseModel):
     sandbox: SandboxOut
     egress: EgressOut
     image: str
+
+
+class BackendOut(BaseModel):
+    name: str
+    url: str
+    model: str
+    up: bool
+    hosted: bool
+    managed: bool
+    models_served: list[str]
+    reason: str | None
+    requests: int
+    prompt_tokens: int
+    completion_tokens: int
+    failures: int
+
+
+class BackendList(BaseModel):
+    backends: list[BackendOut]
+    profiles: dict[str, dict[str, str]]
+    active_profile_backends: dict[str, str]
+    allow_hosted: bool

@@ -7,6 +7,7 @@ falls through to the level above it.
 
 from __future__ import annotations
 
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -88,6 +89,99 @@ class Overrides(BaseModel):
     audit_hours: int | None = Field(default=None, ge=0)
 
 
+class JobClass(StrEnum):
+    """What a step asks the model for.
+
+    A job never names a model. It names one of these, and the profile decides which
+    backend answers. That indirection is the whole reason a model is easy to change.
+    """
+
+    TRIAGE = "triage"
+    REVIEW = "review"
+    EMBED = "embed"
+    RERANK = "rerank"
+
+
+class Backend(BaseModel):
+    """One OpenAI-compatible server."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = "http://127.0.0.1:8080/v1"
+    model: str = ""
+    #: Name of the environment variable that holds the key. Never the key itself.
+    api_key_env: str | None = None
+    #: A continuous batch server stays full at this depth and is never over-committed.
+    max_concurrent: int = Field(default=4, ge=1, le=64)
+    #: True when the request leaves this machine. Off unless the user turns it on.
+    hosted: bool = False
+    #: Start this server if nothing answers at `url`.
+    managed: bool = False
+    #: Where the weights come from, for a managed server.
+    model_file: str = ""
+    model_url: str = ""
+    #: Extra arguments for the managed server process.
+    args: list[str] = Field(default_factory=list)
+
+
+class ProfileEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    backend: str
+    max_tokens: int = Field(default=4096, ge=1)
+    temperature: float = Field(default=0.1, ge=0.0, le=2.0)
+
+
+class Profile(BaseModel):
+    """One entry per job class."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    triage: ProfileEntry = ProfileEntry(backend="local-triage", max_tokens=2048)
+    review: ProfileEntry = ProfileEntry(backend="local-review", max_tokens=8192)
+    embed: ProfileEntry = ProfileEntry(backend="local-embed", max_tokens=512)
+    rerank: ProfileEntry = ProfileEntry(backend="local-rerank", max_tokens=512)
+
+    def entry(self, job_class: JobClass) -> ProfileEntry:
+        return getattr(self, job_class.value)  # type: ignore[no-any-return]
+
+
+#: What the rig uses when the user has written no backend of their own. Every one is a
+#: local server. `gpt-oss-120b` in its native MXFP4 form needs about 63 GB, which fits
+#: in the unified memory of a workstation. The Q8 form needs about 120 GB and does not.
+DEFAULT_BACKENDS: dict[str, Backend] = {
+    "local-review": Backend(
+        url="http://127.0.0.1:8080/v1",
+        model="gpt-oss-120b",
+        managed=True,
+        model_file="gpt-oss-120b-mxfp4.gguf",
+    ),
+    "local-triage": Backend(
+        url="http://127.0.0.1:8081/v1",
+        model="qwen3-30b-a3b",
+        managed=True,
+        model_file="qwen3-30b-a3b-q4_k_m.gguf",
+        max_concurrent=8,
+    ),
+    "local-embed": Backend(
+        url="http://127.0.0.1:8082/v1",
+        model="Qwen3-Embedding-0.6B",
+        managed=True,
+        model_file="qwen3-embedding-0.6b-f16.gguf",
+        max_concurrent=8,
+        args=["--embedding", "--pooling", "last"],
+    ),
+    "local-rerank": Backend(
+        url="http://127.0.0.1:8083/v1",
+        model="Qwen3-Reranker-0.6B",
+        managed=True,
+        model_file="qwen3-reranker-0.6b-f16.gguf",
+        max_concurrent=8,
+        args=["--reranking"],
+    ),
+}
+
+
 class Egress(BaseModel):
     """Which destinations the rig may reach.
 
@@ -99,6 +193,9 @@ class Egress(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     allow: list[str] = Field(default_factory=list)
+    #: A hosted backend sends the user's code off the machine. It takes two switches:
+    #: `hosted = true` on the backend, and this one. Neither alone is enough.
+    allow_hosted: bool = False
 
 
 class Config(BaseModel):
@@ -109,6 +206,8 @@ class Config(BaseModel):
     defaults: Policy = Field(default_factory=Policy)
     #: The image that every sandboxed step runs in.
     image: str = "reviewrig/analysis:0.1"
+    backend: dict[str, Backend] = Field(default_factory=lambda: dict(DEFAULT_BACKENDS))
+    profile: dict[str, Profile] = Field(default_factory=lambda: {"balanced": Profile()})
     #: Keyed by `host/namespace`, for example `github.com/acme`. A shorter key matches
     #: every repository below it, so `github.com` covers a whole forge.
     org: dict[str, Overrides] = Field(default_factory=dict)

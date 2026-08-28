@@ -223,3 +223,13 @@ h3 {
   font-family: ui-monospace, SFMono-Regular, monospace;
   font-size: 0.8rem;
 }
+
+.badge.hosted {
+  margin-left: 0.4rem;
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  color: var(--warn);
+}
+
+.view-header button + button {
+  margin-left: 0.5rem;
+}

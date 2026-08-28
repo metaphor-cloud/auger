@@ -75,13 +75,32 @@ not control the output format.
 
 ## Models
 
-The rig detects a running `llama-server` or `mlx-openai-server`. If it finds none, it
-starts a managed `llama.cpp` server and downloads a default model on first use.
-
 A job never names a model. It asks for a job class (`triage`, `review`, `embed`,
-`rerank`), and the profile decides the backend. Change a model by editing the profile.
+`rerank`), and the profile decides which backend answers. Change a model by editing one
+profile line, and nothing else changes.
 
-Hosted providers are off by default. Turn one on and your code leaves the machine.
+```toml
+[backend.local-review]
+url = "http://127.0.0.1:8080/v1"
+model = "gpt-oss-120b"
+managed = true                     # start it if nothing answers
+model_file = "gpt-oss-120b-mxfp4.gguf"
+
+[profile.balanced.review]
+backend = "local-review"
+max_tokens = 8192
+```
+
+The rig prefers a server you already run, because it holds the model you chose and it
+may already be warm. It starts one of its own only when nothing answers, and it says
+plainly why when it cannot: no server binary, or no weights.
+
+`gpt-oss-120b` in its native MXFP4 form needs about 63 GB and fits in the unified memory
+of a workstation. The Q8 form needs about 120 GB and does not.
+
+Hosted providers take two switches: `hosted = true` on the backend, and
+`allow_hosted = true` under `[egress]`. Neither alone is enough, because turning one on
+sends your code off the machine.
 
 ## Other agents
 

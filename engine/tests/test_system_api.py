@@ -26,12 +26,18 @@ async def test_a_degraded_sandbox_carries_a_warning(http: httpx.AsyncClient, tok
     assert (sandbox["warning"] is not None) is sandbox["degraded"]
 
 
-async def test_it_reports_the_egress_allowlist(
-    http: httpx.AsyncClient, token: str, home: object
+async def test_the_allowlist_holds_the_local_model_backends(
+    http: httpx.AsyncClient, token: str
 ) -> None:
+    """A backend the rig is configured to use must be reachable, and nothing else."""
     async with http:
         body = await system(http, token)
-    assert body["egress"]["allowed"] == []
+    allowed = body["egress"]["allowed"]
+    assert "127.0.0.1:8080" in allowed
+    assert all(
+        destination.startswith(("127.0.0.1", "localhost", "::1", "0.0.0.0"))
+        for destination in allowed
+    )
     assert body["egress"]["refused_requests"] == 0
 
 

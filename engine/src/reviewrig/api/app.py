@@ -22,7 +22,15 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from reviewrig import __version__
-from reviewrig.api.models import EgressOut, RepositoryList, SandboxOut, SystemOut
+from reviewrig.api.models import (
+    BackendList,
+    BackendOut,
+    EgressOut,
+    RepositoryList,
+    SandboxOut,
+    SystemOut,
+)
+from reviewrig.config.schema import JobClass
 from reviewrig.events import Event
 from reviewrig.log import Logger
 from reviewrig.rig import Rig
@@ -76,6 +84,26 @@ class TokenAuth:
         return None
 
 
+def _backend_out(rig: Rig, name: str) -> BackendOut:
+    backend = rig.config.backend[name]
+    health = rig.health.get(name)
+    usage = rig.gateway.usage.get(name)
+    return BackendOut(
+        name=name,
+        url=backend.url,
+        model=backend.model,
+        up=bool(health and health.up),
+        hosted=backend.hosted,
+        managed=backend.managed,
+        models_served=list(health.models) if health else [],
+        reason=health.reason if health else "not checked yet",
+        requests=usage.requests if usage else 0,
+        prompt_tokens=usage.prompt_tokens if usage else 0,
+        completion_tokens=usage.completion_tokens if usage else 0,
+        failures=usage.failures if usage else 0,
+    )
+
+
 def create_app(rig: Rig) -> FastAPI:
     log = rig.log.bind(component="api")
     settings = rig.settings
@@ -83,13 +111,15 @@ def create_app(rig: Rig) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await rig.proxy.start()
-        # The first walk can take seconds on a large tree. Run it off the event loop so
-        # the UI can connect and watch the scan events while it runs.
-        task = asyncio.create_task(asyncio.to_thread(rig.scan))
+        # The first walk can take seconds on a large tree, and the model probe waits on
+        # the network. Neither should hold up the UI.
+        scan = asyncio.create_task(asyncio.to_thread(rig.scan))
+        models = asyncio.create_task(rig.check_models())
         yield
-        task.cancel()
+        scan.cancel()
+        models.cancel()
         await rig.proxy.stop()
-        rig.close()
+        await rig.aclose()
 
     app = FastAPI(
         title="reviewrig engine",
@@ -134,6 +164,37 @@ def create_app(rig: Rig) -> FastAPI:
             ),
             image=rig.config.image,
         )
+
+    def backend_list() -> BackendList:
+        return BackendList(
+            backends=[_backend_out(rig, name) for name in sorted(rig.config.backend)],
+            profiles={
+                name: {job_class.value: profile.entry(job_class).backend for job_class in JobClass}
+                for name, profile in rig.config.profile.items()
+            },
+            active_profile_backends={
+                job_class.value: rig.config.profile["balanced"].entry(job_class).backend
+                for job_class in JobClass
+            }
+            if "balanced" in rig.config.profile
+            else {},
+            allow_hosted=rig.config.egress.allow_hosted,
+        )
+
+    @router.get("/models")
+    async def models() -> BackendList:
+        return backend_list()
+
+    @router.post("/models/check")
+    async def check_models() -> BackendList:
+        await rig.check_models()
+        return backend_list()
+
+    @router.post("/models/start")
+    async def start_models() -> BackendList:
+        """Start any managed backend that does not answer. A large model takes a minute."""
+        await rig.ensure_models()
+        return backend_list()
 
     @router.get("/repositories")
     async def repositories() -> RepositoryList:

@@ -3,7 +3,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import { takeEvents, type ServerEvent } from "./sse";
-import type { RepositoryList, System } from "./types";
+import type { BackendList, RepositoryList, System } from "./types";
 
 export type EngineInfo = { port: number; token: string };
 
@@ -38,6 +38,18 @@ export async function getSystem(): Promise<System> {
 
 export async function getRepositories(): Promise<RepositoryList> {
   return request("/repositories");
+}
+
+export async function getModels(): Promise<BackendList> {
+  return request("/models");
+}
+
+export async function checkModels(): Promise<BackendList> {
+  return request("/models/check", { method: "POST" });
+}
+
+export async function startModels(): Promise<BackendList> {
+  return request("/models/start", { method: "POST" });
 }
 
 export async function rescan(): Promise<RepositoryList> {
