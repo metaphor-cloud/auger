@@ -57,6 +57,7 @@ export type System = {
   egress: Egress;
   index: Index;
   image: string;
+  config_error: string | null;
 };
 
 export type Backend = {

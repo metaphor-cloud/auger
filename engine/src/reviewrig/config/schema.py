@@ -253,6 +253,11 @@ class Schedule(BaseModel):
     forge_poll_seconds: int = Field(default=300, ge=30)
     #: How long to wait before trying a repository that was busy.
     retry_seconds: int = Field(default=120, ge=5)
+    #: Hours when no audit starts, as `HH:MM-HH:MM` in local time. An audit reads a
+    #: whole repository, so it belongs at night. Empty means any hour.
+    quiet_hours: str = ""
+    #: How often the watcher looks for a repository that is due an audit.
+    audit_poll_seconds: int = Field(default=900, ge=60)
 
 
 class Egress(BaseModel):

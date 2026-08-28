@@ -16,7 +16,7 @@ from reviewrig.config import (
     Policy,
     config_path,
     ensure_config,
-    load,
+    load_result,
     resolve_policy,
     save,
 )
@@ -29,7 +29,7 @@ from reviewrig.mcp import McpRegistry
 from reviewrig.models import Repository, RepositoryView
 from reviewrig.net import Allowlist, Destination, EgressProxy
 from reviewrig.sandbox import Selection, select
-from reviewrig.schedule import Scheduler, Task, watch, watch_forges
+from reviewrig.schedule import Scheduler, Task, watch, watch_audits, watch_forges
 from reviewrig.settings import Settings
 from reviewrig.store import Store
 from reviewrig.store.repositories import list_repositories, record_scan
@@ -41,7 +41,9 @@ class Rig:
         self.log = log or create_logger("rig", settings.log_level)
         self.bus = EventBus()
         self.config_path = ensure_config(config_path(settings.home), self.log)
-        self.config: Config = load(self.config_path, self.log)
+        loaded = load_result(self.config_path, self.log)
+        self.config: Config = loaded.config
+        self.config_error: str | None = loaded.error
         self.store = Store.open(settings.home)
         self.selection: Selection = select(self.log)
         self.allowlist = Allowlist()
@@ -56,11 +58,15 @@ class Rig:
         self.scheduler = Scheduler(self, self.log)
         self._background: list[asyncio.Task[None]] = []
 
+    #: Every background loop the rig runs. A watcher missing from here never runs, and
+    #: nothing else would say so.
+    WATCHERS = (watch, watch_forges, watch_audits)
+
     async def start_background(self) -> None:
-        """Start the workers and the watcher. The UI can connect before this finishes."""
+        """Start the workers and every watcher."""
         await self.scheduler.start(self.config.schedule.max_concurrent_reviews)
-        self._background.append(asyncio.create_task(watch(self, self.scheduler, self.log)))
-        self._background.append(asyncio.create_task(watch_forges(self, self.scheduler, self.log)))
+        for watcher in self.WATCHERS:
+            self._background.append(asyncio.create_task(watcher(self, self.scheduler, self.log)))
 
     async def stop_background(self) -> None:
         for task in self._background:
@@ -75,6 +81,9 @@ class Rig:
         return self.scheduler.submit(
             Task.review(repository, self.policy_for(repository), base=base, target=target)
         )
+
+    def submit_audit(self, repository: Repository) -> bool:
+        return self.scheduler.submit(Task.for_audit(repository, self.policy_for(repository)))
 
     def submit_scan(self, repository: Repository) -> bool:
         return self.scheduler.submit(Task.for_scan(repository, self.policy_for(repository)))
@@ -116,7 +125,9 @@ class Rig:
                 self.allowlist.add(destination)
 
     def reload_config(self) -> Config:
-        self.config = load(self.config_path, self.log)
+        loaded = load_result(self.config_path, self.log)
+        self.config = loaded.config
+        self.config_error = loaded.error
         # The proxy and the gateway hold references, so a reload edits in place rather
         # than replacing what they point at.
         self._refresh_allowlist()

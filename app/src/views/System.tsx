@@ -1,6 +1,15 @@
+import { useEffect, useState } from "react";
+
+import { getAutostart, setAutostart } from "../host";
 import type { System } from "../types";
 
 export default function SystemView({ system }: { system: System | null }) {
+  const [startsAtLogin, setStartsAtLogin] = useState(false);
+
+  useEffect(() => {
+    void getAutostart().then(setStartsAtLogin);
+  }, []);
+
   if (system === null) return <p className="muted">Loading</p>;
 
   const { sandbox, egress, index } = system;
@@ -12,6 +21,21 @@ export default function SystemView({ system }: { system: System | null }) {
           <p className="muted">Engine {system.version}</p>
         </div>
       </header>
+
+      <h3>Application</h3>
+      <dl className="facts">
+        <dt>Start at login</dt>
+        <dd>
+          <input
+            type="checkbox"
+            checked={startsAtLogin}
+            onChange={(event) =>
+              void setAutostart(event.target.checked).then(setStartsAtLogin)
+            }
+          />{" "}
+          <span className="muted">The rig is useful only while it runs.</span>
+        </dd>
+      </dl>
 
       <h3>Sandbox</h3>
       <dl className="facts">

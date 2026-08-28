@@ -77,6 +77,8 @@ class SystemOut(BaseModel):
     egress: EgressOut
     index: IndexOut
     image: str
+    #: Why the config file was refused, if it was.
+    config_error: str | None = None
 
 
 class BackendOut(BaseModel):

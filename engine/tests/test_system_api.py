@@ -44,3 +44,19 @@ async def test_the_allowlist_holds_the_local_model_backends(
 async def test_it_needs_a_token(http: httpx.AsyncClient) -> None:
     async with http:
         assert (await http.get("/system")).status_code == 401
+
+
+async def test_a_refused_config_reaches_the_ui(
+    http: httpx.AsyncClient, token: str, home: object
+) -> None:
+    """A rig quietly running on defaults would review the wrong repositories."""
+    from pathlib import Path
+
+    Path(str(home), "config.toml").write_text(
+        "[schedule]\naudit_poll_seconds = 20\n", encoding="utf-8"
+    )
+    async with http:
+        await http.post("/scan", headers={"Authorization": f"Bearer {token}"})
+        body = await system(http, token)
+    assert body["config_error"] is not None
+    assert "audit_poll_seconds" in body["config_error"]

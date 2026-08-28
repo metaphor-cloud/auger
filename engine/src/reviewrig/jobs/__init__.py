@@ -1,5 +1,7 @@
 from typing import Protocol
 
+from reviewrig.jobs import audit
+from reviewrig.jobs.audit import AuditOutcome
 from reviewrig.jobs.diff_review import KIND, ReviewOutcome, review
 from reviewrig.jobs.pr_review import PullOutcome, review_pull
 from reviewrig.jobs.scan_job import ScanRunOutcome, run_scan
@@ -20,11 +22,13 @@ class JobOutcome(Protocol):
 
 __all__ = [
     "KIND",
+    "AuditOutcome",
     "JobOutcome",
     "PullOutcome",
     "ReviewOutcome",
     "ScanRunOutcome",
     "TriageOutcome",
+    "audit",
     "review",
     "review_pull",
     "run_scan",

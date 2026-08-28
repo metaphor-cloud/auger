@@ -46,6 +46,33 @@ fn notify(app: tauri::AppHandle, title: String, body: String) -> Result<(), Stri
         .map_err(|error| error.to_string())
 }
 
+/// Whether the rig starts with the machine.
+///
+/// The rig is a background application: it is useful only while it runs. Starting at
+/// login is therefore the normal setting, and it stays the user's to turn off.
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn autostart(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch()
+        .is_enabled()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let launcher = app.autolaunch();
+    let result = if enabled {
+        launcher.enable()
+    } else {
+        launcher.disable()
+    };
+    result.map_err(|error| error.to_string())?;
+    launcher.is_enabled().map_err(|error| error.to_string())
+}
+
 /// Start the host. This call returns when the user quits.
 ///
 /// # Panics
@@ -56,11 +83,17 @@ fn notify(app: tauri::AppHandle, title: String, body: String) -> Result<(), Stri
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(EngineState::default())
         .invoke_handler(tauri::generate_handler![
             engine_info,
             set_tray_status,
-            notify
+            notify,
+            autostart,
+            set_autostart
         ])
         .setup(|app| {
             // The menu bar is the product. Keep the dock clear.

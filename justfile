@@ -56,9 +56,20 @@ build-sidecar:
         --workpath {{root}}/engine/build/pyinstaller \
         reviewrig-engine.spec
 
-# Build the .app and the .dmg.
+# Build the .app. It runs where it was built.
 package: build-sidecar
     cd {{root}}/app && pnpm tauri build
+
+# Build a signed and notarised .dmg. Needs an Apple Developer certificate:
+#   APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
+release: build-sidecar
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
+        echo "APPLE_SIGNING_IDENTITY is not set. See docs/install.md." >&2
+        exit 1
+    fi
+    cd {{root}}/app && pnpm tauri build --bundles app,dmg
 
 clean:
     rm -rf {{root}}/app/src-tauri/binaries {{root}}/engine/build {{root}}/engine/dist {{root}}/app/dist

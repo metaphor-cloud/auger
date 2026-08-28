@@ -107,6 +107,12 @@ export default function App() {
           {status.state === "failed" && status.reason}
         </span>
       </header>
+      {system?.config_error && (
+        <p className="banner">
+          Your config file was refused, so the rig is running on its defaults:{" "}
+          {system.config_error}
+        </p>
+      )}
       {system?.sandbox.degraded && <p className="banner">{system.sandbox.warning}</p>}
       {queue?.paused && <p className="banner">Paused. Queued work waits.</p>}
       <main>

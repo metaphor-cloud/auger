@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Permissions for the main window. The UI only invokes our own commands and fetches the loopback engine, so it needs nothing beyond the core defaults.",
   "windows": ["main"],
-  "permissions": ["core:default", "notification:default"]
+  "permissions": ["core:default", "notification:default", "autostart:default"]
 }

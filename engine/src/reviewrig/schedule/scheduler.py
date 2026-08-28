@@ -17,7 +17,7 @@ from pathlib import Path
 
 from reviewrig.config import Policy
 from reviewrig.forge import PullRequest
-from reviewrig.jobs import JobOutcome, diff_review, pr_review, semgrep
+from reviewrig.jobs import JobOutcome, audit, diff_review, pr_review, semgrep
 from reviewrig.jobs.scan_job import run_scan
 from reviewrig.log import Logger, create_logger
 from reviewrig.models import Repository
@@ -41,6 +41,17 @@ class Task:
     target: str = field(compare=False, default="HEAD")
     attempts: int = field(compare=False, default=0)
     pull: PullRequest | None = field(compare=False, default=None)
+
+    @classmethod
+    def for_audit(cls, repository: Repository, policy: Policy) -> Task:
+        # An audit reads a whole repository. It waits behind every change.
+        return cls(
+            priority=9,
+            repository=repository,
+            policy=policy,
+            kind=audit.KIND,
+            target="audit",
+        )
 
     @classmethod
     def for_scan(cls, repository: Repository, policy: Policy) -> Task:
@@ -206,6 +217,14 @@ class Scheduler:
                 repository=task.repository,
                 policy=task.policy,
                 tools=rig.tools,
+                log=self.log,
+            )
+        if task.kind == audit.KIND:
+            return await audit.audit(
+                store=rig.store,
+                gateway=rig.gateway,
+                repository=task.repository,
+                policy=task.policy,
                 log=self.log,
             )
         if task.kind == semgrep.KIND:

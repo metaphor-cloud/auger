@@ -148,3 +148,36 @@ def test_seatbelt_has_no_network(tmp_path: Path) -> None:
 def test_seatbelt_refuses_a_run_that_asks_for_the_network(tmp_path: Path) -> None:
     with pytest.raises(SandboxError):
         Seatbelt().run(spec(tmp_path, ["true"], network=Network.NAT))
+
+
+def test_a_runtime_outside_the_graphical_path_is_still_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An application started at login inherits launchd's PATH, which holds no
+    package manager directory. Without this, a Homebrew install looks absent."""
+    from reviewrig.sandbox import which
+
+    brew = tmp_path / "brew-bin"
+    brew.mkdir()
+    tool = brew / "container"
+    tool.write_text("#!/bin/sh\n", encoding="utf-8")
+    tool.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    monkeypatch.setattr(which, "EXTRA_PATHS", (str(brew),))
+    assert which.find("container") == str(tool)
+
+
+def test_a_tool_that_is_nowhere_is_not_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from reviewrig.sandbox import which
+
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    monkeypatch.setattr(which, "EXTRA_PATHS", (str(tmp_path / "also-empty"),))
+    assert which.find("container") is None
+
+
+def test_the_command_uses_the_full_path(tmp_path: Path) -> None:
+    """A narrow PATH would otherwise make the runtime unreachable at run time too."""
+    line = AppleContainer().arguments(spec(tmp_path, ["true"]), "reviewrig-test")
+    assert line[0].endswith("container")

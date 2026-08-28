@@ -8,12 +8,14 @@ gained ten commits overnight is reviewed once, not ten times.
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 
 from reviewrig.forge import ForgeError
 from reviewrig.log import Logger, create_logger
 from reviewrig.schedule.protocol import RigLike
+from reviewrig.schedule.quiet import is_quiet
 from reviewrig.schedule.scheduler import Scheduler, Task
-from reviewrig.store.runs import pull_reviewed, reviewed_head
+from reviewrig.store.runs import last_audit, pull_reviewed, reviewed_head
 from reviewrig.watch import git
 
 
@@ -117,3 +119,49 @@ async def watch_forges(rig: RigLike, scheduler: Scheduler, log: Logger | None = 
         except Exception as error:
             log.error("forge cycle failed", reason="watcher_error", error=error)
         await asyncio.sleep(rig.config.schedule.forge_poll_seconds)
+
+
+def audit_due(rig: RigLike, log: Logger, now: datetime | None = None) -> list[Task]:
+    """Every repository whose last audit is older than its policy allows."""
+    moment = now or datetime.now(UTC)
+    tasks: list[Task] = []
+    for view in rig.repositories():
+        policy = view.policy
+        if not policy.enabled or policy.mode == "off" or policy.audit_hours <= 0:
+            continue
+        last = last_audit(rig.store, view.repository.path)
+        if last:
+            try:
+                when = datetime.fromisoformat(last)
+            except ValueError:
+                when = None
+            if when and moment - when < timedelta(hours=policy.audit_hours):
+                continue
+        tasks.append(Task.for_audit(view.repository, policy))
+    return tasks
+
+
+async def poll_audits(rig: RigLike, scheduler: Scheduler, log: Logger | None = None) -> int:
+    """Queue the audits that are due, unless the user asked for quiet."""
+    log = (log or create_logger("schedule")).bind(component="watcher")
+    if is_quiet(rig.config.schedule.quiet_hours):
+        return 0
+    tasks = await asyncio.to_thread(audit_due, rig, log)
+    queued = sum(1 for task in tasks if scheduler.submit(task))
+    if queued:
+        log.info("queued audits", count=queued, pending=scheduler.pending)
+        rig.publish("queue.changed", pending=scheduler.pending)
+    return queued
+
+
+async def watch_audits(rig: RigLike, scheduler: Scheduler, log: Logger | None = None) -> None:
+    """Poll forever. An audit is the slowest job, so it looks the least often."""
+    log = (log or create_logger("schedule")).bind(component="watcher")
+    while True:
+        try:
+            await poll_audits(rig, scheduler, log)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            log.error("audit cycle failed", reason="watcher_error", error=error)
+        await asyncio.sleep(rig.config.schedule.audit_poll_seconds)

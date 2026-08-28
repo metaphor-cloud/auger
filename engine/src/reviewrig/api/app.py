@@ -221,6 +221,7 @@ def create_app(rig: Rig) -> FastAPI:
             ),
             index=await asyncio.to_thread(_index_out, rig),
             image=rig.config.image,
+            config_error=rig.config_error,
         )
 
     def backend_list() -> BackendList:
@@ -384,6 +385,16 @@ def create_app(rig: Rig) -> FastAPI:
         if repository is None:
             raise HTTPException(status_code=404, detail=f"no repository at {request.path}")
         rig.submit_scan(repository)
+        rig.publish("queue.changed", pending=rig.scheduler.pending)
+        return _queue_out(rig)
+
+    @router.post("/audit")
+    async def request_audit(request: ReviewRequest) -> QueueOut:
+        """Queue a whole repository audit."""
+        repository = rig.find_repository(request.path)
+        if repository is None:
+            raise HTTPException(status_code=404, detail=f"no repository at {request.path}")
+        rig.submit_audit(repository)
         rig.publish("queue.changed", pending=rig.scheduler.pending)
         return _queue_out(rig)
 

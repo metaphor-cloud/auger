@@ -7,13 +7,13 @@ tests covers the rules that matter.
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 import time
 import uuid
 
 from reviewrig.log import Logger, create_logger
 from reviewrig.sandbox.base import SCRATCH, WORK, Network, RunResult, RunSpec, SandboxError
+from reviewrig.sandbox.which import find
 
 
 class OciSandbox:
@@ -26,7 +26,11 @@ class OciSandbox:
         self.log = (log or create_logger("sandbox")).bind(backend=self.name)
 
     def available(self) -> bool:
-        return shutil.which(self.executable) is not None
+        return self.program() is not None
+
+    def program(self) -> str | None:
+        """The full path, because a graphical application has a narrow PATH."""
+        return find(self.executable)
 
     def extra_arguments(self, spec: RunSpec) -> list[str]:
         """Flags that only this runtime understands."""
@@ -39,7 +43,7 @@ class OciSandbox:
     def arguments(self, spec: RunSpec, container_name: str) -> list[str]:
         """Build the whole command line. Kept pure, so a test can read every rule."""
         arguments = [
-            self.executable,
+            self.program() or self.executable,
             "run",
             "--rm",
             "--name",

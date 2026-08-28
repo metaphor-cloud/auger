@@ -180,3 +180,22 @@ def pull_reviewed(store: Store, repo_path: str | Path, head_sha: str) -> bool:
         (str(repo_path), head_sha),
     )
     return bool(rows)
+
+
+def set_audited(store: Store, repo_path: str | Path, when: str | None = None) -> None:
+    stamp = when or now()
+    with store.write() as connection:
+        connection.execute(
+            """
+            INSERT INTO repo_state (repo_path, last_audit_at) VALUES (?, ?)
+            ON CONFLICT(repo_path) DO UPDATE SET last_audit_at = excluded.last_audit_at
+            """,
+            (str(repo_path), stamp),
+        )
+
+
+def last_audit(store: Store, repo_path: str | Path) -> str | None:
+    rows = store.query(
+        "SELECT last_audit_at FROM repo_state WHERE repo_path = ?", (str(repo_path),)
+    )
+    return str(rows[0]["last_audit_at"]) if rows and rows[0]["last_audit_at"] else None

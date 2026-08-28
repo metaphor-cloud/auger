@@ -8,6 +8,7 @@ writer sets leaf values instead of replacing whole tables.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -77,7 +78,14 @@ def parse(text: str) -> Config:
     return Config.model_validate(tomlkit.parse(text).unwrap())
 
 
-def load(path: Path, log: Logger | None = None) -> Config:
+@dataclass
+class LoadResult:
+    config: Config
+    #: Why the file was refused, if it was. The UI shows this.
+    error: str | None = None
+
+
+def load_result(path: Path, log: Logger | None = None) -> LoadResult:
     """Read the config. An unreadable or invalid file falls back to the built-in defaults.
 
     A user edits this file by hand, so a typo must not stop the whole rig. The reason is
@@ -88,15 +96,30 @@ def load(path: Path, log: Logger | None = None) -> Config:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         log.info("no config file, using the defaults", path=str(path))
-        return Config()
+        return LoadResult(Config())
     except OSError as error:
         log.error("config unreadable", reason="io_error", path=str(path), error=error)
-        return Config()
+        return LoadResult(Config(), f"{path} could not be read: {error}")
     try:
-        return parse(text)
+        return LoadResult(parse(text))
     except (ValidationError, ValueError) as error:
+        # One bad value discards the whole file, so the reason must reach the user.
+        # A rig quietly running on defaults would review the wrong repositories.
         log.error("config invalid", reason="invalid_config", path=str(path), error=error)
-        return Config()
+        return LoadResult(Config(), _first_problem(error, path))
+
+
+def _first_problem(error: Exception, path: Path) -> str:
+    if isinstance(error, ValidationError) and error.errors():
+        first = error.errors()[0]
+        where = ".".join(str(part) for part in first.get("loc", ()))
+        return f"{path.name}: {where or 'config'} {first.get('msg', 'is invalid')}"
+    return f"{path.name}: {error}"
+
+
+def load(path: Path, log: Logger | None = None) -> Config:
+    """The config, or the built-in defaults when the file cannot be used."""
+    return load_result(path, log).config
 
 
 def _serialise(config: Config) -> dict[str, Any]:

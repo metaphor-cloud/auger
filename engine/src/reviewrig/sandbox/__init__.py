@@ -11,6 +11,7 @@ from reviewrig.sandbox.base import (
 from reviewrig.sandbox.oci import AppleContainer, Docker, OciSandbox, Podman
 from reviewrig.sandbox.seatbelt import Seatbelt
 from reviewrig.sandbox.select import SEATBELT_WARNING, Selection, backends, select
+from reviewrig.sandbox.which import find
 
 __all__ = [
     "NOBODY",
@@ -29,5 +30,6 @@ __all__ = [
     "Seatbelt",
     "Selection",
     "backends",
+    "find",
     "select",
 ]

@@ -90,3 +90,31 @@ def test_two_configs_do_not_share_their_defaults() -> None:
     first.backend["local-review"].model = "changed"
     assert second.forge["github"].enabled is False
     assert second.backend["local-review"].model == "gpt-oss-120b"
+
+
+def test_a_config_that_is_refused_says_why(tmp_path: Path) -> None:
+    """One bad value discards the whole file, so the reason must reach the user."""
+    from reviewrig.config import load_result
+
+    path = tmp_path / "config.toml"
+    path.write_text("[schedule]\naudit_poll_seconds = 20\n", encoding="utf-8")
+    result = load_result(path)
+    assert result.config == Config()
+    assert result.error is not None
+    assert "audit_poll_seconds" in result.error
+
+
+def test_a_config_that_is_fine_reports_no_error(tmp_path: Path) -> None:
+    from reviewrig.config import load_result
+
+    path = tmp_path / "config.toml"
+    path.write_text('[defaults]\nmode = "off"\n', encoding="utf-8")
+    result = load_result(path)
+    assert result.error is None
+    assert result.config.defaults.mode == "off"
+
+
+def test_a_missing_file_is_not_an_error(tmp_path: Path) -> None:
+    from reviewrig.config import load_result
+
+    assert load_result(tmp_path / "gone.toml").error is None

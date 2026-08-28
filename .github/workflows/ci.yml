@@ -39,3 +39,33 @@ jobs:
       - run: just lint
       - run: just typecheck
       - run: just test
+
+  package:
+    runs-on: macos-latest
+    needs: check
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - uses: extractions/setup-just@v2
+
+      - run: just setup
+      # The application is unsigned here. A release needs an Apple certificate, which
+      # belongs in a secret and not in a pull request build.
+      - run: just package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reviewrig-app
+          path: app/src-tauri/target/release/bundle/macos/reviewrig.app

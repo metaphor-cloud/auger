@@ -17,3 +17,15 @@ export async function notify(title: string, body: string): Promise<void> {
     // A missed notification is not worth failing the window over.
   }
 }
+
+export async function getAutostart(): Promise<boolean> {
+  try {
+    return await invoke<boolean>("autostart");
+  } catch {
+    return false;
+  }
+}
+
+export async function setAutostart(enabled: boolean): Promise<boolean> {
+  return invoke<boolean>("set_autostart", { enabled });
+}

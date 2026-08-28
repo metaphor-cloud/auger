@@ -8,7 +8,6 @@ which isolation they lost.
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 import tempfile
 import time
@@ -47,7 +46,7 @@ class Seatbelt:
         self.log = (log or create_logger("sandbox")).bind(backend=self.name)
 
     def available(self) -> bool:
-        return Path(SANDBOX_EXEC).exists() and shutil.which("sandbox-exec") is not None
+        return Path(SANDBOX_EXEC).exists()
 
     def profile(self, scratch: Path) -> str:
         return PROFILE.format(scratch=scratch)
