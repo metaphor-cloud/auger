@@ -6,9 +6,12 @@ Open the Models view and press **Set up**. The rig fetches a `llama.cpp` release
 for this machine, fetches weights that fit its memory, writes the config, and starts the
 servers. Nothing else to install.
 
-It picks the model by memory: about 80 GB of usable memory gets `gpt-oss-120b`, and a
-laptop gets `gpt-oss-20b`. A model the machine cannot hold is shown and cannot be chosen,
-because an hour of downloading for weights that will not load is an hour wasted.
+It picks by memory: about 80 GB of usable memory gets `gpt-oss-120b`, and a laptop gets
+`gpt-oss-20b`. A model the machine cannot hold is shown and cannot be chosen, because an
+hour of downloading for weights that will not load is an hour wasted.
+
+It fetches an embedding model too, and no reranker. See [Retrieval](#retrieval) for the
+measurements behind both of those.
 
 Everything it fetches is verified against a sha256 published by the repository. A
 download that fails part way carries on from where it stopped, and a file that does not
@@ -85,3 +88,52 @@ Either one alone does nothing. With both, your code leaves the machine.
 
 `max_concurrent` is the depth the rig keeps a backend at. A continuous batch server stays
 full and is never over-committed. Raise it for a small model, keep it low for a large one.
+
+## Retrieval
+
+Retrieval decides what the reviewer sees besides the diff, so the models it uses were
+measured rather than chosen.
+
+The test is 25 symbols from this repository with two to six real callers each. The
+ground truth is the set of files that reference each symbol, computed from the Python
+syntax tree, so it is not built the way any of the retrievers work. Recall counts how
+many of those files come back in the top twelve; precision counts how many of the top
+five are right.
+
+| configuration | recall@12 | precision@5 | cases with a hit | first correct rank |
+| --- | --- | --- | --- | --- |
+| keyword only | 0.584 | 0.360 | 22/25 | 2 |
+| with `Qwen3-Embedding-0.6B` | 0.613 | 0.416 | 25/25 | 2 |
+| with `nomic-embed-code` | **0.686** | **0.448** | 25/25 | **1** |
+| with a reranker | 0.373 | 0.144 | 22/25 | 5 |
+
+Three findings, in order of how much they changed.
+
+**Both embedders close the 22-of-25 gap.** Three symbols have callers that exact name
+matching finds nothing for. That is what embeddings are for, and it is the strongest
+argument for keeping them.
+
+**`nomic-embed-code` is worth its size.** It brings the first correct file from rank 2 to
+rank 1, and it is what the rig fetches on a machine with room for it. It costs 4.4 GB
+against 0.64 GB and about six times the indexing time, which is paid once and then only
+for the files that change.
+
+**A reranker makes it markedly worse**, and it is not fetched. Rank fusion of exact name
+search with code embeddings is already a stronger signal than a small cross encoder's
+judgement, and the reranker replaces a good ordering with its own. Passing a natural
+question rather than the raw diff improved it from 0.337 to 0.373, and it is still far
+behind not reranking at all. The catalogue keeps it, because a better reranker may earn
+its place later.
+
+To try one, fetch it by hand and name it in a profile:
+
+```toml
+[backend.local-rerank]
+url = "http://127.0.0.1:8082/v1"
+managed = true
+model_file = "Qwen.Qwen3-Reranker-0.6B.Q8_0.gguf"
+args = ["--reranking"]
+
+[profile.balanced.rerank]
+backend = "local-rerank"
+```

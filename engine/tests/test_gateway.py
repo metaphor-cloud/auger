@@ -161,3 +161,38 @@ async def test_a_blocked_backend_is_a_model_error_so_one_run_fails_and_not_the_r
             await gateway.complete(JobClass.REVIEW, HELLO)
     finally:
         await gateway.aclose()
+
+
+async def test_a_large_rerank_is_sent_in_batches(gateway: Gateway, fake: FakeModelServer) -> None:
+    """Forty chunks in one call returned 500 from a real server, and the rig retried it
+    three times and then lost the whole ordering step."""
+    from reviewrig.llm.gateway import RERANK_BATCH
+
+    documents = [f"chunk {index}" for index in range(20)]
+    scores = await gateway.rerank("query", documents)
+    assert len(scores) == 20
+    rerank_calls = [request for request in fake.requests if request["path"] == "/v1/rerank"]
+    assert len(rerank_calls) == 3
+    assert all(len(call["documents"]) <= RERANK_BATCH for call in rerank_calls)
+
+
+async def test_each_document_is_trimmed_before_it_is_sent(
+    gateway: Gateway, fake: FakeModelServer
+) -> None:
+    """A reranker judges relevance from the head of a chunk. The rest is cost."""
+    from reviewrig.llm.gateway import RERANK_DOCUMENT_CHARS
+
+    await gateway.rerank("query", ["x" * (RERANK_DOCUMENT_CHARS * 3)])
+    sent = fake.requests[0]["documents"][0]
+    assert len(sent) == RERANK_DOCUMENT_CHARS
+
+
+async def test_the_scores_come_back_in_the_order_the_documents_were_given(
+    gateway: Gateway,
+) -> None:
+    """Batching must not reorder anything: a caller pairs scores with its own list."""
+    documents = [f"chunk {index}" for index in range(12)]
+    scores = await gateway.rerank("query", documents)
+    # The fake scores each batch as 1, 1/2, 1/3, so every batch restarts at 1.0.
+    assert scores[0] == 1.0
+    assert len(scores) == len(documents)

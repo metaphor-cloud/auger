@@ -164,6 +164,20 @@ def merge(groups: list[list[Hit]], exclude: set[int] = frozenset()) -> list[Hit]
     ]
 
 
+def rerank_query(names: list[str]) -> str:
+    """What to ask the reranker.
+
+    A reranker is a cross encoder trained on a question and a document. A unified diff
+    is not a question, and asking with one measured far worse than not reranking at all.
+    The question this retrieval actually asks is which code uses the changed symbols, so
+    that is what it asks.
+    """
+    wanted = searchable(names)
+    if not wanted:
+        return "code related to this change"
+    return "code that calls or uses " + ", ".join(wanted[:8])
+
+
 async def context_for_diff(
     store: Store,
     gateway: Gateway | None,
@@ -205,7 +219,9 @@ async def context_for_diff(
     reranks = gateway is not None and gateway.available(JobClass.RERANK, profile)
     if reranks and gateway is not None and len(candidates) > limit:
         try:
-            scores = await gateway.rerank(diff[:4000], [hit.text for hit in candidates], profile)
+            scores = await gateway.rerank(
+                rerank_query(names), [hit.text for hit in candidates], profile
+            )
         except ModelError as error:
             log.warn("rerank skipped", reason="rerank_failed", error=error)
             scores = []

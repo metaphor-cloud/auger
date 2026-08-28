@@ -20,6 +20,10 @@ from reviewrig.log import Logger, create_logger
 from reviewrig.net import Allowlist, EgressRefused, guarded_client
 
 RETRY_DELAYS = (0.5, 2.0, 5.0)
+#: Documents per rerank request. A larger batch is refused by the server.
+RERANK_BATCH = 8
+#: A reranker judges relevance from the head of a chunk. The rest is cost.
+RERANK_DOCUMENT_CHARS = 1200
 
 
 class ModelError(RuntimeError):
@@ -259,22 +263,39 @@ class Gateway:
     async def rerank(
         self, query: str, documents: list[str], profile: str = "balanced"
     ) -> list[float]:
-        """Return one score per document, in the order the documents were given."""
+        """Return one score per document, in the order the documents were given.
+
+        Sent in batches, and each document trimmed. A reranker refuses a request that is
+        too large: forty code chunks in one call returned 500 from `llama-server`, the
+        rig retried it three times, and the whole ordering step was silently lost. A
+        cross encoder scores each pair on its own, so scores from different batches are
+        comparable and the batching changes nothing but the size of the request.
+        """
         if not documents:
             return []
         resolved = self.resolve(JobClass.RERANK, profile)
-        body = await self._post(
-            resolved,
-            "/rerank",
-            {"model": resolved.backend.model, "query": query, "documents": documents},
-        )
-        try:
-            scores = [0.0] * len(documents)
-            for row in body["results"]:
-                scores[int(row["index"])] = float(row["relevance_score"])
-            return scores
-        except (KeyError, TypeError, IndexError, ValueError) as error:
-            raise ModelError(f"{resolved.name} returned no score") from error
+        scores: list[float] = []
+        for start in range(0, len(documents), RERANK_BATCH):
+            batch = [
+                text[:RERANK_DOCUMENT_CHARS] for text in documents[start : start + RERANK_BATCH]
+            ]
+            body = await self._post(
+                resolved,
+                "/rerank",
+                {"model": resolved.backend.model, "query": query, "documents": batch},
+            )
+            scores.extend(_scores_of(body, len(batch), resolved))
+        return scores
+
+
+def _scores_of(body: Any, count: int, resolved: Resolved) -> list[float]:
+    try:
+        scores = [0.0] * count
+        for row in body["results"]:
+            scores[int(row["index"])] = float(row["relevance_score"])
+        return scores
+    except (KeyError, TypeError, IndexError, ValueError) as error:
+        raise ModelError(f"{resolved.name} returned no score") from error
 
 
 def _worth_retrying(error: Exception) -> bool:

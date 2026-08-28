@@ -99,19 +99,23 @@ EMBED_MODELS: tuple[Choice, ...] = (
     ),
 )
 
-#: Ordering the retrieved code is what separates a caller from a file that merely
-#: mentions the name, so the reranker is small and always fetched.
+#: Available, and not fetched by default. Measured on this repository over 25 symbols
+#: with references computed from the syntax tree, reranking made retrieval markedly
+#: worse: recall at 12 fell from 0.686 to 0.373 and precision at 5 from 0.448 to 0.144.
+#: Rank fusion of exact name search with code embeddings is already a stronger signal
+#: than a small cross encoder's judgement, and the reranker replaces the good ordering
+#: with its own. It stays here because a better reranker may earn its place later.
 RERANK_MODEL = Choice(
     name="Qwen3-Reranker-0.6B",
     job_class=JobClass.RERANK,
     repo="DevQuasar/Qwen.Qwen3-Reranker-0.6B-GGUF",
     filename="Qwen.Qwen3-Reranker-0.6B.Q8_0.gguf",
     memory_gb=1.5,
-    description="Puts the retrieved code in order. 0.64 GB.",
+    description="Reorders the retrieved code. Measured worse than not reordering.",
 )
 
-#: What the rig fetches when the user does not choose.
-DEFAULT_EMBED_MODEL = EMBED_MODELS[-1]
+#: The small embedder, for a machine that cannot spare the memory for the code one.
+SMALL_EMBED_MODEL = EMBED_MODELS[-1]
 
 CATALOG: tuple[Choice, ...] = (*REVIEW_MODELS, *EMBED_MODELS, RERANK_MODEL)
 
@@ -141,12 +145,14 @@ def recommended_review_model(memory_gb: float | None = None) -> Choice:
 
 
 def recommended_embed_model(memory_gb: float | None = None) -> Choice:
-    """The default is the small one.
+    """The code embedder where the machine can hold it.
 
-    A code embedder is seven times the size and slower to index, and it earns its place
-    only when it retrieves better. Choose it in the Models view, not by accident.
+    Measured on this repository, it raised recall at 12 from 0.613 to 0.686 and brought
+    the first correct file from rank 2 to rank 1. It costs 4.4 GB against 0.64 GB, and
+    about six times the indexing time, which is paid once and then only per changed file.
     """
-    return DEFAULT_EMBED_MODEL
+    available = usable_memory_gb() if memory_gb is None else memory_gb
+    return _largest_that_fits(EMBED_MODELS, available)
 
 
 def by_name(name: str) -> Choice:

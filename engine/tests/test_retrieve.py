@@ -206,3 +206,25 @@ def test_an_excluded_chunk_stays_out_of_the_merge() -> None:
 
     hit = Hit(1, "a.py", "a", 1, 2, "")
     assert merge([[hit]], exclude={1}) == []
+
+
+def test_the_reranker_is_asked_a_question_not_given_a_diff() -> None:
+    """A cross encoder is trained on a question and a document.
+
+    Passing the raw diff as the query measured far worse than not reranking at all:
+    recall fell from 0.686 to 0.337 on this repository.
+    """
+    from reviewrig.context.retrieve import rerank_query
+
+    query = rerank_query(["complete", "resolve"])
+    assert "complete" in query
+    assert "resolve" in query
+    assert "diff --git" not in query
+    assert query.startswith("code that")
+
+
+def test_a_change_with_no_named_symbol_still_asks_something() -> None:
+    from reviewrig.context.retrieve import rerank_query
+
+    assert rerank_query([]) == "code related to this change"
+    assert rerank_query(["ab"]) == "code related to this change"

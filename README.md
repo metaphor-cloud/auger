@@ -88,7 +88,14 @@ by overlap with the changed lines, by keyword over the changed symbol names, and
 meaning over embeddings. A reranker orders the result.
 
 Only a file whose git blob sha moved is read again. On this repository a full index is
-145 files and 762 chunks in about 100 ms, and a re-index with no change costs 11 ms.
+145 files and 762 chunks in about 100 ms without embeddings, and a re-index with no
+change costs 11 ms.
+
+Which models to use for this was measured, not chosen. Over 25 symbols with references
+computed from the syntax tree, keyword search alone reached recall@12 of 0.584 and found
+nothing at all for three of them; adding `nomic-embed-code` reached 0.686 and found
+something for every one. A reranker made it markedly worse, so the rig does not fetch
+one. The numbers are in [docs/models.md](docs/models.md).
 
 ## Other agents
 

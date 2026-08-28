@@ -59,11 +59,14 @@ def models_dir(home: Path) -> Path:
 
 
 def plan(memory_gb: float | None = None) -> list[Choice]:
-    """Which models this machine should fetch."""
+    """Which models this machine should fetch.
+
+    No reranker. It measured markedly worse than not reranking, so fetching it by
+    default would cost a download and give a worse review.
+    """
     return [
         catalog.recommended_review_model(memory_gb),
         catalog.recommended_embed_model(memory_gb),
-        catalog.RERANK_MODEL,
     ]
 
 
@@ -125,7 +128,6 @@ async def install(
 
     review = catalog.by_name(review_model) if review_model else catalog.recommended_review_model()
     embed = catalog.by_name(embed_model) if embed_model else catalog.recommended_embed_model()
-    rerank = catalog.RERANK_MODEL
 
     async with client() as http:
         try:
@@ -147,7 +149,7 @@ async def install(
             result.runtime_path = str(existing)
             report(Step("runtime", message=f"Runtime ready: {existing.name}"))
 
-            for choice in (review, embed, rerank):
+            for choice in (review, embed):
                 report(Step("model", choice.name, message=f"Looking up {choice.name}"))
                 resolved = await catalog.resolve(http, choice, log)
 
@@ -177,10 +179,9 @@ async def install(
             report(Step("failed", message=str(error)))
             return result
 
-    apply_to_config(config, review, embed, rerank)
+    apply_to_config(config, review, embed)
     result.review_model = review.name
     result.embed_model = embed.name
-    result.rerank_model = rerank.name
     report(Step("done", message=f"Ready: {review.name}"))
     log.info("setup finished", review=review.name, embed=embed.name)
     return result
