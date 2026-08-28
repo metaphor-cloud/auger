@@ -43,12 +43,16 @@ all cannot leak anything, which is a stronger guarantee than an address allowlis
 
 Three places, in a sidebar.
 
-**Map** is one tree, grown left to right. The trunk divides into a branch per
-repository, and each branch carries a twig and a leaf per finding. Colour runs along the
-branch from the trunk to the leaf and carries severity; a short tag carries the kind; a
-leaf nobody has read breathes until it is read. The worst grows at the top. Filter by
-kind and by state, open a leaf to read it, write a note on it, change its state, and
-reach the run that found it. The last ten runs sit along the foot.
+**Work** is what needs attention, ranked. Findings group by repository, worst first,
+and inside a group the same rule again. Colour carries severity, a short tag carries the
+kind, and an item nobody has read breathes until it is read. Filter by kind, by state,
+or by any word. Open one to read it, write a note on it, change its state, and reach the
+run that found it.
+
+Above the list is the one picture: every run over the last hours, one column per slice
+of time, stacked by outcome, with each finding marked below at the moment it appeared.
+Time is the axis where a rig that runs all day actually varies, so that is where the
+drawing goes. A run that fails sits at the top of its column, where the eye lands.
 
 **Runs** is every attempt, including the ones that were skipped and why.
 

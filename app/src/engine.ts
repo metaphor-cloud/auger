@@ -169,8 +169,10 @@ export async function setFindingStatus(
   });
 }
 
-export async function getRuns(repo?: string): Promise<RunList> {
-  return request(repo ? `/runs?repo=${encodeURIComponent(repo)}` : "/runs");
+export async function getRuns(repo?: string, limit = 100): Promise<RunList> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (repo) query.set("repo", repo);
+  return request(`/runs?${query}`);
 }
 
 export async function getQueue(): Promise<Queue> {

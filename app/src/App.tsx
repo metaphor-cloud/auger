@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getOnboarding, getQueue, getSystem, health, pauseQueue, readEvents, resumeQueue } from "./engine";
 import { notify, setTray } from "./host";
 import type { Queue, SetupProgress, System } from "./types";
-import MapView from "./views/Map";
+import Work from "./views/Work";
 import OnboardingView from "./views/Onboarding";
 import Runs from "./views/Runs";
 import SettingsView from "./views/Settings";
@@ -14,17 +14,17 @@ type Status =
   | { state: "ready"; version: string }
   | { state: "failed"; reason: string };
 
-const VIEWS = ["Map", "Runs", "Settings"] as const;
+const VIEWS = ["Work", "Runs", "Settings"] as const;
 type View = (typeof VIEWS)[number];
 
 /** One mark per view. A sidebar is read by shape before it is read by word. */
-const MARK: Record<View, string> = { Map: "◈", Runs: "≡", Settings: "⚙" };
+const MARK: Record<View, string> = { Work: "◈", Runs: "≡", Settings: "⚙" };
 
 const LOUD = new Set(["critical", "high"]);
 
 export default function App() {
   const [status, setStatus] = useState<Status>({ state: "starting" });
-  const [view, setView] = useState<View>("Map");
+  const [view, setView] = useState<View>("Work");
   const [system, setSystem] = useState<System | null>(null);
   const [queue, setQueue] = useState<Queue | null>(null);
   const [version, setVersion] = useState(0);
@@ -164,8 +164,8 @@ export default function App() {
       </aside>
 
       <main className="min-w-0 flex-1 overflow-hidden">
-        {view === "Map" && (
-          <MapView version={version} onCounts={setTray} onOpenRuns={() => setView("Runs")} />
+        {view === "Work" && (
+          <Work version={version} onCounts={setTray} onOpenRuns={() => setView("Runs")} />
         )}
         {view === "Runs" && (
           <div className="h-full overflow-auto px-5 py-5">

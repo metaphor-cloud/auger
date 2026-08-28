@@ -1,7 +1,7 @@
-/** One surface for the repositories, what was found in them, and what ran.
+/** What needs attention, and what the rig has been doing.
  *
- * The four lists this replaced showed four slices of one thing. A person asks "what is
- * wrong, and where", which is a shape, not four tables.
+ * A rank is the answer to "what do I act on now", so the list is the surface and the
+ * one picture sits above it, on the axis where the data actually varies: time.
  */
 
 import {
@@ -36,21 +36,30 @@ import {
   requestReview,
   setFindingStatus,
 } from "../engine";
-import { CATEGORY, SEVERITY_RANK, categoryOf, severityOf, STATES } from "../map/palette";
-import TreeView from "../map/TreeView";
-import { grow, type BranchInput } from "../map/tree";
+import { CATEGORY, SEVERITY_RANK, STATES, categoryOf, severityOf } from "../palette";
+import Timeline from "../parts/Timeline";
 import type { Finding, Note, Repository, Run } from "../types";
 import { Mono } from "../ui";
 
-/** How many findings one repository shows before the rest are counted, not drawn. */
-const PER_REPO = 30;
-const RUN_STRIP = 10;
+/** How many findings one repository lists before the rest are counted, not drawn. */
+const PER_REPO = 50;
+const RUN_LIMIT = 400;
 
 const CATEGORY_NAMES = Object.keys(CATEGORY);
 const STATE_NAMES = ["open", "doing", "resolved", "suppressed"];
 
 function repoName(path: string) {
   return path.split("/").slice(-2).join("/");
+}
+
+/** How long it has been there, in the shortest form that is still true. */
+function age(stamp: string) {
+  const at = Date.parse(/(?:Z|[+-]\d\d:\d\d)$/.test(stamp) ? stamp : `${stamp}Z`);
+  if (Number.isNaN(at)) return "";
+  const minutes = Math.max(0, Math.round((Date.now() - at) / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 60 * 24) return `${Math.round(minutes / 60)}h`;
+  return `${Math.round(minutes / (60 * 24))}d`;
 }
 
 function Chip({
@@ -156,7 +165,7 @@ function RecordDialog({
         <div className="space-y-2 px-4 pb-4">
           {existed && (
             <p className="text-xs text-warning">
-              That work was already recorded. Its item is on the map.
+              That work was already recorded. Its item is in the list.
             </p>
           )}
           <Select value={repo} onValueChange={setRepo}>
@@ -191,7 +200,57 @@ function RecordDialog({
   );
 }
 
-export default function MapView({
+function Row({
+  finding,
+  chosen,
+  onPick,
+}: {
+  finding: Finding;
+  chosen: boolean;
+  onPick: () => void;
+}) {
+  const severity = severityOf(finding.severity);
+  const category = categoryOf(finding.category);
+  const closed = finding.status === "resolved" || finding.status === "suppressed";
+  return (
+    <button
+      onClick={onPick}
+      className={`flex w-full items-center gap-2.5 border-l-2 py-1.5 pl-3 pr-2 text-left transition-colors ${
+        chosen ? "bg-bg-card-hover" : "hover:bg-bg-card-hover"
+      }`}
+      style={{ borderColor: severity.colour, opacity: closed ? 0.5 : 1 }}
+    >
+      <span
+        className={`h-1.5 w-1.5 shrink-0 rounded-full ${finding.opened_at === null ? "rr-breathe" : ""}`}
+        style={{
+          background: finding.opened_at === null ? "var(--color-accent)" : "transparent",
+        }}
+      />
+      <span
+        className="w-8 shrink-0 font-mono text-[9px] tracking-wider"
+        style={{ color: category.colour }}
+        title={category.label}
+      >
+        {category.tag}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-xs text-text-primary">{finding.title}</span>
+      {finding.status === "doing" && <Badge variant="default">doing</Badge>}
+      {finding.file && (
+        <Mono>
+          {finding.line ? `${finding.file}:${finding.line}` : finding.file}
+        </Mono>
+      )}
+      {finding.source !== "model" && (
+        <span className="shrink-0 text-[10px] text-text-tertiary">{finding.source}</span>
+      )}
+      <span className="w-8 shrink-0 text-right text-[10px] tabular-nums text-text-tertiary">
+        {age(finding.last_seen_at)}
+      </span>
+    </button>
+  );
+}
+
+export default function Work({
   version,
   onCounts,
   onOpenRuns,
@@ -203,10 +262,12 @@ export default function MapView({
   const [repositories, setRepositories] = useState<Repository[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [categories, setCategories] = useState<Set<string>>(new Set(CATEGORY_NAMES));
   const [states, setStates] = useState<Set<string>>(new Set(["open", "doing"]));
   const [dismissed, setDismissed] = useState(false);
+  const [hours, setHours] = useState(6);
+  const [readAt, setReadAt] = useState(() => Date.now());
+  const [search, setSearch] = useState("");
   const [chosen, setChosen] = useState<Finding | null>(null);
   const [recording, setRecording] = useState(false);
 
@@ -214,11 +275,12 @@ export default function MapView({
     const [repoBody, findingBody, runBody] = await Promise.all([
       getRepositories(),
       getFindings(undefined, STATE_NAMES.join(","), true),
-      getRuns(),
+      getRuns(undefined, RUN_LIMIT),
     ]);
     setRepositories(repoBody.repositories);
     setFindings(findingBody.findings);
-    setRuns(runBody.runs.slice(0, RUN_STRIP));
+    setRuns(runBody.runs);
+    setReadAt(Date.now());
     onCounts(
       findingBody.counts.total ?? 0,
       (findingBody.counts.critical ?? 0) + (findingBody.counts.high ?? 0),
@@ -229,72 +291,51 @@ export default function MapView({
     void load();
   }, [load, version]);
 
-  const shown = useMemo(
-    () =>
-      findings.filter(
-        (one) =>
-          categories.has(one.category) &&
-          states.has(one.status) &&
-          (dismissed || one.triage !== "false"),
-      ),
-    [findings, categories, states, dismissed],
-  );
+  const shown = useMemo(() => {
+    const wanted = search.trim().toLowerCase();
+    return findings.filter(
+      (one) =>
+        categories.has(one.category) &&
+        states.has(one.status) &&
+        (dismissed || one.triage !== "false") &&
+        (wanted === "" ||
+          one.title.toLowerCase().includes(wanted) ||
+          one.detail.toLowerCase().includes(wanted) ||
+          one.file.toLowerCase().includes(wanted)),
+    );
+  }, [findings, categories, states, dismissed, search]);
 
-  const tree = useMemo(() => {
+  /** Grouped by repository, worst first, and inside a group the same rule again. */
+  const groups = useMemo(() => {
     const byRepo = new Map<string, Finding[]>();
     for (const one of shown) {
       const list = byRepo.get(one.repo_path) ?? [];
       list.push(one);
       byRepo.set(one.repo_path, list);
     }
-    // The worst grows at the top, and a repository with nothing open sits at the foot.
-    // The eye starts at the top of a tree, so that is where the trouble belongs.
-    const ordered = [...repositories].sort((first, second) => {
-      const left = byRepo.get(first.path) ?? [];
-      const right = byRepo.get(second.path) ?? [];
-      if (left.length === 0 || right.length === 0) return left.length ? -1 : right.length ? 1 : 0;
-      const worst = (list: Finding[]) =>
-        Math.min(...list.map((one) => SEVERITY_RANK[one.severity] ?? 5));
-      return worst(left) - worst(right) || right.length - left.length;
-    });
-    const input: BranchInput[] = ordered.map((repository) => {
-      const mine = (byRepo.get(repository.path) ?? []).sort(
-        (a, b) => (SEVERITY_RANK[a.severity] ?? 5) - (SEVERITY_RANK[b.severity] ?? 5),
+    const rank = (finding: Finding) => SEVERITY_RANK[finding.severity] ?? 5;
+    return [...byRepo.entries()]
+      .map(([path, list]) => ({
+        path,
+        name: repoName(path),
+        findings: list.sort(
+          (first, second) =>
+            rank(first) - rank(second) ||
+            Number(first.opened_at !== null) - Number(second.opened_at !== null) ||
+            second.last_seen_at.localeCompare(first.last_seen_at),
+        ),
+        worst: Math.min(...list.map(rank)),
+        unread: list.filter((one) => one.opened_at === null).length,
+      }))
+      .sort(
+        (first, second) =>
+          first.worst - second.worst ||
+          second.findings.length - first.findings.length ||
+          first.name.localeCompare(second.name),
       );
-      const drawn = mine.slice(0, PER_REPO);
-      return {
-        id: repository.path,
-        label: repoName(repository.path),
-        enabled: repository.policy.enabled,
-        worst: mine[0]?.severity ?? "info",
-        hidden: mine.length - drawn.length,
-        expanded: expanded.has(repository.path),
-        leaves: drawn.map((finding) => ({
-          id: finding.fingerprint,
-          label: finding.title,
-          detail: finding.line ? `${finding.file}:${finding.line}` : finding.file,
-          severity: finding.severity,
-          category: finding.category,
-          unread: finding.opened_at === null,
-          closed: finding.status === "resolved" || finding.status === "suppressed",
-        })),
-      };
-    });
-    return grow(input);
-  }, [repositories, shown, expanded]);
+  }, [shown]);
 
-  function toggle(path: string) {
-    setExpanded((current) => {
-      const next = new Set(current);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
-  }
-
-  async function pick(fingerprint: string) {
-    const finding = findings.find((one) => one.fingerprint === fingerprint);
-    if (!finding) return;
+  async function pick(finding: Finding) {
     setChosen(finding);
     if (finding.opened_at === null) {
       await markOpened(finding.fingerprint);
@@ -314,15 +355,29 @@ export default function MapView({
     await load();
   }
 
-  const unread = findings.filter((one) => one.opened_at === null).length;
+  const unread = shown.filter((one) => one.opened_at === null).length;
   const run = chosen ? runs.find((one) => one.id === chosen.run_id) : undefined;
+  const quiet = repositories.length - groups.length;
 
   return (
     <div className="flex h-full flex-col">
+      <Timeline
+        runs={runs.map((one) => ({ at: one.started_at, status: one.status }))}
+        findings={findings.map((one) => ({
+          at: one.first_seen_at,
+          severity: one.severity,
+        }))}
+        now={readAt}
+        hours={hours}
+        onHours={setHours}
+        onOpenRuns={onOpenRuns}
+      />
+
       <header className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
         <span className="text-xs text-text-secondary">
-          {repositories.length} repositories · {shown.length} shown
+          {shown.length} open in {groups.length} repositories
           {unread > 0 ? ` · ${unread} new` : ""}
+          {quiet > 0 ? ` · ${quiet} clear` : ""}
         </span>
         <span className="mx-1 h-4 w-px bg-border" />
         {CATEGORY_NAMES.map((name) => (
@@ -362,71 +417,63 @@ export default function MapView({
         <Chip on={dismissed} onClick={() => setDismissed((value) => !value)}>
           Dismissed
         </Chip>
-        <div className="ml-auto flex gap-1">
+        <div className="ml-auto flex items-center gap-2">
+          <Input
+            className="h-7 w-44"
+            value={search}
+            placeholder="Filter"
+            onChange={(event) => setSearch(event.target.value)}
+          />
           <Button size="sm" variant="secondary" onClick={() => setRecording(true)}>
             Record
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setExpanded(new Set(repositories.map((one) => one.path)))}
-          >
-            Expand all
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setExpanded(new Set())}>
-            Collapse
           </Button>
         </div>
       </header>
 
-      <div className="relative min-h-0 flex-1">
-        <TreeView
-          tree={tree}
-          chosen={chosen?.fingerprint ?? null}
-          onToggle={toggle}
-          onPick={(id: string) => void pick(id)}
-        />
-        {repositories.length === 0 && (
-          <div className="pointer-events-none absolute inset-0 grid place-items-center">
-            <p className="text-xs text-text-secondary">
-              No repository yet. Add a root in Settings.
-            </p>
-          </div>
+      <div className="min-h-0 flex-1 overflow-auto">
+        {groups.length === 0 && (
+          <p className="px-4 py-8 text-center text-xs text-text-tertiary">
+            {repositories.length === 0
+              ? "No repository yet. Add a root in Settings."
+              : "Nothing open under these filters."}
+          </p>
         )}
-      </div>
-
-      <footer className="border-t border-border bg-bg-elevated px-4 py-2">
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] uppercase tracking-wider text-text-tertiary">Recent runs</span>
-          <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
-            {runs.map((one) => (
-              <span
-                key={one.id}
-                title={`${repoName(one.repo_path)} · ${one.kind} · ${one.reason ?? one.status}`}
-                className="flex shrink-0 items-center gap-1.5 rounded border border-border-subtle px-2 py-0.5 text-[11px]"
-              >
-                <span
-                  className="h-1.5 w-1.5 rounded-full"
-                  style={{
-                    background:
-                      one.status === "ok"
-                        ? "#4ade80"
-                        : one.status === "failed"
-                          ? "#f43f5e"
-                          : "#64748b",
-                  }}
-                />
-                <span className="text-text-secondary">{repoName(one.repo_path)}</span>
-                <Mono>{one.started_at.replace("T", " ").slice(11, 16)}</Mono>
+        {groups.map((group) => (
+          <section key={group.path}>
+            <header className="sticky top-0 z-10 flex items-baseline gap-2 border-b border-border-subtle bg-bg px-4 py-1.5">
+              <span className="text-xs font-medium text-text-primary">{group.name}</span>
+              <span className="text-[11px] text-text-tertiary">
+                {group.findings.length}
+                {group.unread > 0 ? ` · ${group.unread} new` : ""}
               </span>
-            ))}
-            {runs.length === 0 && <span className="text-[11px] text-text-tertiary">Nothing yet</span>}
-          </div>
-          <Button size="sm" variant="ghost" onClick={onOpenRuns}>
-            All runs
-          </Button>
-        </div>
-      </footer>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="ml-auto h-6"
+                onClick={() => void requestReview(group.path)}
+              >
+                Review now
+              </Button>
+            </header>
+            <ul className="divide-y divide-border-subtle/60">
+              {group.findings.slice(0, PER_REPO).map((finding) => (
+                <li key={finding.fingerprint}>
+                  <Row
+                    finding={finding}
+                    chosen={chosen?.fingerprint === finding.fingerprint}
+                    onPick={() => void pick(finding)}
+                  />
+                </li>
+              ))}
+              {group.findings.length > PER_REPO && (
+                <li className="px-4 py-1.5 text-[11px] text-text-tertiary">
+                  {group.findings.length - PER_REPO} more, not listed. Narrow the filters.
+                </li>
+              )}
+            </ul>
+          </section>
+        ))}
+      </div>
 
       <RecordDialog
         repositories={repositories}
@@ -446,10 +493,7 @@ export default function MapView({
               </SheetHeader>
               <div className="space-y-4 px-4 pb-6 text-xs">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge
-                    variant="outline"
-                    style={{ color: severityOf(chosen.severity).colour }}
-                  >
+                  <Badge variant="outline" style={{ color: severityOf(chosen.severity).colour }}>
                     {chosen.severity}
                   </Badge>
                   <Badge variant="outline" style={{ color: categoryOf(chosen.category).colour }}>
@@ -485,10 +529,9 @@ export default function MapView({
                     The run that found it
                   </p>
                   {run ? (
-                    <p>
+                    <p className="flex items-center gap-2">
                       <Mono>
-                        {run.kind} · {run.started_at.replace("T", " ").slice(0, 16)} ·{" "}
-                        {run.status}
+                        {run.kind} · {run.started_at.replace("T", " ").slice(0, 16)} · {run.status}
                       </Mono>
                       <Button size="sm" variant="ghost" onClick={onOpenRuns}>
                         Open runs

@@ -216,7 +216,7 @@ export default function OnboardingView({
               Settings holds the rest: which repositories to skip, what to look for, your
               forges, and the tools an agent may call.
             </p>
-            <Button onClick={() => void done()}>Open the map</Button>
+            <Button onClick={() => void done()}>Start reviewing</Button>
           </div>
         )}
 
