@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from reviewrig.llm import Health
 from reviewrig.rig import Rig
 from reviewrig.schedule import watch, watch_audits, watch_forges
 from reviewrig.settings import Settings
@@ -68,3 +69,38 @@ async def test_an_audit_is_queued_without_anyone_asking(home: Path, token: str, 
         assert "audit" in targets
     finally:
         await rig.aclose()
+
+
+async def test_a_managed_backend_is_started_before_any_review(
+    home: Path, token: str, tree: Path
+) -> None:
+    """A review that runs before its model is up fails and is recorded as a failure."""
+    import httpx
+
+    from reviewrig.api import create_app
+
+    (home / "config.toml").write_text(
+        f'[[roots]]\npath = "{tree}"\n\n'
+        '[backend.local-review]\nurl = "http://127.0.0.1:1/v1"\nmanaged = true\n',
+        encoding="utf-8",
+    )
+    rig = Rig(Settings(host="127.0.0.1", port=0, token=token, log_level="debug", home=home))
+    started: list[str] = []
+    real = rig.ensure_models
+
+    async def spy() -> dict[str, Health]:
+        started.append("ensure")
+        return await real()
+
+    rig.ensure_models = spy  # type: ignore[method-assign]
+    app = create_app(rig)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://engine") as http:
+        # The lifespan runs the boot task. Give it a moment to reach the model step.
+        async with app.router.lifespan_context(app):
+            for _ in range(50):
+                if started:
+                    break
+                await asyncio.sleep(0.05)
+            assert started == ["ensure"]
+        await http.aclose()

@@ -26,7 +26,18 @@ async def test_it_lists_the_backends_and_what_the_profile_sends_where(
     assert body["active_profile_backends"]["rerank"] == ""
 
 
-async def test_a_backend_that_is_not_running_says_why(http: httpx.AsyncClient, token: str) -> None:
+async def test_a_backend_that_is_not_running_says_why(
+    http: httpx.AsyncClient, token: str, home: Path, rig: Rig
+) -> None:
+    """Port 1 is reserved and nothing can listen on it, so this cannot depend on luck.
+
+    The default backend is 8080, and a model server the developer happens to be running
+    would otherwise make this pass or fail by accident.
+    """
+    (home / "config.toml").write_text(
+        '[backend.local-review]\nurl = "http://127.0.0.1:1/v1"\n', encoding="utf-8"
+    )
+    rig.reload_config()
     async with http:
         await http.post("/models/check", headers={"Authorization": f"Bearer {token}"})
         body = await get(http, token, "/models")

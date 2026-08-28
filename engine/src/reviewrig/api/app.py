@@ -108,13 +108,17 @@ class TokenAuth:
 
 
 async def _boot(rig: Rig) -> None:
-    """Walk the roots, then start the workers.
+    """Walk the roots, bring the models up, then start the workers.
 
-    The order matters. The watcher reads the stored repositories, so starting it before
-    the first walk would let it work from the last run's list, which may name a
-    repository that no root covers any more.
+    The order matters twice. The watcher reads the stored repositories, so starting it
+    before the first walk would let it work from the last run's list, which may name a
+    repository that no root covers any more. And a review that starts before its model
+    is up fails and is recorded as a failure, so the models come up first.
     """
     await asyncio.to_thread(rig.scan)
+    # This starts a managed backend that does not answer. A large model takes a minute
+    # to load, and the UI is already connected and watching.
+    await rig.ensure_models()
     await rig.start_background()
 
 
@@ -173,11 +177,9 @@ def create_app(rig: Rig) -> FastAPI:
         # The first walk can take seconds on a large tree, and the model probe waits on
         # the network. Neither should hold up the UI.
         boot = asyncio.create_task(_boot(rig))
-        models = asyncio.create_task(rig.check_models())
         tools_ready = asyncio.create_task(rig.check_tools())
         yield
         boot.cancel()
-        models.cancel()
         tools_ready.cancel()
         await rig.proxy.stop()
         await rig.aclose()

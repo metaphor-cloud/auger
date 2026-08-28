@@ -124,17 +124,16 @@ just release      # build a signed .dmg. Needs your Apple certificate.
 This is version 0.1.0. It is early, and this is what has and has not been proved.
 
 **Runs, and was watched running.** Repository discovery, the scheduler, busy detection,
-diff review end to end, the code index and retrieval, the sandbox rules against a real
-Apple container, and the egress refusals.
+the code index and retrieval, the sandbox rules against a real Apple container, the
+egress refusals, the model setup against the real GitHub and Hugging Face hosts, and a
+review by a real model that found the planted bug and one that was not planted.
 
 **Tested against a server that speaks the real protocol, but not against the real
-service.** The model gateway, the GitHub and GitLab adapters, and the MCP client. Each
-one is exercised over real HTTP or a real subprocess, against a fixture that implements
-the same API.
+service.** The GitHub and GitLab adapters, and the MCP client. Each is exercised over
+real HTTP or a real subprocess, against a fixture that implements the same API.
 
 **Not run at all.** Semgrep, because the analysis image needs a network to build and this
-machine could not reach one. Any real model, because none is installed here: review
-quality is unmeasured.
+machine could not reach one.
 
 **Not signed.** `just package` builds an application that runs where it was built.
 Distribution needs an Apple Developer certificate.
