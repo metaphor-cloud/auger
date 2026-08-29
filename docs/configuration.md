@@ -4,6 +4,11 @@ One file: `~/.auger/config.toml`. The rig writes a starter version on first run.
 
 The UI edits the same file and keeps your comments, so you can use either.
 
+Nothing here is reachable only by editing the file. Settings groups what you reach for
+into tabs, and its Everything tab draws a control for every remaining setting from what
+the engine says it holds, so a setting added to Auger is one you can change the day it
+arrives. A test refuses a new list or table that has no form of its own.
+
 Set `AUGER_HOME` to move the whole directory, which holds the config, the database,
 and the model weights.
 

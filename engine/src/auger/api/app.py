@@ -22,6 +22,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from auger import __version__
+from auger.api.describe import describe
 from auger.api.models import (
     BackendList,
     BackendOut,
@@ -32,6 +33,7 @@ from auger.api.models import (
     EgressOut,
     ExcludeChange,
     FetchRequest,
+    FieldOut,
     FileFound,
     FilesOut,
     FindingList,
@@ -51,6 +53,7 @@ from auger.api.models import (
     PolicyChange,
     PolicyLevelOut,
     PresetOut,
+    ProfileLimits,
     PromptOut,
     QueueOut,
     RecordedOut,
@@ -63,7 +66,9 @@ from auger.api.models import (
     RunList,
     RunOut,
     SandboxOut,
+    SchemaOut,
     SearchOut,
+    SectionOut,
     SettingChange,
     SettingsOut,
     SetupOut,
@@ -631,6 +636,7 @@ def create_app(rig: Rig) -> FastAPI:
                     transport=server.transport,
                     target=server.url or server.command,
                     enabled=server.enabled,
+                    timeout_seconds=server.timeout_seconds,
                 )
                 for name, server in sorted(rig.config.mcp.items())
             ],
@@ -640,6 +646,14 @@ def create_app(rig: Rig) -> FastAPI:
             ],
             schedule=rig.config.schedule.model_dump(mode="json"),
             allow_hosted=rig.config.egress.allow_hosted,
+            profile_limits=(
+                ProfileLimits(
+                    review_max_tokens=active.review.max_tokens,
+                    review_temperature=active.review.temperature,
+                )
+                if (active := rig.config.profile.get(rig.config.defaults.model_profile))
+                else None
+            ),
         )
 
     @router.put("/settings")
@@ -665,6 +679,27 @@ def create_app(rig: Rig) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=_first_problem(error)) from error
         return await settings_view()
+
+    @router.get("/settings/schema")
+    async def settings_schema() -> SchemaOut:
+        """Every setting, and what it is set to.
+
+        The window draws its controls from this, so a setting that exists is one a
+        person can change without opening a file.
+        """
+        sections, handled = describe(rig.config)
+        return SchemaOut(
+            sections=[
+                SectionOut(
+                    name=one["name"],
+                    title=one["title"],
+                    describes=one["describes"],
+                    fields=[FieldOut(**field) for field in one["fields"]],
+                )
+                for one in sections
+            ],
+            handled=handled,
+        )
 
     @router.get("/settings/raw", response_class=PlainTextResponse)
     async def read_config() -> str:

@@ -227,9 +227,31 @@ export type McpServerSetting = {
   transport: string;
   target: string;
   enabled: boolean;
+  timeout_seconds: number;
 };
 
 export type ForgeSetting = { name: string; host: string; enabled: boolean };
+
+export type SettingField = {
+  key: string;
+  path: string;
+  kind: "boolean" | "integer" | "number" | "string";
+  value: unknown;
+  default: unknown;
+  choices: string[];
+  minimum: number | null;
+  maximum: number | null;
+  describes: string;
+};
+
+export type SettingSection = {
+  name: string;
+  title: string;
+  describes: string;
+  fields: SettingField[];
+};
+
+export type SettingsSchema = { sections: SettingSection[]; handled: string[] };
 
 export type Settings = {
   defaults: Policy;
@@ -243,6 +265,8 @@ export type Settings = {
   forges: ForgeSetting[];
   schedule: Record<string, number | string | boolean>;
   allow_hosted: boolean;
+  //: What the active profile spends on a review.
+  profile_limits: { review_max_tokens: number; review_temperature: number } | null;
 };
 
 export type Tool = {

@@ -19,6 +19,7 @@ import type {
   RunList,
   SearchResults,
   Settings,
+  SettingsSchema,
   TranscriptList,
   System,
   ToolList,
@@ -298,6 +299,10 @@ export async function setSetting(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path, value, remove }),
   });
+}
+
+export async function getSettingsSchema(): Promise<SettingsSchema> {
+  return request("/settings/schema");
 }
 
 export async function getConfigText(): Promise<string> {

@@ -31,6 +31,7 @@ import {
   signInTool,
   writeConfigText,
 } from "../engine";
+import EverySetting from "../parts/EverySetting";
 import PromptEditor from "../parts/PromptEditor";
 import { ChoiceSetting, NumberSetting, SwitchSetting, TextSetting } from "../settings-fields";
 import type { Forge, McpServer, Mode, Root, Settings, SetupProgress, System } from "../types";
@@ -207,7 +208,8 @@ export default function SettingsView({
           <TabsTrigger value="tools">Tools</TabsTrigger>
           <TabsTrigger value="forges">Forges</TabsTrigger>
           <TabsTrigger value="system">System</TabsTrigger>
-          <TabsTrigger value="advanced">Advanced</TabsTrigger>
+          <TabsTrigger value="everything">Everything</TabsTrigger>
+          <TabsTrigger value="advanced">The file</TabsTrigger>
         </TabsList>
 
         <TabsContent value="models">
@@ -276,6 +278,29 @@ export default function SettingsView({
                 <NumberSetting
                   value={settings.defaults.max_tool_calls}
                   onSave={(max_tool_calls) => void change("defaults", "", { max_tool_calls })}
+                />
+              </Fact>
+              <Fact label="Tokens one review may use">
+                <NumberSetting
+                  value={Number(settings.profile_limits?.review_max_tokens ?? 8192)}
+                  onSave={(next) =>
+                    void save(
+                      `profile.${quoted(settings.defaults.model_profile)}.review.max_tokens`,
+                      next,
+                    )
+                  }
+                />
+              </Fact>
+              <Fact label="How much the reviewer improvises">
+                <NumberSetting
+                  value={Number(settings.profile_limits?.review_temperature ?? 0)}
+                  suffix="0 is greedy, and what a structured answer wants"
+                  onSave={(next) =>
+                    void save(
+                      `profile.${quoted(settings.defaults.model_profile)}.review.temperature`,
+                      next,
+                    )
+                  }
                 />
               </Fact>
               <Fact label="Model profile">
@@ -561,6 +586,7 @@ export default function SettingsView({
                     <TableHead>On</TableHead>
                     <TableHead>State</TableHead>
                     <TableHead>Tools</TableHead>
+                    <TableHead>Timeout</TableHead>
                     <TableHead />
                   </TableRow>
                 </TableHeader>
@@ -598,6 +624,15 @@ export default function SettingsView({
                               ? live.tools.map((tool) => tool.name).join(", ")
                               : (live?.reason ?? "")}
                           </Mono>
+                        </TableCell>
+                        <TableCell>
+                          <NumberSetting
+                            value={Number(entry.timeout_seconds ?? 30)}
+                            suffix="s"
+                            onSave={(next) =>
+                              void save(`mcp.${quoted(entry.name)}.timeout_seconds`, next)
+                            }
+                          />
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-right">
                           {live?.needs_sign_in && (
@@ -759,6 +794,14 @@ export default function SettingsView({
         </TabsContent>
 
         {/* -------------------------------------------------------------- advanced */}
+        <TabsContent value="everything">
+          <p className="mb-3 text-xs text-text-secondary">
+            Every setting the engine has, drawn from what it says it holds. The tabs
+            above group the ones you reach for; this one leaves nothing out.
+          </p>
+          <EverySetting version={version} onSave={save} />
+        </TabsContent>
+
         <TabsContent value="advanced">
           <Section title="Retrieval">
             <Facts>

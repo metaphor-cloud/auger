@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from auger.config import Policy
 from auger.models import RepositoryView
@@ -328,6 +328,14 @@ class McpServerSetting(BaseModel):
     transport: str
     target: str
     enabled: bool
+    timeout_seconds: float = 30.0
+
+
+class ProfileLimits(BaseModel):
+    """What the active profile spends on a review."""
+
+    review_max_tokens: int
+    review_temperature: float
 
 
 class ForgeSetting(BaseModel):
@@ -348,6 +356,47 @@ class SettingsOut(BaseModel):
     forges: list[ForgeSetting]
     schedule: dict[str, object]
     allow_hosted: bool
+    profile_limits: ProfileLimits | None = None
+
+
+class FieldOut(BaseModel):
+    """One setting, described well enough for a window to draw a control for it."""
+
+    key: str
+    path: str
+    #: `boolean`, `integer`, `number`, `string`, or `other`. Anything else is edited in
+    #: the file, because a generic control for it would be worse than the file.
+    kind: str
+    value: object = None
+    default: object = None
+    #: The only values it accepts, when it accepts a fixed set.
+    choices: list[str] = Field(default_factory=list)
+    minimum: float | None = None
+    maximum: float | None = None
+    #: What the schema says it is for.
+    describes: str = ""
+
+
+class SectionOut(BaseModel):
+    """One table in the config file."""
+
+    name: str
+    title: str
+    describes: str
+    fields: list[FieldOut]
+
+
+class SchemaOut(BaseModel):
+    """Every setting, and what it is set to.
+
+    The window builds its own controls from this, so a setting that exists is a setting
+    somebody can change without opening a file. A key added to the schema appears here
+    the same day.
+    """
+
+    sections: list[SectionOut]
+    #: Sections the window edits with a form of its own, so it can skip them here.
+    handled: list[str]
 
 
 class SettingChange(BaseModel):
