@@ -103,7 +103,7 @@ async def gateway(model: FakeModelServer, serve: Serve) -> AsyncIterator[Gateway
 def test_the_scan_needs_no_network_at_run_time() -> None:
     """A rule is code, and the rules are vendored into the image."""
     line = command()
-    assert line[line.index("--config") + 1] == "/opt/semgrep-rules"
+    assert line[line.index("--config") + 1] == "/opt/semgrep-security"
     assert "--metrics" in line
     assert line[line.index("--metrics") + 1] == "off"
     assert "--disable-version-check" in line
@@ -299,3 +299,35 @@ async def test_a_clean_scan_calls_no_model(
     outcome = await run_scan(store, gateway, StubSandbox(empty), REPOSITORY, Policy(), "image")
     assert outcome.run.status == "ok"
     assert model.requests == []
+
+
+def test_a_file_the_parser_cannot_read_is_not_a_failure() -> None:
+    """A run that reports a parser limit as an error looks broken when it worked."""
+    from auger.jobs.semgrep import parse
+
+    body = json.dumps(
+        {
+            "results": [],
+            "errors": [
+                {"message": "Syntax error at line /work/a.sh:13"},
+                {"message": "Missing plugin for rule apex-thing"},
+                {"message": "could not reach the rule registry"},
+            ],
+        }
+    )
+    outcome = parse(body, "/repo", "run-1")
+    assert outcome.errors == ["could not reach the rule registry"]
+    assert len(outcome.skipped) == 2
+
+
+def test_the_scan_skips_what_is_not_source() -> None:
+    """A repository with four gigabytes of build output in it took half an hour."""
+    line = command()
+    excluded = {line[index + 1] for index, word in enumerate(line) if word == "--exclude"}
+    assert {"node_modules", "target", ".venv", "dist"} <= excluded
+
+
+def test_one_rule_cannot_decide_how_long_the_scan_takes() -> None:
+    line = command()
+    assert line[line.index("--timeout") + 1] == "5"
+    assert "--timeout-threshold" in line

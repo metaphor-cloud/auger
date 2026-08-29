@@ -45,8 +45,25 @@ fix:
     cd {{root}}/engine && uv run ruff format .
     cd {{root}}/app/src-tauri && cargo fmt
 
+# The resolver the builder uses. Apple's `container` starts its builder with the
+# gateway as its nameserver, and that gateway resolves nothing, so `apt-get update`
+# inside a build fails with "Temporary failure resolving". The setting belongs to the
+# builder, not to the build command. Podman and Docker inherit the host's resolver and
+# ignore all of this.
+build_dns := "1.1.1.1"
+
 # Build the analysis image that every review step runs in. Needs network.
 build-image:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ "$(basename {{runtime}})" = "container" ]; then
+        if ! {{runtime}} run --rm docker.io/library/debian:bookworm-slim \
+                getent hosts deb.debian.org >/dev/null 2>&1; then
+            echo "the builder cannot resolve a name; restarting it with {{build_dns}}"
+            {{runtime}} builder stop >/dev/null 2>&1 || true
+            {{runtime}} builder start --dns {{build_dns}}
+        fi
+    fi
     cd {{root}}/sandbox && {{runtime}} build --tag {{image}} .
 
 # Freeze the engine into app/src-tauri/binaries/engine.

@@ -3,6 +3,17 @@
 The rig reads your code and sends parts of it to a model. This page says exactly where
 each part can go.
 
+
+## What a scan closes
+
+A scan and an audit each read a whole repository, so what they no longer report is
+either fixed or came from a rule or an outline that has since changed. Both close what
+they do not find again, with the reason written into the finding. Closed, not deleted:
+the row keeps its history.
+
+A diff review sees one change, so it closes nothing. What a change does not mention is
+not thereby gone.
+
 ## A sandboxed step has no network at all
 
 Every analysis step runs in a container. The repository is mounted read only at `/work`,

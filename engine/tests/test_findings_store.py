@@ -8,6 +8,7 @@ import pytest
 from auger.store import Store
 from auger.store.findings import (
     Finding,
+    close_missing,
     counts,
     fingerprint,
     list_findings,
@@ -114,3 +115,70 @@ def test_a_suppressed_finding_can_be_brought_back(store: Store) -> None:
     set_status(store, [key], "suppressed")
     set_status(store, [key], "open")
     assert len(list_findings(store)) == 1
+
+
+# --- closing what is no longer found --------------------------------------------------
+
+
+def one_finding(store: Store, title: str, source: str = "semgrep", repo: str = "/r") -> Finding:
+    one = Finding(
+        repo_path=repo,
+        source=source,
+        severity="high",
+        title=title,
+        detail="it says something",
+        file="a.py",
+        line=1,
+    )
+    record(store, [one])
+    return one
+
+
+def test_a_pass_closes_what_it_no_longer_reports(store: Store) -> None:
+    """A list nobody can clear is a list nobody reads."""
+    one_finding(store, "an old rule matched")
+    still = one_finding(store, "a rule that still matches")
+
+    closed = close_missing(store, "/r", "semgrep", [still.fingerprint])
+
+    assert closed == 1
+    states = {one.title: one.status for one in list_findings(store, statuses=("open", "resolved"))}
+    assert states["an old rule matched"] == "resolved"
+    assert states["a rule that still matches"] == "open"
+
+
+def test_it_says_why_it_closed(store: Store) -> None:
+    one = one_finding(store, "an old rule matched")
+    close_missing(store, "/r", "semgrep", [], "the scan no longer reports it")
+    closed = list_findings(store, statuses=("resolved",))[0]
+    assert "the scan no longer reports it" in closed.detail
+    assert one.detail in closed.detail, "what it said is kept, not replaced"
+
+
+def test_it_leaves_another_source_alone(store: Store) -> None:
+    """A scan knows nothing about what an audit or a review found."""
+    from_audit = one_finding(store, "an audit claim", source="audit")
+    close_missing(store, "/r", "semgrep", [])
+    assert list_findings(store)[0].fingerprint == from_audit.fingerprint
+
+
+def test_it_leaves_another_repository_alone(store: Store) -> None:
+    elsewhere = one_finding(store, "a finding over there", repo="/other")
+    close_missing(store, "/r", "semgrep", [])
+    kept = [one for one in list_findings(store) if one.repo_path == "/other"]
+    assert [one.fingerprint for one in kept] == [elsewhere.fingerprint]
+
+
+def test_it_leaves_a_suppressed_finding_suppressed(store: Store) -> None:
+    """Suppressing is a decision. Closing it would lose that."""
+    one = one_finding(store, "something the user suppressed")
+    set_status(store, [one.fingerprint], "suppressed")
+    close_missing(store, "/r", "semgrep", [])
+    found = list_findings(store, statuses=("suppressed",))
+    assert [check.fingerprint for check in found] == [one.fingerprint]
+
+
+def test_closing_nothing_closes_nothing(store: Store) -> None:
+    one = one_finding(store, "a finding that is still there")
+    assert close_missing(store, "/r", "semgrep", [one.fingerprint]) == 0
+    assert list_findings(store)[0].status == "open"

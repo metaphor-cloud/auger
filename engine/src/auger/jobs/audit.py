@@ -23,7 +23,7 @@ from auger.llm import Gateway, Message, ModelError
 from auger.log import Logger, create_logger
 from auger.models import Repository
 from auger.store import Store
-from auger.store.findings import Finding, record
+from auger.store.findings import Finding, close_missing, record
 from auger.store.runs import Run, finish, set_audited, start
 
 KIND = "audit"
@@ -216,6 +216,18 @@ async def audit(
         for item in raw
     ]
     record(store, findings)
+    # An audit reads the whole outline, so the same rule applies as for a scan: what it
+    # no longer reports is no longer a finding. This is what clears the duplicates the
+    # split-symbol bug produced, without anybody reading 386 of them by hand.
+    closed = close_missing(
+        store,
+        repository.path,
+        "audit",
+        [finding.fingerprint for finding in findings],
+        "the audit no longer reports it",
+    )
+    if closed:
+        log.info("findings closed", count=closed, reason="not_reported")
     set_audited(store, repository.path)
 
     # A claim drawn from an outline is a guess until something checks it. The same pass

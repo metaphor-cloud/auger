@@ -19,7 +19,7 @@ from auger.log import Logger, create_logger
 from auger.models import Repository
 from auger.sandbox import Sandbox
 from auger.store import Store
-from auger.store.findings import Finding, record
+from auger.store.findings import Finding, close_missing, record
 from auger.store.runs import Run, finish, start
 
 
@@ -48,6 +48,19 @@ async def run_scan(
 
     outcome = await asyncio.to_thread(scan, sandbox, str(repository.path), image, run.id, log=log)
     record(store, outcome.findings)
+    # A scan reads the whole repository, so what it does not report this time is fixed,
+    # or came from a rule that is no longer in the set. Either way it is not a finding
+    # any more, and a list nobody can clear is a list nobody reads.
+    closed = await asyncio.to_thread(
+        close_missing,
+        store,
+        repository.path,
+        "semgrep",
+        [finding.fingerprint for finding in outcome.findings],
+        "the scan no longer reports it",
+    )
+    if closed:
+        log.info("findings closed", count=closed, reason="not_reported")
 
     judged: TriageOutcome | None = None
     if outcome.findings:

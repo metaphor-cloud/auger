@@ -282,6 +282,38 @@ def get_finding(store: Store, fingerprint: str) -> Finding | None:
     return _to_finding(rows[0]) if rows else None
 
 
+def close_missing(
+    store: Store,
+    repo_path: str | Path,
+    source: str,
+    seen: Iterable[str],
+    reason: str = "no longer found",
+    timestamp: str | None = None,
+) -> int:
+    """Close what a pass over a whole repository no longer reports.
+
+    Only a job that reads the whole repository may call this. A scan and an audit both
+    do, so anything they found before and do not find now is either fixed or came from
+    a rule or an outline that has since changed. A diff review sees one change, and
+    what a change does not mention is not thereby gone, so it never calls this.
+
+    Closed, not deleted. The row keeps its history, and the window can still show what
+    was once true of this code.
+    """
+    keep = list(seen)
+    clause = f"AND fingerprint NOT IN ({','.join('?' * len(keep))})" if keep else ""
+    with store.write() as connection:
+        cursor = connection.execute(
+            f"""
+            UPDATE findings SET status = 'resolved', last_seen_at = ?,
+                detail = detail || char(10) || char(10) || 'Closed: ' || ?
+            WHERE repo_path = ? AND source = ? AND status IN ('open', 'doing') {clause}
+            """,
+            (timestamp or now(), reason, str(repo_path), source, *keep),
+        )
+    return int(cursor.rowcount)
+
+
 def unjudged(store: Store, limit: int = 200) -> list[Finding]:
     """Findings that nothing has checked, worst first.
 

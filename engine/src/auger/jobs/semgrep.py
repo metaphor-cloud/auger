@@ -10,7 +10,7 @@ Its rules are vendored into the analysis image, so a scan needs no fetch at run 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from auger.log import Logger, create_logger
@@ -19,7 +19,11 @@ from auger.store.findings import Finding, Severity
 
 KIND = "security_scan"
 #: Where `just build-image` puts the rules. A scan with no network cannot fetch them.
-DEFAULT_RULES = "/opt/semgrep-rules"
+#:
+#: The security subset, not everything. The full set is 2150 rule files and most of
+#: them are correctness and style, which is what the reviewer is for. This is the job
+#: that exists to find the security defects.
+DEFAULT_RULES = "/opt/semgrep-security"
 DEFAULT_TIMEOUT = 900.0
 
 #: Semgrep speaks in three levels. The rig speaks in five.
@@ -31,15 +35,51 @@ SEVERITY: dict[str, Severity] = {
 CONFIDENCE: dict[str, float] = {"HIGH": 0.8, "MEDIUM": 0.6, "LOW": 0.4}
 
 
+#: What semgrep calls an error but a reader should not. A file its parser cannot read
+#: is a limit of the parser, not a fault in the scan, and a run that reports one as an
+#: error looks broken when it worked.
+NOT_A_FAILURE = ("syntax error", "missing plugin", "unable to parse", "timeout")
+
+
 @dataclass(frozen=True)
 class ScanOutcome:
     findings: list[Finding]
+    #: What stopped the scan doing its job.
     errors: list[str]
     result: RunResult | None = None
+    #: Files the parser could not read. Worth counting, not worth failing over.
+    skipped: list[str] = field(default_factory=list)
+
+
+#: Never scanned. `--use-git-ignore` covers these in a repository whose ignore file
+#: lists them, and most do, but a scan that walks four gigabytes of build output
+#: because one repository forgot is a scan that never finishes. This repository held
+#: 4.3 GB of Rust artifacts and the first real scan ran for half an hour.
+NEVER = (
+    "node_modules",
+    ".venv",
+    "venv",
+    "vendor",
+    "target",
+    "dist",
+    "build",
+    ".next",
+    ".cache",
+    "__pycache__",
+    "*.min.js",
+    "*.lock",
+)
+#: Seconds one rule gets on one file, and how many such stalls end its use. A single
+#: pathological rule must not decide how long the whole scan takes.
+RULE_TIMEOUT = 5
+RULE_GIVE_UP = 3
 
 
 def command(rules: str = DEFAULT_RULES) -> list[str]:
     """The scan command. Kept pure, so a test can read every flag."""
+    excludes: list[str] = []
+    for name in NEVER:
+        excludes += ["--exclude", name]
     return [
         "semgrep",
         "scan",
@@ -53,8 +93,18 @@ def command(rules: str = DEFAULT_RULES) -> list[str]:
         "--disable-version-check",
         # Scratch is the only writable place in the sandbox.
         "--use-git-ignore",
+        *excludes,
+        "--timeout",
+        str(RULE_TIMEOUT),
+        "--timeout-threshold",
+        str(RULE_GIVE_UP),
         WORK,
     ]
+
+
+def _only_a_limit(message: str) -> bool:
+    text = message.lower()
+    return any(word in text for word in NOT_A_FAILURE)
 
 
 def severity_of(entry: dict[str, Any]) -> Severity:
@@ -108,10 +158,12 @@ def parse(output: str, repo_path: str, run_id: str) -> ScanOutcome:
         for entry in body.get("results", [])
         if isinstance(entry, dict) and (finding := to_finding(entry, repo_path, run_id))
     ]
-    errors = [
+    said = [
         str(item.get("message", item)) for item in body.get("errors", []) if isinstance(item, dict)
     ]
-    return ScanOutcome(findings, errors)
+    errors = [one for one in said if not _only_a_limit(one)]
+    skipped = [one for one in said if _only_a_limit(one)]
+    return ScanOutcome(findings, errors, skipped=skipped)
 
 
 def scan(
@@ -148,10 +200,13 @@ def scan(
         return ScanOutcome(
             [], [*outcome.errors, result.stderr.strip()[:400] or "semgrep failed"], result
         )
+    if outcome.skipped:
+        log.info("files the parser could not read", count=len(outcome.skipped))
     log.info(
         "scan finished",
         findings=len(outcome.findings),
         errors=len(outcome.errors),
+        skipped=len(outcome.skipped),
         seconds=round(result.duration_seconds, 1),
     )
-    return ScanOutcome(outcome.findings, outcome.errors, result)
+    return ScanOutcome(outcome.findings, outcome.errors, result, outcome.skipped)
