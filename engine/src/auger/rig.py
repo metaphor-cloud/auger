@@ -507,6 +507,19 @@ class Rig:
         self.publish("models.checked", up=up, total=len(self.health))
         return self.health
 
+    async def ensure_backend(self, name: str) -> Health:
+        """Start one managed backend and wait for it, leaving the others alone.
+
+        `ensure_models` would start every one, and two capable models do not fit in
+        memory together. A review needs the reviewer, and nothing else.
+        """
+        backend = self.config.backend.get(name)
+        if backend is None:
+            return Health(name=name, url="", up=False, reason=f"no backend named {name!r}")
+        health = await self.supervisor.ensure(self.gateway.client, {name: backend})
+        self.health.update(health)
+        return health[name]
+
     async def ensure_models(self) -> dict[str, Health]:
         """Start any managed backend that does not answer, and wait for it."""
         self.publish("models.starting")

@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from auger.config import Policy
+from auger.config.schema import JobClass
 from auger.forge import PullRequest
 from auger.jobs import JobOutcome, audit, diff_review, pr_review, semgrep
 from auger.jobs.scan_job import run_scan
@@ -196,6 +197,34 @@ class Scheduler:
             finally:
                 self.queue.task_done()
 
+    def _backend_for(self, task: Task) -> str:
+        """The backend that has to answer for this task, or empty if none does.
+
+        A job never names a model, so this asks the same question the job will: the
+        profile decides, and the kind of work decides which entry of it.
+        """
+        wanted = JobClass.TRIAGE if task.kind == semgrep.KIND else JobClass.REVIEW
+        profile = self.rig.config.profile.get(task.policy.model_profile)
+        return profile.entry(wanted).backend if profile else ""
+
+    async def _model_ready(self, task: Task) -> str | None:
+        """Start the backend this task needs. The reason it cannot run, or None.
+
+        Without this the task runs against a server that is not there and is recorded
+        as a failed review. It is not a failed review. It is one that never happened.
+        """
+        if self.rig.verifying:
+            # The second model holds the memory while it judges. Starting the reviewer
+            # now would put two large models in the same machine.
+            return "model_busy"
+        name = self._backend_for(task)
+        if not name:
+            return None
+        # This probes, and starts the server when the rig owns it. A hand-run or
+        # hosted one it cannot start, and a task that would only fail waits instead.
+        health = await self.rig.ensure_backend(name)
+        return None if health.up else "model_down"
+
     async def _execute(self, task: Task) -> JobOutcome | None:
         rig = self.rig
         if task.kind == pr_review.KIND and task.pull is not None:
@@ -304,6 +333,29 @@ class Scheduler:
                 slug=task.repository.slug,
                 reason=state.reason,
                 detail=state.detail,
+            )
+            task.attempts += 1
+            self._queued.add(self.key(task))
+            self._defer(task, float(rig.config.schedule.retry_seconds))
+            return
+
+        blocked = await self._model_ready(task)
+        if blocked is not None:
+            self._queued.discard(self.key(task))
+            detail = f"{self._backend_for(task)} is not up"
+            await asyncio.to_thread(record_skip, rig.store, path, task.kind, blocked, detail)
+            self.log.warn(
+                "run held back",
+                reason=blocked,
+                repo=task.repository.slug,
+                backend=self._backend_for(task),
+            )
+            rig.publish(
+                "run.skipped",
+                repo=str(path),
+                slug=task.repository.slug,
+                reason=blocked,
+                detail=detail,
             )
             task.attempts += 1
             self._queued.add(self.key(task))

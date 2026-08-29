@@ -168,18 +168,18 @@ async def watch_audits(rig: RigLike, scheduler: Scheduler, log: Logger | None = 
 
 
 async def watch_models(rig: RigLike, scheduler: Scheduler, log: Logger | None = None) -> None:
-    """Bring a managed model back when it stops.
+    """Keep the window's picture of the model servers current.
 
-    A model server can be killed, run out of memory, or be stopped by hand. Without this
-    the rig keeps queueing reviews against a server that is gone, and every one of them
-    fails until somebody restarts the application.
+    It starts nothing. A run starts the backend it needs and waits for it, so a server
+    that is down costs the next run a minute, not a failure. Starting one here as well
+    would undo Unload within a poll and take the memory straight back.
     """
     log = (log or create_logger("schedule")).bind(component="watcher")
     while True:
         await asyncio.sleep(rig.config.schedule.model_poll_seconds)
         if getattr(rig, "verifying", False):
-            # The second model holds the memory. Starting the reviewer now would put
-            # two large models in the same machine, which is what the swap avoids.
+            # The sweep stops one model and starts the other. A probe in the middle of
+            # that reports a state that is already gone.
             continue
         try:
             health = await rig.check_models()
@@ -189,8 +189,7 @@ async def watch_models(rig: RigLike, scheduler: Scheduler, log: Logger | None = 
                 if not state.up and rig.config.backend[name].managed
             ]
             if down:
-                log.warn("managed models are down", reason="model_down", backends=down)
-                await rig.ensure_models()
+                log.info("managed models are down", reason="model_down", backends=down)
         except asyncio.CancelledError:
             raise
         except Exception as error:

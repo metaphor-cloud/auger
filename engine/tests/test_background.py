@@ -156,8 +156,14 @@ async def test_a_managed_server_that_died_is_not_reported_as_running(
     supervisor.stop_all()
 
 
-def test_the_model_watchdog_is_in_the_list() -> None:
-    """Without it a killed model server is never noticed and every review fails."""
+def test_the_model_watcher_reports_and_starts_nothing() -> None:
+    """A run starts the backend it needs. Starting one here as well would take back
+    the memory that Unload just gave up."""
+    import inspect
+
     from auger.schedule import watch_models
 
     assert watch_models in Rig.WATCHERS
+    body = inspect.getsource(watch_models)
+    assert "ensure_models" not in body
+    assert "check_models" in body

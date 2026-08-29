@@ -41,12 +41,19 @@ class StubRig:
         self.tools = McpRegistry(config)
         self.selection = select()
         self.events: list[tuple[str, dict[str, object]]] = []
+        #: Whether the model server answers. A test can put it down.
+        self.backend_up = True
+        self.ensured: list[str] = []
 
     async def check_models(self) -> dict[str, Health]:
         return {}
 
     async def ensure_models(self) -> dict[str, Health]:
         return {}
+
+    async def ensure_backend(self, name: str) -> Health:
+        self.ensured.append(name)
+        return Health(name=name, url="", up=self.backend_up)
 
     #: The sweep's two members, so the stub still satisfies what a scheduler needs.
     verifying = False
@@ -181,6 +188,58 @@ async def test_a_busy_repository_is_skipped_recorded_and_tried_again(
     runs = list_runs(rig.store)
     assert runs[0].status == "skipped"
     assert runs[0].reason == "git_operation"
+
+
+async def test_a_run_waits_for_a_model_that_is_not_up_instead_of_failing(
+    rig: StubRig, tmp_path: Path
+) -> None:
+    """A review against a stopped server is not a failed review. It is one that never
+    happened, and recording it as failed hides a whole day of lost work."""
+    repository = make_repository(tmp_path, "alpha")
+    rig.backend_up = False
+    rig.config.schedule.retry_seconds = 60
+    scheduler = Scheduler(rig)
+    await scheduler.start(workers=1)
+    scheduler.submit(Task.review(repository, Policy(idle_seconds=0)))
+    await drain(scheduler)
+    await asyncio.sleep(0.05)
+    assert scheduler.pending == 1  # It waits, it is not dropped.
+    await scheduler.stop()
+
+    assert rig.kinds("run.started") == []
+    runs = list_runs(rig.store)
+    assert runs[0].status == "skipped"
+    assert runs[0].reason == "model_down"
+
+
+async def test_a_run_starts_the_backend_it_needs_and_no_other(rig: StubRig, tmp_path: Path) -> None:
+    """Two capable models do not fit in memory together, so starting every backend to
+    run one review is how the machine runs out."""
+    repository = make_repository(tmp_path, "alpha")
+    scheduler = Scheduler(rig)
+    await scheduler.start(workers=1)
+    scheduler.submit(Task.review(repository, Policy(idle_seconds=0)))
+    await drain(scheduler)
+    await scheduler.stop()
+    wanted = rig.config.profile["balanced"].review.backend
+    assert rig.ensured == [wanted]
+
+
+async def test_nothing_reviews_while_the_second_model_is_judging(
+    rig: StubRig, tmp_path: Path
+) -> None:
+    repository = make_repository(tmp_path, "alpha")
+    rig.verifying = True
+    rig.config.schedule.retry_seconds = 60
+    scheduler = Scheduler(rig)
+    await scheduler.start(workers=1)
+    scheduler.submit(Task.review(repository, Policy(idle_seconds=0)))
+    await drain(scheduler)
+    await asyncio.sleep(0.05)
+    await scheduler.stop()
+    assert rig.kinds("run.started") == []
+    assert rig.ensured == []
+    assert list_runs(rig.store)[0].reason == "model_busy"
 
 
 async def test_a_repository_that_becomes_free_is_reviewed(rig: StubRig, tmp_path: Path) -> None:

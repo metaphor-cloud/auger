@@ -41,6 +41,9 @@ class StubRig:
     async def ensure_models(self) -> dict[str, Health]:
         return {}
 
+    async def ensure_backend(self, name: str) -> Health:
+        return Health(name=name, url="", up=True)
+
     #: The sweep's two members, so the stub still satisfies what a scheduler needs.
     verifying = False
 
