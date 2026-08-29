@@ -79,6 +79,36 @@ REVIEW_MODELS: tuple[Choice, ...] = (
     ),
 )
 
+#: Models that argue with the reviewer. A second opinion is only worth having when it
+#: comes from somewhere else, so these are chosen to be from other families than the
+#: reviewer above, not to be the strongest thing that fits.
+ADVERSARY_MODELS: tuple[Choice, ...] = (
+    Choice(
+        name="Qwen3-Coder-30B",
+        job_class=JobClass.VERIFY,
+        repo="Qwen/Qwen3-Coder-30B-A3B-Instruct-GGUF",
+        filename="Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
+        memory_gb=24.0,
+        description="Trained on code, from a different family than the reviewer. 18 GB.",
+    ),
+    Choice(
+        name="gemma-3-12b-qat",
+        job_class=JobClass.VERIFY,
+        repo="google/gemma-3-12b-it-qat-q4_0-gguf",
+        filename="gemma-3-12b-it-q4_0.gguf",
+        memory_gb=11.0,
+        description="Quantisation aware trained, so it holds up at four bits. 8 GB.",
+    ),
+    Choice(
+        name="Qwen3-8B",
+        job_class=JobClass.VERIFY,
+        repo="Qwen/Qwen3-8B-GGUF",
+        filename="Qwen3-8B-Q4_K_M.gguf",
+        memory_gb=8.0,
+        description="The small one. Fits beside a large reviewer. 5 GB.",
+    ),
+)
+
 #: Embedding models, most capable first. The rig picks the first one that fits, and the
 #: user can choose the other in the Models view.
 EMBED_MODELS: tuple[Choice, ...] = (
@@ -118,7 +148,12 @@ RERANK_MODEL = Choice(
 #: The small embedder, for a machine that cannot spare the memory for the code one.
 SMALL_EMBED_MODEL = EMBED_MODELS[-1]
 
-CATALOG: tuple[Choice, ...] = (*REVIEW_MODELS, *EMBED_MODELS, RERANK_MODEL)
+CATALOG: tuple[Choice, ...] = (
+    *REVIEW_MODELS,
+    *ADVERSARY_MODELS,
+    *EMBED_MODELS,
+    RERANK_MODEL,
+)
 
 
 def total_memory_bytes() -> int:

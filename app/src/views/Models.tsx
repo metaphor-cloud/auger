@@ -29,7 +29,7 @@ import {
 import type { BackendList, Catalog, ModelChoice, SetupProgress } from "../types";
 import { Fact, Facts, Mono, PageTitle, Section } from "../ui";
 
-const JOB_CLASSES = ["review", "triage", "embed", "rerank"];
+const JOB_CLASSES = ["review", "verify", "triage", "embed", "rerank"];
 
 function label(model: ModelChoice) {
   const notes = [`${model.memory_gb.toFixed(0)} GB`];
@@ -76,6 +76,7 @@ export default function Models({
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [review, setReview] = useState("");
   const [embed, setEmbed] = useState("");
+  const [adversary, setAdversary] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"" | "check" | "start" | "stop" | "setup">("");
 
@@ -130,7 +131,7 @@ export default function Models({
   async function fetchModels() {
     setBusy("setup");
     try {
-      const outcome = await setupModels(review, embed);
+      const outcome = await setupModels(review, embed, adversary);
       if (!outcome.ok) setError(outcome.error);
       await load(getModels);
       await loadCatalog();
@@ -143,7 +144,8 @@ export default function Models({
 
   const reviewers = catalog?.models.filter((one) => one.job_class === "review") ?? [];
   const embedders = catalog?.models.filter((one) => one.job_class === "embed") ?? [];
-  const chosen = [review, embed]
+  const adversaries = catalog?.models.filter((one) => one.job_class === "verify") ?? [];
+  const chosen = [review, embed, adversary]
     .map((name) => catalog?.models.find((one) => one.name === name))
     .filter((one): one is ModelChoice => Boolean(one));
   const toFetch = chosen.filter((one) => !one.downloaded);
@@ -208,6 +210,19 @@ export default function Models({
               placeholder="Pick an embedding model"
             />
           </div>
+          {adversaries.length > 0 && (
+            <div>
+              <p className="mb-1 text-xs text-text-secondary">
+                Second opinion, from another family
+              </p>
+              <Picker
+                value={adversary}
+                onChange={setAdversary}
+                models={adversaries}
+                placeholder="None. The reviewer judges its own work."
+              />
+            </div>
+          )}
           <p className="text-xs text-text-secondary">
             {chosen.map((one) => `${one.name} (${one.memory_gb.toFixed(0)} GB to run)`).join(", ") ||
               "Nothing chosen"}

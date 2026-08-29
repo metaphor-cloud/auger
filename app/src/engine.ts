@@ -83,11 +83,12 @@ export async function getCatalog(): Promise<Catalog> {
 export async function setupModels(
   model = "",
   embed = "",
+  adversary = "",
 ): Promise<{ ok: boolean; error: string | null }> {
   return request("/models/setup", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model, embed }),
+    body: JSON.stringify({ model, embed, adversary }),
   });
 }
 

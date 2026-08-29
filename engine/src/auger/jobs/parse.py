@@ -121,3 +121,50 @@ def parse_findings(text: str) -> tuple[list[RawFinding], list[str]]:
         except ValidationError as error:
             problems.append(f"finding {index} did not fit: {error.errors()[0]['msg']}")
     return findings, problems
+
+
+#: The answer, as a schema the decoder can be held to.
+#:
+#: `llama-server` turns this into a grammar, so a token that would break the shape is
+#: never sampled. Without it the model is asked for JSON in prose and trusted to
+#: comply, which is how a confidence of `0. nine` reaches the parser.
+FINDINGS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "findings": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "file": {"type": "string"},
+                    "line": {"type": ["integer", "null"]},
+                    "severity": {"type": "string", "enum": list(SEVERITY_ORDER)},
+                    "category": {"type": "string", "enum": list(CATEGORIES)},
+                    "title": {"type": "string"},
+                    "detail": {"type": "string"},
+                    "suggestion": {"type": "string"},
+                    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                },
+                "required": ["file", "severity", "title", "detail"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["findings"],
+    "additionalProperties": False,
+}
+
+
+REPAIR = """\
+Your last answer could not be read. Send the same findings again as one JSON object in \
+the shape you were given, and nothing else. Change no wording and drop nothing: only \
+the shape was wrong.
+"""
+
+
+def as_response_format(schema: dict[str, Any], name: str = "findings") -> dict[str, Any]:
+    """The schema, in the shape an OpenAI-compatible server expects."""
+    return {
+        "type": "json_schema",
+        "json_schema": {"name": name, "schema": schema, "strict": True},
+    }

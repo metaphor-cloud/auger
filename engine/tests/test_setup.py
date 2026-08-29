@@ -359,7 +359,7 @@ async def test_a_setup_that_cannot_reach_a_release_reports_the_reason(
     monkeypatch.setattr(runtime, "RELEASES", "http://127.0.0.1:1/releases")
     monkeypatch.setattr(download, "API_HOSTS", frozenset({"127.0.0.1"}))
     steps: list[setup.Step] = []
-    result = await setup.install(tmp_path, Config(), None, None, steps.append)
+    result = await setup.install(tmp_path, Config(), None, None, None, steps.append)
     assert result.ok is False
     assert result.error
     assert steps[-1].stage == "failed"

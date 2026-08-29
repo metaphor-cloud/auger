@@ -11,11 +11,13 @@ is why an audit costs a fraction of a review.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal, cast
 
 from auger.config import Policy
 from auger.config.schema import JobClass
+from auger.jobs.parse import as_response_format
 from auger.llm import Gateway, Message, ModelError
 from auger.log import Logger, create_logger
 from auger.store import Store
@@ -26,6 +28,47 @@ VERDICTS: frozenset[str] = frozenset({"true", "false", "uncertain"})
 
 #: How many findings go into one request. A large batch loses the model's attention.
 BATCH = 12
+
+#: The shape a verdict takes, held to by the decoder.
+VERDICT_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {
+        "verdicts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "verdict": {"type": "string", "enum": ["true", "false", "uncertain"]},
+                    "reason": {"type": "string"},
+                },
+                "required": ["id", "verdict"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["verdicts"],
+    "additionalProperties": False,
+}
+
+CLAIMS = """\
+You judge claims made about the structure of a repository. The claim was written from an
+outline: file names, symbol names, and sizes in lines. No code was read.
+
+For each claim, decide whether the evidence beneath it supports the claim.
+
+- "true": the evidence shows it.
+- "false": the evidence does not show it, or shows the opposite. Two symbols sharing a
+  name is not evidence of a duplicate: a class and its extension, a type and its
+  conformance, or a declaration and its implementation all look like that in an outline.
+- "uncertain": judging it would need the code, which nobody has here.
+
+Be hard on this. A claim that only an outline supports is usually a guess.
+
+Answer with one JSON object and nothing else:
+
+{"verdicts": [{"id": 1, "verdict": "false", "reason": "one short line"}]}
+"""
 
 SYSTEM = """\
 You judge the output of a static analysis tool. Each item is a rule that matched a line \
@@ -69,11 +112,33 @@ def item_text(index: int, finding: Finding) -> str:
     )
 
 
-def messages_for(findings: list[Finding]) -> list[Message]:
+def messages_for(findings: list[Finding], system: str = SYSTEM) -> list[Message]:
     body = "\n\n---\n\n".join(
         item_text(index, finding) for index, finding in enumerate(findings, start=1)
     )
-    return [Message(role="system", content=SYSTEM), Message(role="user", content=body)]
+    return [Message(role="system", content=system), Message(role="user", content=body)]
+
+
+def claim_text(index: int, finding: Finding, evidence: str) -> str:
+    """One claim, and the part of the outline it was drawn from."""
+    return "\n".join(
+        [
+            f"id: {index}",
+            f"about: {finding.file}",
+            f"claim: {finding.title}",
+            f"says: {finding.detail}",
+            "evidence from the outline:",
+            evidence.strip() or "(nothing in the outline mentions this path)",
+        ]
+    )
+
+
+def claim_messages(items: list[tuple[Finding, str]]) -> list[Message]:
+    body = "\n\n---\n\n".join(
+        claim_text(index, finding, evidence)
+        for index, (finding, evidence) in enumerate(items, start=1)
+    )
+    return [Message(role="system", content=CLAIMS), Message(role="user", content=body)]
 
 
 def parse_verdicts(text: str, count: int) -> tuple[dict[int, tuple[Verdict, str]], list[str]]:
@@ -106,6 +171,28 @@ def parse_verdicts(text: str, count: int) -> tuple[dict[int, tuple[Verdict, str]
     return verdicts, problems
 
 
+async def triage_claims(
+    store: Store,
+    gateway: Gateway,
+    items: list[tuple[Finding, str]],
+    policy: Policy,
+    log: Logger | None = None,
+) -> TriageOutcome:
+    """Judge claims about a repository's structure against the outline they came from.
+
+    An audit reads names and sizes, so it can say something that is ordinary in the
+    language it is looking at. This is the pass that catches that.
+    """
+    return await _judge(
+        store,
+        gateway,
+        [finding for finding, _ in items],
+        policy,
+        lambda batch: claim_messages([items[index] for index in batch]),
+        (log or create_logger("jobs")).bind(component="triage", kind="claims"),
+    )
+
+
 async def triage(
     store: Store,
     gateway: Gateway,
@@ -114,13 +201,35 @@ async def triage(
     log: Logger | None = None,
 ) -> TriageOutcome:
     """Judge every finding, in batches. Never raises."""
-    log = (log or create_logger("jobs")).bind(component="triage")
+    return await _judge(
+        store,
+        gateway,
+        findings,
+        policy,
+        lambda batch: messages_for([findings[index] for index in batch]),
+        (log or create_logger("jobs")).bind(component="triage"),
+    )
+
+
+async def _judge(
+    store: Store,
+    gateway: Gateway,
+    findings: list[Finding],
+    policy: Policy,
+    build: Callable[[list[int]], list[Message]],
+    log: Logger,
+) -> TriageOutcome:
+    """The loop both kinds of judgement share. Never raises."""
     outcome = TriageOutcome(problems=[])
     for start in range(0, len(findings), BATCH):
-        batch = findings[start : start + BATCH]
+        positions = list(range(start, min(start + BATCH, len(findings))))
+        batch = [findings[index] for index in positions]
         try:
             completion = await gateway.complete(
-                JobClass.TRIAGE, messages_for(batch), profile=policy.model_profile
+                JobClass.TRIAGE,
+                build(positions),
+                profile=policy.model_profile,
+                response_format=as_response_format(VERDICT_SCHEMA, "verdicts"),
             )
         except ModelError as error:
             # An untriaged finding still shows. Losing it would be worse than showing it.

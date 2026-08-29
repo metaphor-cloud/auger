@@ -17,7 +17,8 @@ from pathlib import Path
 from auger.config import Policy
 from auger.config.schema import JobClass
 from auger.context import reindex
-from auger.jobs.parse import parse_findings
+from auger.jobs.parse import FINDINGS_SCHEMA, as_response_format, parse_findings
+from auger.jobs.triage import triage_claims
 from auger.llm import Gateway, Message, ModelError
 from auger.log import Logger, create_logger
 from auger.models import Repository
@@ -32,26 +33,57 @@ OUTLINE_BUDGET = 40_000
 MAX_FILES = 400
 
 SYSTEM = """\
-You audit a whole repository. You are given its outline: every file, and the symbols each \
-file defines with their size in lines.
+You audit a whole repository. You are given its outline and nothing else: every file, \
+and the names of the symbols each file defines with their size in lines.
 
-Report only problems that a review of one change cannot see:
+You cannot see any code. You cannot see what calls what, what a symbol contains, or \
+whether two symbols with the same name are the same thing. Many languages declare one \
+type across several places: a class and its extension, a type and its conformance, a \
+declaration and its implementation. Two entries with one name is normal and is not a \
+finding.
 
-- two modules that do the same work;
-- a symbol that nothing appears to use;
-- a layer with no error handling where every other layer has it;
+Report only what an outline can show:
+
 - a file that carries far more than its name suggests;
-- a missing piece that the rest of the structure implies.
+- a layer whose files are laid out unlike every other layer of the same kind;
+- a missing piece that the rest of the structure clearly implies, such as a module with \
+no tests beside it where every sibling has them;
+- a directory whose contents contradict its name.
 
-Do not report style, naming, or a preference. Do not report a defect inside a function: \
-you cannot see the code. If the structure is sound, return an empty list.
+Do not report a duplicate, an unused symbol, or a defect inside a function. Judging any \
+of those needs the code, and you do not have it. Do not report style or naming. If the \
+structure is sound, return an empty list, which is the usual answer.
+
+Say plainly in `detail` what you are inferring from, so a reader can check it.
 
 Answer with one JSON object and nothing else:
 
 {"findings": [{"file": "path", "line": null, "severity": "medium", \
-"title": "one short line", "detail": "what is wrong and what it costs", \
+"category": "quality", "title": "one short line", \
+"detail": "what is wrong, and what in the outline shows it", \
 "suggestion": "the smallest change that fixes it", "confidence": 0.6}]}
+
+severity is one of: critical, high, medium, low, info.
+category is one of: security, correctness, performance, quality.
 """
+
+
+def evidence_for(shape: str, path: str, neighbours: int = 6) -> str:
+    """The outline rows a claim can be checked against: its own path, and its siblings.
+
+    A claim about one file is usually a claim about where it sits, so the rest of its
+    directory is the evidence that shows whether it is unusual.
+    """
+    wanted = path.strip()
+    directory = wanted.rsplit("/", 1)[0] if "/" in wanted else ""
+    lines = shape.splitlines()
+    mine = [line for line in lines if line.startswith(f"{wanted}:")]
+    beside = [
+        line
+        for line in lines
+        if line not in mine and line.startswith(f"{directory}/" if directory else "")
+    ][:neighbours]
+    return "\n".join(mine + beside)
 
 
 @dataclass(frozen=True)
@@ -134,7 +166,12 @@ async def audit(
         ),
     ]
     try:
-        completion = await gateway.complete(JobClass.REVIEW, messages, profile=policy.model_profile)
+        completion = await gateway.complete(
+            JobClass.REVIEW,
+            messages,
+            profile=policy.model_profile,
+            response_format=as_response_format(FINDINGS_SCHEMA),
+        )
     except ModelError as error:
         run.status = "failed"
         run.reason = "model_failed"
@@ -163,6 +200,17 @@ async def audit(
     ]
     record(store, findings)
     set_audited(store, repository.path)
+
+    # A claim drawn from an outline is a guess until something checks it. The same pass
+    # that judges the scan's findings judges these, against the outline they came from.
+    if findings:
+        await triage_claims(
+            store,
+            gateway,
+            [(finding, evidence_for(shape, finding.file)) for finding in findings],
+            policy,
+            log,
+        )
 
     run.status = "ok"
     run.finding_count = len(findings)

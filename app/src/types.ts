@@ -15,6 +15,8 @@ export type Policy = {
   tools: string[];
   max_tool_calls: number;
   audit_hours: number;
+  adversary: boolean;
+  alternate: boolean;
 };
 
 export type Repository = {
@@ -239,7 +241,7 @@ export type Settings = {
   roots: Root[];
   mcp: McpServerSetting[];
   forges: ForgeSetting[];
-  schedule: Record<string, number | string>;
+  schedule: Record<string, number | string | boolean>;
   allow_hosted: boolean;
 };
 

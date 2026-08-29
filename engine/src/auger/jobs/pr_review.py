@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from auger.config import Policy
 from auger.config.schema import JobClass
 from auger.forge import Comment, Entry, ForgeError, PostedReview, PullRequest, Repo
+from auger.jobs.diff_review import ANSWER_FORMAT
 from auger.jobs.parse import parse_findings
 from auger.jobs.prompt import review_messages
 from auger.jobs.tools import complete_with_tools
@@ -124,7 +125,7 @@ async def review_pull(
     )
     try:
         completion, _ = await complete_with_tools(
-            gateway, tools, JobClass.REVIEW, messages, policy, log
+            gateway, tools, JobClass.REVIEW, messages, policy, log, answer=ANSWER_FORMAT
         )
     except ModelError as error:
         return _stop(store, run, log, "model_failed", str(error), started, failed=True)

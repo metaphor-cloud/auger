@@ -22,6 +22,7 @@ from auger.log import Logger, create_logger
 from auger.net.download import DownloadError, Progress, client
 
 REVIEW_BACKEND = "local-review"
+VERIFY_BACKEND = "local-adversary"
 EMBED_BACKEND = "local-embed"
 RERANK_BACKEND = "local-rerank"
 
@@ -47,6 +48,7 @@ class SetupResult:
     review_model: str = ""
     embed_model: str = ""
     rerank_model: str = ""
+    adversary_model: str = ""
     error: str | None = None
 
     @property
@@ -68,6 +70,29 @@ def plan(memory_gb: float | None = None, models_dir: Path | None = None) -> list
         catalog.recommended_review_model(memory_gb, models_dir),
         catalog.recommended_embed_model(memory_gb, models_dir),
     ]
+
+
+def apply_to_verify(config: Config, adversary: Choice) -> Config:
+    """Point the verify class at a second server, so a second model can argue.
+
+    It gets a port of its own, because both models are up at once: one reviews while
+    the other judges, and swapping them between runs needs both loaded.
+    """
+    config.backend[VERIFY_BACKEND] = (
+        config.backend.get(VERIFY_BACKEND) or Backend(url="http://127.0.0.1:1340/v1")
+    ).model_copy(
+        update={
+            "managed": True,
+            "model": adversary.name,
+            "model_file": adversary.filename,
+            "model_url": adversary.url,
+            "max_concurrent": 2,
+        }
+    )
+    for profile in config.profile.values():
+        if not profile.verify.backend:
+            profile.verify = profile.verify.model_copy(update={"backend": VERIFY_BACKEND})
+    return config
 
 
 def apply_to_config(
@@ -115,6 +140,7 @@ async def install(
     config: Config,
     review_model: str | None = None,
     embed_model: str | None = None,
+    adversary_model: str | None = None,
     on_step: Callable[[Step], None] | None = None,
     log: Logger | None = None,
 ) -> SetupResult:
@@ -135,6 +161,7 @@ async def install(
     embed = (
         catalog.by_name(embed_model) if embed_model else catalog.recommended_embed_model(None, here)
     )
+    adversary = catalog.by_name(adversary_model) if adversary_model else None
 
     async with client() as http:
         try:
@@ -156,7 +183,10 @@ async def install(
             result.runtime_path = str(existing)
             report(Step("runtime", message=f"Runtime ready: {existing.name}"))
 
-            for choice in (review, embed):
+            wanted = [review, embed]
+            if adversary is not None:
+                wanted.append(adversary)
+            for choice in wanted:
                 report(Step("model", choice.name, message=f"Looking up {choice.name}"))
                 resolved = await catalog.resolve(http, choice, log)
 
@@ -187,6 +217,9 @@ async def install(
             return result
 
     apply_to_config(config, review, embed)
+    if adversary is not None:
+        apply_to_verify(config, adversary)
+        result.adversary_model = adversary.name
     result.review_model = review.name
     result.embed_model = embed.name
     report(Step("done", message=f"Ready: {review.name}"))

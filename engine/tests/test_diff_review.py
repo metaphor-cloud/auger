@@ -217,3 +217,30 @@ async def test_every_attempt_appears_in_the_run_log(
     await diff_review.review(store, gateway, repository, POLICY, target="WORKTREE")
     statuses = [run.status for run in list_runs(store)]
     assert sorted(statuses) == ["ok", "skipped"]
+
+
+async def test_the_answer_is_held_to_a_shape(
+    store: Store, gateway: Gateway, repository: Repository, fake: FakeModelServer
+) -> None:
+    """A confidence of `0. nine` reached the parser because nothing constrained it."""
+    await diff_review.review(store, gateway, repository, POLICY)
+    fmt = fake.requests[0].get("response_format")
+    assert fmt is not None
+    assert fmt["type"] == "json_schema"
+    items = fmt["json_schema"]["schema"]["properties"]["findings"]["items"]["properties"]
+    assert items["confidence"] == {"type": "number", "minimum": 0, "maximum": 1}
+    assert items["severity"]["enum"] == ["critical", "high", "medium", "low", "info"]
+
+
+async def test_an_unreadable_answer_gets_one_more_chance(
+    store: Store, gateway: Gateway, repository: Repository, fake: FakeModelServer
+) -> None:
+    """A lost review costs more than one more turn."""
+    fake.replies = ["I could not decide."]
+
+    outcome = await diff_review.review(store, gateway, repository, POLICY)
+
+    assert len(fake.requests) == 2
+    assert "could not be read" in fake.requests[1]["messages"][-1]["content"]
+    assert outcome.run.status == "ok"
+    assert outcome.findings

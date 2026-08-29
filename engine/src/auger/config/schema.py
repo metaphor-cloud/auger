@@ -83,6 +83,11 @@ class Policy(BaseModel):
     max_tool_calls: int = Field(default=8, ge=0, le=64)
     #: Run a whole repository audit this often. 0 turns audits off.
     audit_hours: int = Field(default=24, ge=0)
+    #: Have a second model judge what the first one found. It needs a `verify` backend.
+    adversary: bool = False
+    #: Swap the two models between runs, so neither one's blind spots decide alone.
+    #: With this off, the reviewer always reviews and the adversary always judges.
+    alternate: bool = True
 
 
 class Overrides(BaseModel):
@@ -102,6 +107,8 @@ class Overrides(BaseModel):
     tools: list[str] | None = None
     max_tool_calls: int | None = Field(default=None, ge=0, le=64)
     audit_hours: int | None = Field(default=None, ge=0)
+    adversary: bool | None = None
+    alternate: bool | None = None
 
 
 class JobClass(StrEnum):
@@ -113,6 +120,7 @@ class JobClass(StrEnum):
 
     TRIAGE = "triage"
     REVIEW = "review"
+    VERIFY = "verify"
     EMBED = "embed"
     RERANK = "rerank"
 
@@ -157,8 +165,12 @@ class Profile(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    triage: ProfileEntry = ProfileEntry(backend="local-review", max_tokens=2048)
-    review: ProfileEntry = ProfileEntry(backend="local-review", max_tokens=8192)
+    # Structured work decodes greedily. There is nothing creative about a severity.
+    triage: ProfileEntry = ProfileEntry(backend="local-review", max_tokens=2048, temperature=0.0)
+    review: ProfileEntry = ProfileEntry(backend="local-review", max_tokens=8192, temperature=0.0)
+    #: A second model that argues with the reviewer. Empty turns it off, which is the
+    #: default: it needs a second set of weights and a second server.
+    verify: ProfileEntry = ProfileEntry(backend="", max_tokens=2048, temperature=0.0)
     embed: ProfileEntry = ProfileEntry(backend="local-embed", max_tokens=512)
     rerank: ProfileEntry = ProfileEntry(backend="", max_tokens=512)
 
@@ -294,6 +306,11 @@ class Schedule(BaseModel):
     audit_poll_seconds: int = Field(default=900, ge=60)
     #: How often it checks that the managed models are still running.
     model_poll_seconds: int = Field(default=60, ge=10)
+    #: Work only while nobody is using the machine. A review holds two cores and tens
+    #: of gigabytes, which is a laptop's fans and its battery.
+    idle_only: bool = False
+    #: How long the machine has to be left alone before that counts as idle.
+    idle_after_seconds: int = Field(default=300, ge=10)
 
 
 class Egress(BaseModel):

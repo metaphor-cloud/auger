@@ -96,6 +96,8 @@ hints = "Treat a leaked credential as critical. Ignore style."
 | `tools` | `[]` | MCP tools this repository may use, as `server.tool` or `server.*`. |
 | `max_tool_calls` | `8` | How many tool calls one review may make. |
 | `audit_hours` | `24` | How often a whole repository audit runs. `0` turns audits off. |
+| `adversary` | `false` | Have a second model judge what the first one found. |
+| `alternate` | `true` | Swap the two models between runs, so neither decides alone. |
 
 ### instructions and hints
 
@@ -115,6 +117,26 @@ network call. Treat anything that writes a credential to a log as critical.
 [repo."~/git/acme/prototype"]
 instructions = "This is a prototype. Report only what would lose data."
 ```
+
+### A second model that argues
+
+`adversary` turns on a second reviewer. After a review, the other model reads the same
+change and each finding, and says whether the code shown supports it. A finding it
+rejects is marked dismissed rather than deleted: the disagreement is worth seeing, and
+the model doing the rejecting is not always right either.
+
+It needs somewhere to run. Point the profile's `verify` class at a second backend, and
+choose a model from a different family than the reviewer, because a second opinion is
+only worth having when it comes from somewhere else. The Models view offers Qwen3-Coder,
+Gemma 3 QAT, and Qwen3-8B for this.
+
+```toml
+[profile.balanced.verify]
+backend = "local-adversary"
+```
+
+With `alternate` on, the two trade places between runs, so neither one's blind spots
+decide on their own.
 
 ### The system prompt
 
@@ -205,6 +227,8 @@ quiet_hours = "22:00-07:00"
 | `retry_seconds` | `120` | How long to wait before retrying a busy repository. |
 | `quiet_hours` | `""` | `HH:MM-HH:MM` in local time. No audit starts inside it. |
 | `audit_poll_seconds` | `900` | How often it looks for a repository that is due an audit. |
+| `idle_only` | `false` | Work only while nobody is using the machine. |
+| `idle_after_seconds` | `300` | How long the machine has to be left alone to count as idle. |
 | `model_poll_seconds` | `60` | How often it checks that the managed models are still running, and starts one that stopped. |
 
 ## Forges

@@ -77,6 +77,7 @@ async def gateway(model: FakeModelServer, serve: Serve) -> AsyncIterator[Gateway
     base = await serve(model.app())
     config = Config(backend={"review": Backend(url=f"{base}/v1", model="m")})
     config.profile["balanced"].review = ProfileEntry(backend="review")
+    config.profile["balanced"].triage = ProfileEntry(backend="review")
     gateway = Gateway(config, Allowlist.from_values([base]))
     yield gateway
     await gateway.aclose()
@@ -133,8 +134,32 @@ async def test_the_model_is_asked_for_structure_and_not_for_line_defects(
 ) -> None:
     await audit(store, gateway, repository, Policy())
     system = model.requests[0]["messages"][0]["content"]
-    assert "you cannot see the code" in system
-    assert "duplicat" in system.lower() or "same work" in system
+    assert "You cannot see any code" in system
+    assert "or a defect inside a function" in system
+
+
+async def test_the_audit_is_told_that_one_name_in_two_places_is_normal(
+    store: Store, gateway: Gateway, repository: Repository, model: FakeModelServer
+) -> None:
+    """An outline cannot tell a class from its extension, and it reported that as a
+    duplicate. The prompt now says so, and duplicates are out of scope."""
+    await audit(store, gateway, repository, Policy())
+    system = model.requests[0]["messages"][0]["content"]
+    assert "Two entries with one name is normal" in system
+    assert "Do not report a duplicate" in system
+
+
+async def test_the_answer_is_held_to_a_shape(
+    store: Store, gateway: Gateway, repository: Repository, model: FakeModelServer
+) -> None:
+    """Free decoding is what produced a confidence of `0. nine`."""
+    await audit(store, gateway, repository, Policy())
+    fmt = model.requests[0].get("response_format")
+    assert fmt is not None
+    assert fmt["type"] == "json_schema"
+    assert (
+        "severity" in fmt["json_schema"]["schema"]["properties"]["findings"]["items"]["properties"]
+    )
 
 
 async def test_the_repository_hints_reach_the_audit(
@@ -227,3 +252,36 @@ def test_a_window_inside_one_day_works() -> None:
 def test_an_unusable_window_means_no_quiet_hours(value: str) -> None:
     assert parse_window(value) is None
     assert is_quiet(value, datetime(2026, 1, 1, 23, 30)) is False
+
+
+async def test_a_claim_is_checked_against_the_outline_it_came_from(
+    store: Store, gateway: Gateway, repository: Repository, model: FakeModelServer
+) -> None:
+    """An outline cannot show a duplicate, so a claim of one is judged before it stands."""
+    from auger.store.findings import list_findings as read
+
+    model.reply = ANSWER
+    await audit(store, gateway, repository, Policy())
+
+    # The audit asks once, then the claim pass asks again with the evidence beneath it.
+    assert len(model.requests) == 2
+    judged = model.requests[1]["messages"][1]["content"]
+    assert "claim: writer.py duplicates reader.py" in judged
+    assert "evidence from the outline:" in judged
+    assert read(store)[0].source == "audit"
+
+
+def test_the_evidence_is_the_path_and_what_sits_beside_it() -> None:
+    from auger.jobs.audit import evidence_for
+
+    shape = "\n".join(
+        [
+            "api/client.py: Client (40), send (12)",
+            "api/models.py: User (20)",
+            "web/page.py: render (8)",
+        ]
+    )
+    evidence = evidence_for(shape, "api/client.py")
+    assert "api/client.py: Client (40)" in evidence
+    assert "api/models.py" in evidence
+    assert "web/page.py" not in evidence

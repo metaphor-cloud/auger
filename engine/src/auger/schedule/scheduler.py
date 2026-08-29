@@ -23,7 +23,7 @@ from auger.log import Logger, create_logger
 from auger.models import Repository
 from auger.schedule.protocol import RigLike
 from auger.store.runs import record_skip
-from auger.watch import busy
+from auger.watch import busy, idle
 
 _sequence = itertools.count()
 
@@ -256,6 +256,33 @@ class Scheduler:
             # Another worker holds this repository. Come back to it.
             self._defer(task, 5.0)
             return
+
+        schedule = rig.config.schedule
+        if schedule.idle_only:
+            machine = await asyncio.to_thread(idle.current)
+            if not machine.free_for(schedule.idle_after_seconds):
+                # Put it back rather than dropping it. The machine will be free later,
+                # and a review nobody sees is still a review that has to happen.
+                self._queued.discard(self.key(task))
+                await asyncio.to_thread(
+                    record_skip,
+                    rig.store,
+                    path,
+                    task.kind,
+                    "machine_in_use",
+                    f"idle for {machine.seconds:.0f}s of {schedule.idle_after_seconds}s",
+                )
+                rig.publish(
+                    "run.skipped",
+                    repo=str(path),
+                    slug=task.repository.slug,
+                    reason="machine_in_use",
+                    detail=f"{machine.seconds:.0f}s idle",
+                )
+                task.attempts += 1
+                self._queued.add(self.key(task))
+                self._defer(task, float(schedule.retry_seconds))
+                return
 
         state = await asyncio.to_thread(
             busy.check, path, task.policy.idle_seconds, busy.AGENT_NAMES, self.log

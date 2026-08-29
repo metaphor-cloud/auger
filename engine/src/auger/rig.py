@@ -277,7 +277,10 @@ class Rig:
         return views
 
     async def setup_models(
-        self, review_model: str | None = None, embed_model: str | None = None
+        self,
+        review_model: str | None = None,
+        embed_model: str | None = None,
+        adversary_model: str | None = None,
     ) -> object:
         """Fetch a runtime and weights, write the config, and start the servers.
 
@@ -304,6 +307,7 @@ class Rig:
                 self.config,
                 review_model,
                 embed_model,
+                adversary_model,
                 report,
                 self.log,
             )

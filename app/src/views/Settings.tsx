@@ -49,6 +49,8 @@ const SCHEDULE_LABEL: Record<string, string> = {
   audit_poll_seconds: "Look for a due audit every",
   model_poll_seconds: "Check the models every",
   quiet_hours: "No audit during",
+  idle_only: "Work only when the machine is free",
+  idle_after_seconds: "Count as free after",
 };
 
 /** A config key holds dots of its own, so it goes into the path quoted. */
@@ -254,6 +256,20 @@ export default function SettingsView({
                   value={settings.defaults.audit_hours}
                   suffix="hours, 0 turns it off"
                   onSave={(audit_hours) => void change("defaults", "", { audit_hours })}
+                />
+              </Fact>
+              <Fact label="Let a second model argue">
+                <SwitchSetting
+                  checked={settings.defaults.adversary}
+                  note="The other model judges what the first one found. Needs a verify backend in Models."
+                  onSave={(adversary) => void change("defaults", "", { adversary })}
+                />
+              </Fact>
+              <Fact label="Trade the two models between runs">
+                <SwitchSetting
+                  checked={settings.defaults.alternate}
+                  note="So neither one's blind spots decide on their own."
+                  onSave={(alternate) => void change("defaults", "", { alternate })}
                 />
               </Fact>
               <Fact label="Tool calls one review may make">
@@ -779,7 +795,17 @@ export default function SettingsView({
             <Facts>
               {Object.entries(settings.schedule).map(([name, value]) => (
                 <Fact key={name} label={SCHEDULE_LABEL[name] ?? name}>
-                  {typeof value === "number" ? (
+                  {typeof value === "boolean" ? (
+                    <SwitchSetting
+                      checked={value}
+                      note={
+                        name === "idle_only"
+                          ? "A review holds two cores and tens of gigabytes, which on a laptop is the fans."
+                          : undefined
+                      }
+                      onSave={(next) => void save(`schedule.${name}`, next)}
+                    />
+                  ) : typeof value === "number" ? (
                     <NumberSetting
                       value={value}
                       suffix={name.endsWith("_seconds") ? "seconds" : ""}

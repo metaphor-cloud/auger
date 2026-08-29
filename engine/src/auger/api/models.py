@@ -437,6 +437,8 @@ class SetupRequest(BaseModel):
     model: str = ""
     #: Empty means the embedding model the rig recommends.
     embed: str = ""
+    #: A second model that argues with the reviewer. Empty fetches none.
+    adversary: str = ""
 
 
 class SetupOut(BaseModel):

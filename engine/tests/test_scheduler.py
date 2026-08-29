@@ -8,6 +8,7 @@ import os
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -238,3 +239,65 @@ async def test_a_crash_in_one_task_does_not_stop_the_worker(rig: StubRig, tmp_pa
     await drain(scheduler)
     await scheduler.stop()
     assert [data["slug"] for data in rig.kinds("run.finished")][-1] == "github.com/acme/good"
+
+
+async def test_work_waits_while_somebody_is_using_the_machine(
+    rig: StubRig, tmp_path: Path, monkeypatch: Any
+) -> None:
+    """A review holds two cores and tens of gigabytes. On a laptop that is the fans."""
+    from auger.watch import idle
+
+    repository = make_repository(tmp_path, "alpha")
+    rig.config.schedule.idle_only = True
+    rig.config.schedule.idle_after_seconds = 300
+    rig.config.schedule.retry_seconds = 300
+    monkeypatch.setattr(idle, "current", lambda: idle.Idle(seconds=12))
+
+    scheduler = Scheduler(rig)
+    await scheduler.start(workers=1)
+    scheduler.submit(Task.review(repository, Policy()))
+    await drain(scheduler)
+    await asyncio.sleep(0.05)
+    assert scheduler.pending == 1  # It waits, it is not dropped.
+    await scheduler.stop()
+
+    skipped = rig.kinds("run.skipped")
+    assert skipped[0]["reason"] == "machine_in_use"
+    assert list_runs(rig.store)[0].reason == "machine_in_use"
+    assert rig.kinds("run.started") == []
+
+
+async def test_work_runs_once_the_machine_is_left_alone(
+    rig: StubRig, tmp_path: Path, monkeypatch: Any
+) -> None:
+    from auger.watch import idle
+
+    repository = make_repository(tmp_path, "alpha")
+    rig.config.schedule.idle_only = True
+    rig.config.schedule.idle_after_seconds = 300
+    monkeypatch.setattr(idle, "current", lambda: idle.Idle(seconds=900))
+
+    scheduler = Scheduler(rig)
+    await scheduler.start(workers=1)
+    scheduler.submit(Task.review(repository, Policy()))
+    await drain(scheduler)
+    await scheduler.stop()
+
+    assert [event for event, _ in rig.events][:1] == ["run.started"]
+
+
+async def test_the_gate_is_off_unless_it_is_turned_on(
+    rig: StubRig, tmp_path: Path, monkeypatch: Any
+) -> None:
+    from auger.watch import idle
+
+    repository = make_repository(tmp_path, "alpha")
+    monkeypatch.setattr(idle, "current", lambda: idle.Idle(seconds=0))
+
+    scheduler = Scheduler(rig)
+    await scheduler.start(workers=1)
+    scheduler.submit(Task.review(repository, Policy()))
+    await drain(scheduler)
+    await scheduler.stop()
+
+    assert [event for event, _ in rig.events][:1] == ["run.started"]

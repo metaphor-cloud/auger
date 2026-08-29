@@ -127,6 +127,9 @@ class Gateway:
         self.transcript = Transcript()
         #: What the current job is about, for the transcript to label a turn with.
         self.subject = ""
+        #: Job classes whose backends are swapped for this run. The reviewer and the
+        #: adversary trade places, so neither one's blind spots decide on their own.
+        self.swapped: frozenset[JobClass] = frozenset()
 
     @property
     def client(self) -> httpx.AsyncClient:
@@ -234,6 +237,15 @@ class Gateway:
         )
         raise ModelError(f"{resolved.name} did not answer: {last}") from last
 
+    def swap(self, on: bool) -> None:
+        """Trade the review and verify backends for the next calls, or stop."""
+        self.swapped = frozenset({JobClass.REVIEW, JobClass.VERIFY}) if on else frozenset()
+
+    def _routed(self, job_class: JobClass) -> JobClass:
+        if job_class not in self.swapped:
+            return job_class
+        return JobClass.VERIFY if job_class is JobClass.REVIEW else JobClass.REVIEW
+
     async def complete(
         self,
         job_class: JobClass,
@@ -242,7 +254,7 @@ class Gateway:
         response_format: dict[str, Any] | None = None,
         tools: list[dict[str, Any]] | None = None,
     ) -> Completion:
-        resolved = self.resolve(job_class, profile)
+        resolved = self.resolve(self._routed(job_class), profile)
         payload: dict[str, Any] = {
             "model": resolved.backend.model,
             "messages": [message.as_dict() for message in messages],

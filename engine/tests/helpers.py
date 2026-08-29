@@ -41,6 +41,9 @@ class FakeModelServer:
         self.delay_seconds = 0.0
         #: What the assistant answers. None gives the default echo.
         self.reply: str | None = None
+        #: Answers to give in order, before `reply` takes over again. For a test that
+        #: needs a bad answer followed by a good one.
+        self.replies: list[str] = []
         #: Length of the vector returned per input. 0 turns embedding off.
         self.dimension = 8
         #: Tool calls the assistant asks for, until `tool_call_rounds` runs out.
@@ -61,7 +64,10 @@ class FakeModelServer:
             body = await self._record(request)
             if (early := self._failure()) is not None:
                 return early
-            content = self.reply if self.reply is not None else f"answer:{body['model']}"
+            if self.replies:
+                content = self.replies.pop(0)
+            else:
+                content = self.reply if self.reply is not None else f"answer:{body['model']}"
             message: dict[str, Any] = {"role": "assistant", "content": content}
             if self.tool_calls and self.tool_call_rounds > 0:
                 self.tool_call_rounds -= 1
