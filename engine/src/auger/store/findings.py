@@ -289,27 +289,40 @@ def close_missing(
     seen: Iterable[str],
     reason: str = "no longer found",
     timestamp: str | None = None,
+    files: Iterable[str] | None = None,
 ) -> int:
-    """Close what a pass over a whole repository no longer reports.
+    """Close what a pass no longer reports, over everything it looked at.
 
-    Only a job that reads the whole repository may call this. A scan and an audit both
-    do, so anything they found before and do not find now is either fixed or came from
-    a rule or an outline that has since changed. A diff review sees one change, and
-    what a change does not mention is not thereby gone, so it never calls this.
+    Only a job that looked may call this, and only for what it looked at. A scan reads
+    the whole repository, so it passes no `files` and settles all of them. An audit reads
+    a handful, so it names them: closing a finding in a file this run never opened would
+    record "nobody found it" when the truth is nobody looked. A diff review sees one
+    change, and what a change does not mention is not thereby gone, so it never calls
+    this at all.
 
     Closed, not deleted. The row keeps its history, and the window can still show what
     was once true of this code.
     """
     keep = list(seen)
-    clause = f"AND fingerprint NOT IN ({','.join('?' * len(keep))})" if keep else ""
+    clauses = ""
+    parameters: list[object] = [timestamp or now(), reason, str(repo_path), source]
+    if keep:
+        clauses += f" AND fingerprint NOT IN ({','.join('?' * len(keep))})"
+        parameters.extend(keep)
+    if files is not None:
+        looked = list(files)
+        if not looked:
+            return 0
+        clauses += f" AND file IN ({','.join('?' * len(looked))})"
+        parameters.extend(looked)
     with store.write() as connection:
         cursor = connection.execute(
             f"""
             UPDATE findings SET status = 'resolved', last_seen_at = ?,
                 detail = detail || char(10) || char(10) || 'Closed: ' || ?
-            WHERE repo_path = ? AND source = ? AND status IN ('open', 'doing') {clause}
+            WHERE repo_path = ? AND source = ? AND status IN ('open', 'doing') {clauses}
             """,
-            (timestamp or now(), reason, str(repo_path), source, *keep),
+            parameters,
         )
     return int(cursor.rowcount)
 

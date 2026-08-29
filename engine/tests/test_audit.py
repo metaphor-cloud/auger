@@ -1,4 +1,4 @@
-"""An audit reads the shape of a repository, not its code."""
+"""An audit uses the outline to choose files, then reads the code in them."""
 
 from __future__ import annotations
 
@@ -26,19 +26,27 @@ from tests.helpers import FakeModelServer, git_commit, git_init
 
 Serve = Callable[[object], Awaitable[str]]
 
+CHOICE = json.dumps({"files": [{"path": "writer.py", "why": "it writes a path"}]})
+
 ANSWER = json.dumps(
     {
         "findings": [
             {
                 "file": "writer.py",
+                "line": 2,
                 "severity": "medium",
-                "title": "writer.py duplicates reader.py",
-                "detail": "Both hold the same read path.",
+                "title": "write returns its argument and writes nothing",
+                "detail": "The body returns `path` without opening it.",
                 "confidence": 0.6,
             }
         ]
     }
 )
+
+
+def answers(fake: FakeModelServer, *replies: str) -> None:
+    """What the fake says, in order: the choice first, then the review."""
+    fake.replies = list(replies) or [CHOICE, ANSWER]
 
 
 @pytest.fixture
@@ -68,7 +76,7 @@ def repository(tmp_path: Path) -> Repository:
 @pytest.fixture
 def model() -> FakeModelServer:
     fake = FakeModelServer()
-    fake.reply = ANSWER
+    answers(fake)
     return fake
 
 
@@ -119,7 +127,7 @@ async def test_an_audit_stores_what_it_found(
     outcome = await audit(store, gateway, repository, Policy())
     assert outcome.run.status == "ok"
     assert [finding.source for finding in list_findings(store)] == ["audit"]
-    assert list_findings(store)[0].title.startswith("writer.py duplicates")
+    assert list_findings(store)[0].title.startswith("write returns its argument")
 
 
 async def test_an_audit_records_when_it_ran(
@@ -129,24 +137,25 @@ async def test_an_audit_records_when_it_ran(
     assert last_audit(store, repository.path) is not None
 
 
-async def test_the_model_is_asked_for_structure_and_not_for_line_defects(
+async def test_the_choosing_pass_is_not_asked_for_defects(
     store: Store, gateway: Gateway, repository: Repository, model: FakeModelServer
 ) -> None:
+    """It has seen no code. Everything it said about one was a guess, and the guesses
+    were reported as findings for months."""
     await audit(store, gateway, repository, Policy())
     system = model.requests[0]["messages"][0]["content"]
-    assert "You cannot see any code" in system
-    assert "or a defect inside a function" in system
+    assert "choosing which files to read" in system
+    assert "you have not seen any code, so do not describe one" in system
 
 
-async def test_the_audit_is_told_that_one_name_in_two_places_is_normal(
+async def test_the_reviewing_pass_must_point_at_a_line(
     store: Store, gateway: Gateway, repository: Repository, model: FakeModelServer
 ) -> None:
-    """An outline cannot tell a class from its extension, and it reported that as a
-    duplicate. The prompt now says so, and duplicates are out of scope."""
+    """A finding with no line is one nobody can check against the code."""
     await audit(store, gateway, repository, Policy())
-    system = model.requests[0]["messages"][0]["content"]
-    assert "Two entries with one name is normal" in system
-    assert "Do not report a duplicate" in system
+    system = model.requests[1]["messages"][0]["content"]
+    assert "point at the line that has it" in system
+    assert "Do not report style" in system
 
 
 async def test_the_answer_is_held_to_a_shape(
@@ -154,7 +163,7 @@ async def test_the_answer_is_held_to_a_shape(
 ) -> None:
     """Free decoding is what produced a confidence of `0. nine`."""
     await audit(store, gateway, repository, Policy())
-    fmt = model.requests[0].get("response_format")
+    fmt = model.requests[1].get("response_format")
     assert fmt is not None
     assert fmt["type"] == "json_schema"
     assert (
@@ -254,37 +263,106 @@ def test_an_unusable_window_means_no_quiet_hours(value: str) -> None:
     assert is_quiet(value, datetime(2026, 1, 1, 23, 30)) is False
 
 
-async def test_a_claim_is_checked_against_the_outline_it_came_from(
+async def test_the_first_pass_chooses_and_the_second_pass_reads_the_code(
     store: Store, gateway: Gateway, repository: Repository, model: FakeModelServer
 ) -> None:
-    """An outline cannot show a duplicate, so a claim of one is judged before it stands."""
-    from auger.store.findings import list_findings as read
+    """The outline says which files are worth reading. It never says what is wrong with
+    them: a claim drawn from file names is a guess about code nobody read."""
+    outcome = await audit(store, gateway, repository, Policy())
 
-    model.reply = ANSWER
-    await audit(store, gateway, repository, Policy())
-
-    # The audit asks once, then the claim pass asks again with the evidence beneath it.
     assert len(model.requests) == 2
-    judged = model.requests[1]["messages"][1]["content"]
-    assert "claim: writer.py duplicates reader.py" in judged
-    assert "evidence from the outline:" in judged
-    assert read(store)[0].source == "audit"
+    choosing = model.requests[0]["messages"][1]["content"]
+    reviewing = model.requests[1]["messages"][1]["content"]
+
+    assert "writer.py: write" in choosing, "the first pass gets the outline"
+    assert "def write" not in choosing, "and no code"
+
+    assert "=== writer.py ===" in reviewing, "the second pass gets the source"
+    assert "def write(path):" in reviewing
+    assert "    1 " in reviewing, "with line numbers, so a finding can point at one"
+    assert outcome.read == ("writer.py",)
 
 
-def test_the_evidence_is_the_path_and_what_sits_beside_it() -> None:
-    from auger.jobs.audit import evidence_for
-
-    shape = "\n".join(
-        [
-            "api/client.py: Client (40), send (12)",
-            "api/models.py: User (20)",
-            "web/page.py: render (8)",
-        ]
+async def test_a_finding_about_a_file_nobody_read_is_dropped(
+    store: Store, gateway: Gateway, repository: Repository, model: FakeModelServer
+) -> None:
+    """The model was shown one file. A finding about another is about nothing."""
+    answers(
+        model,
+        CHOICE,
+        json.dumps(
+            {
+                "findings": [
+                    {
+                        "file": "reader.py",
+                        "line": 1,
+                        "title": "not the file we sent",
+                        "detail": "x",
+                        "severity": "high",
+                        "confidence": 0.9,
+                    },
+                    {
+                        "file": "writer.py",
+                        "line": 2,
+                        "title": "this one was read",
+                        "detail": "y",
+                        "severity": "low",
+                        "confidence": 0.5,
+                    },
+                ]
+            }
+        ),
     )
-    evidence = evidence_for(shape, "api/client.py")
-    assert "api/client.py: Client (40)" in evidence
-    assert "api/models.py" in evidence
-    assert "web/page.py" not in evidence
+    outcome = await audit(store, gateway, repository, Policy())
+    assert [one.file for one in outcome.findings] == ["writer.py"]
+
+
+async def test_a_file_the_model_invented_is_not_read(
+    store: Store, gateway: Gateway, repository: Repository, model: FakeModelServer
+) -> None:
+    """Asked to name a file, a model will sometimes name one it inferred."""
+    answers(
+        model,
+        json.dumps({"files": [{"path": "does/not/exist.py"}, {"path": "writer.py"}]}),
+        ANSWER,
+    )
+    outcome = await audit(store, gateway, repository, Policy())
+    assert outcome.read == ("writer.py",)
+
+
+async def test_an_audit_that_chooses_nothing_is_a_skip_not_a_failure(
+    store: Store, gateway: Gateway, repository: Repository, model: FakeModelServer
+) -> None:
+    answers(model, json.dumps({"files": []}), ANSWER)
+    outcome = await audit(store, gateway, repository, Policy())
+    assert outcome.run.status == "skipped"
+    assert outcome.run.reason == "nothing_chosen"
+
+
+async def test_a_finding_in_a_file_this_run_never_opened_stays_open(
+    store: Store, gateway: Gateway, repository: Repository, model: FakeModelServer
+) -> None:
+    """An audit reads a handful of files, so it settles a handful. Closing a finding
+    because nobody looked at it would record it as fixed."""
+    from auger.store.findings import Finding, list_findings, record
+
+    record(
+        store,
+        [
+            Finding(
+                repo_path=str(repository.path),
+                source="audit",
+                severity="high",
+                title="something in the other file",
+                detail="found by an earlier audit",
+                file="reader.py",
+                line=1,
+            )
+        ],
+    )
+    await audit(store, gateway, repository, Policy())
+    still = {one.file: one.status for one in list_findings(store, repository.path)}
+    assert still["reader.py"] == "open"
 
 
 async def test_one_long_symbol_is_one_entry_not_several(

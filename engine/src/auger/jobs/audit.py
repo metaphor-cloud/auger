@@ -1,11 +1,15 @@
 """Look at a whole repository, not at a change.
 
-A diff review reads what moved. It cannot see a module that duplicates another, an error
-path that no layer handles, or a symbol that nothing calls any more. An audit reads the
-shape of the repository instead: every file, every symbol, and how big each one is.
+A diff review reads what moved. It never reaches a file nobody has touched, so a defect
+that has sat there since the file was written is never seen. An audit goes looking.
 
-The outline is sent, not the code. A repository of a thousand files fits in one prompt as
-an outline and does not fit at all as source.
+A repository does not fit in one prompt, so the audit runs in two passes. The first is
+given the outline, which is every file with the symbols it defines and their sizes, and
+it answers one question: which files are worth reading? The second pass reads those
+files and reviews the code in them, the same way a diff review reviews a change.
+
+The outline chooses. It never decides. A claim drawn from file names alone is a guess
+about code nobody read, and this used to report those guesses as findings.
 """
 
 from __future__ import annotations
@@ -17,8 +21,12 @@ from pathlib import Path
 from auger.config import Policy
 from auger.config.schema import JobClass
 from auger.context import reindex
-from auger.jobs.parse import FINDINGS_SCHEMA, as_response_format, parse_findings
-from auger.jobs.triage import triage_claims
+from auger.jobs.parse import (
+    FINDINGS_SCHEMA,
+    as_response_format,
+    extract_object,
+    parse_findings,
+)
 from auger.llm import Gateway, Message, ModelError
 from auger.log import Logger, create_logger
 from auger.models import Repository
@@ -32,58 +40,59 @@ OUTLINE_BUDGET = 40_000
 #: Files listed, largest first. A repository has a long tail of small files.
 MAX_FILES = 400
 
-SYSTEM = """\
-You audit a whole repository. You are given its outline and nothing else: every file, \
-and the names of the symbols each file defines with their size in lines.
+#: How many files one audit reads. The point is to cover a repository over many audits,
+#: not to read all of it in one, which no context holds and no machine has time for.
+READ_FILES = 6
+#: How much source goes into one request. A file longer than this is sent truncated,
+#: with a line saying so, because half a file reviewed beats a file skipped.
+FILE_BUDGET = 24_000
 
-You cannot see any code. You cannot see what calls what, what a symbol contains, or \
-whether two symbols with the same name are the same thing. Many languages declare one \
-type across several places: a class and its extension, a type and its conformance, a \
-declaration and its implementation. Two entries with one name is normal and is not a \
-finding.
+CHOOSE = """\
+You are choosing which files to read.
 
-Report only what an outline can show:
+You are given the outline of a repository: every file, and the names of the symbols each \
+file defines with their size in lines. The outline may be cut short, so say nothing \
+about what is absent from it.
 
-- a file that carries far more than its name suggests;
-- a layer whose files are laid out unlike every other layer of the same kind;
-- a missing piece that the rest of the structure clearly implies, such as a module with \
-no tests beside it where every sibling has them;
-- a directory whose contents contradict its name.
+Pick the files most likely to hold a real defect, and say in one line why each one. \
+Prefer:
 
-Do not report a duplicate, an unused symbol, or a defect inside a function. Judging any \
-of those needs the code, and you do not have it. Do not report style or naming. If the \
-structure is sound, return an empty list, which is the usual answer.
+- code that handles untrusted input, authentication, tokens, paths or shell commands;
+- concurrency, locking, retries, and anything that touches money or time;
+- a very large function, where a defect has room to hide;
+- a file whose name promises something its symbols do not deliver.
 
-Say plainly in `detail` what you are inferring from, so a reader can check it.
+Pick nothing on the strength of a name alone if the outline shows something better. You \
+are not reporting defects here and you have not seen any code, so do not describe one.
 
 Answer with one JSON object and nothing else:
 
-{"findings": [{"file": "path", "line": null, "severity": "medium", \
+{"files": [{"path": "path/from/the/outline.py", "why": "one short line"}]}
+"""
+
+SYSTEM = """\
+You review whole files for defects. You are given the source of each file, with line \
+numbers, and nothing is hidden from you.
+
+Report a defect only where you can point at the line that has it. For each one, say what \
+goes wrong, when it goes wrong, and what the consequence is. A reader has to be able to \
+check you against the code in front of them.
+
+Do not report style, naming, formatting, or a preference. Do not report a defect you \
+cannot see in the lines you were given: if a function calls something you were not \
+shown, you do not know that it is wrong. If the code is sound, return an empty list, \
+which is a normal answer.
+
+Answer with one JSON object and nothing else:
+
+{"findings": [{"file": "path", "line": 42, "severity": "medium", \
 "category": "quality", "title": "one short line", \
-"detail": "what is wrong, and what in the outline shows it", \
+"detail": "what goes wrong, when, and what it costs", \
 "suggestion": "the smallest change that fixes it", "confidence": 0.6}]}
 
 severity is one of: critical, high, medium, low, info.
 category is one of: security, correctness, performance, quality.
 """
-
-
-def evidence_for(shape: str, path: str, neighbours: int = 6) -> str:
-    """The outline rows a claim can be checked against: its own path, and its siblings.
-
-    A claim about one file is usually a claim about where it sits, so the rest of its
-    directory is the evidence that shows whether it is unusual.
-    """
-    wanted = path.strip()
-    directory = wanted.rsplit("/", 1)[0] if "/" in wanted else ""
-    lines = shape.splitlines()
-    mine = [line for line in lines if line.startswith(f"{wanted}:")]
-    beside = [
-        line
-        for line in lines
-        if line not in mine and line.startswith(f"{directory}/" if directory else "")
-    ][:neighbours]
-    return "\n".join(mine + beside)
 
 
 @dataclass(frozen=True)
@@ -92,6 +101,26 @@ class AuditOutcome:
     findings: list[Finding]
     outline_bytes: int = 0
     problems: list[str] | None = None
+    #: The files the first pass chose and the second pass actually read.
+    read: tuple[str, ...] = ()
+
+
+CHOICE_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {
+        "files": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}, "why": {"type": "string"}},
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["files"],
+    "additionalProperties": False,
+}
 
 
 def outline(store: Store, repository: Path, budget: int = OUTLINE_BUDGET) -> str:
@@ -144,6 +173,72 @@ def outline(store: Store, repository: Path, budget: int = OUTLINE_BUDGET) -> str
     return "\n".join(parts)
 
 
+def numbered(source: str, budget: int = FILE_BUDGET) -> str:
+    """The file with a line number against every line.
+
+    A finding has to point at a line, and a model counting newlines itself gets it
+    wrong. Long files are cut rather than dropped, and the cut says so.
+    """
+    lines = source.splitlines()
+    out: list[str] = []
+    used = 0
+    for index, line in enumerate(lines, start=1):
+        row = f"{index:5} {line}"
+        if used + len(row) > budget:
+            out.append(f"... cut here. {len(lines) - index + 1} more lines in this file.")
+            break
+        out.append(row)
+        used += len(row) + 1
+    return "\n".join(out)
+
+
+def wanted_files(text: str, known: set[str], limit: int = READ_FILES) -> list[str]:
+    """The paths the first pass asked for, keeping only ones that exist.
+
+    A model asked to name a file will sometimes name one it inferred rather than one it
+    read. Reviewing a file that is not there would report on nothing.
+    """
+    body = extract_object(text)
+    entries = body.get("files") if isinstance(body, dict) else None
+    if not isinstance(entries, list):
+        return []
+    chosen: list[str] = []
+    for entry in entries:
+        path = str(entry.get("path", "")).strip() if isinstance(entry, dict) else ""
+        if path in known and path not in chosen:
+            chosen.append(path)
+        if len(chosen) >= limit:
+            break
+    return chosen
+
+
+def read_files(repository: Path, paths: list[str]) -> tuple[str, list[str]]:
+    """The source of each file, numbered, and which ones could be read."""
+    blocks: list[str] = []
+    read: list[str] = []
+    for path in paths:
+        try:
+            source = (repository / path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if not source.strip():
+            continue
+        blocks.append(f"=== {path} ===\n{numbered(source)}")
+        read.append(path)
+    return "\n\n".join(blocks), read
+
+
+def _failed(
+    store: Store, run: Run, log: Logger, reason: str, error: str, started: float
+) -> AuditOutcome:
+    run.status = "failed"
+    run.reason = reason
+    run.error = error
+    run.duration_ms = int((time.monotonic() - started) * 1000)
+    log.error("audit failed", reason=reason, error=error)
+    return AuditOutcome(finish(store, run), [])
+
+
 async def audit(
     store: Store,
     gateway: Gateway,
@@ -169,6 +264,45 @@ async def audit(
     hints = (
         f"\n\nThe repository owner wrote: {policy.hints.strip()}" if policy.hints.strip() else ""
     )
+
+    # --- pass one: which files are worth reading -------------------------------------
+    try:
+        choice = await gateway.complete(
+            JobClass.TRIAGE,
+            [
+                Message(role="system", content=CHOOSE),
+                Message(
+                    role="user",
+                    content=f"Repository: {repository.slug}{hints}\n\nOutline:\n{shape}",
+                ),
+            ],
+            profile=policy.model_profile,
+            response_format=as_response_format(CHOICE_SCHEMA),
+        )
+    except ModelError as error:
+        return _failed(store, run, log, "model_failed", str(error), started)
+
+    known = {
+        str(row["path"])
+        for row in store.query(
+            "SELECT DISTINCT path FROM chunks WHERE repo_path = ?", (str(repository.path),)
+        )
+    }
+    chosen = wanted_files(choice.text, known)
+    if not chosen:
+        run.status = "skipped"
+        run.reason = "nothing_chosen"
+        run.prompt_tokens = choice.prompt_tokens
+        run.completion_tokens = choice.completion_tokens
+        run.duration_ms = int((time.monotonic() - started) * 1000)
+        log.info("audit skipped", reason="nothing_chosen", outline_bytes=len(shape))
+        return AuditOutcome(finish(store, run), [], len(shape))
+
+    source, read = read_files(repository.path, chosen)
+    if not source:
+        return _failed(store, run, log, "unreadable", f"could not read {chosen}", started)
+
+    # --- pass two: review the code in them --------------------------------------------
     system = SYSTEM
     if policy.instructions.strip():
         system += (
@@ -179,7 +313,7 @@ async def audit(
         Message(role="system", content=system),
         Message(
             role="user",
-            content=f"Repository: {repository.slug}{hints}\n\nOutline:\n{shape}",
+            content=f"Repository: {repository.slug}{hints}\n\n{source}",
         ),
     ]
     try:
@@ -190,12 +324,7 @@ async def audit(
             response_format=as_response_format(FINDINGS_SCHEMA),
         )
     except ModelError as error:
-        run.status = "failed"
-        run.reason = "model_failed"
-        run.error = str(error)
-        run.duration_ms = int((time.monotonic() - started) * 1000)
-        log.error("audit failed", reason="model_failed", error=error)
-        return AuditOutcome(finish(store, run), [])
+        return _failed(store, run, log, "model_failed", str(error), started)
 
     raw, problems = parse_findings(completion.text)
     findings = [
@@ -210,44 +339,41 @@ async def audit(
             file=item.file.strip(),
             line=item.line,
             confidence=item.confidence,
-            snippet=f"audit:{item.file.strip()}",
+            snippet=f"audit:{item.file.strip()}:{item.line}",
             run_id=run.id,
         )
         for item in raw
+        # A finding about a file nobody read is a finding about nothing.
+        if item.file.strip() in read
     ]
     record(store, findings)
-    # An audit reads the whole outline, so the same rule applies as for a scan: what it
-    # no longer reports is no longer a finding. This is what clears the duplicates the
-    # split-symbol bug produced, without anybody reading 386 of them by hand.
+    # Only the files this audit read are settled by it. Closing a finding in a file
+    # this run never opened would clear it because nobody looked, which is not the same
+    # as nobody finding it.
     closed = close_missing(
         store,
         repository.path,
         "audit",
         [finding.fingerprint for finding in findings],
         "the audit no longer reports it",
+        files=read,
     )
     if closed:
         log.info("findings closed", count=closed, reason="not_reported")
     set_audited(store, repository.path)
 
-    # A claim drawn from an outline is a guess until something checks it. The same pass
-    # that judges the scan's findings judges these, against the outline they came from.
-    if findings:
-        await triage_claims(
-            store,
-            gateway,
-            [(finding, evidence_for(shape, finding.file)) for finding in findings],
-            policy,
-            log,
-        )
-
     run.status = "ok"
     run.finding_count = len(findings)
-    run.prompt_tokens = completion.prompt_tokens
-    run.completion_tokens = completion.completion_tokens
+    run.prompt_tokens = choice.prompt_tokens + completion.prompt_tokens
+    run.completion_tokens = choice.completion_tokens + completion.completion_tokens
     run.backend = completion.backend
     run.duration_ms = int((time.monotonic() - started) * 1000)
     if problems:
         run.error = "; ".join(problems[:3])
-    log.info("audit finished", findings=len(findings), outline_bytes=len(shape))
-    return AuditOutcome(finish(store, run), findings, len(shape), problems)
+    log.info(
+        "audit finished",
+        findings=len(findings),
+        files_read=len(read),
+        outline_bytes=len(shape),
+    )
+    return AuditOutcome(finish(store, run), findings, len(shape), problems, tuple(read))
