@@ -8,6 +8,7 @@ from auger.schedule.watcher import (
     watch_audits,
     watch_forges,
     watch_models,
+    watch_verify,
 )
 
 __all__ = [
@@ -21,4 +22,5 @@ __all__ = [
     "watch_audits",
     "watch_forges",
     "watch_models",
+    "watch_verify",
 ]

@@ -94,8 +94,10 @@ ADVERSARY_MODELS: tuple[Choice, ...] = (
     Choice(
         name="gemma-3-12b-qat",
         job_class=JobClass.VERIFY,
-        repo="google/gemma-3-12b-it-qat-q4_0-gguf",
-        filename="gemma-3-12b-it-q4_0.gguf",
+        # Google's own repository is gated behind a licence acceptance, and the rig
+        # carries no Hugging Face token, so it fetches the same weights from a mirror.
+        repo="lmstudio-community/gemma-3-12B-it-qat-GGUF",
+        filename="gemma-3-12B-it-QAT-Q4_0.gguf",
         memory_gb=11.0,
         description="Quantisation aware trained, so it holds up at four bits. 8 GB.",
     ),

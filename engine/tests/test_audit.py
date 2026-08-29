@@ -285,3 +285,51 @@ def test_the_evidence_is_the_path_and_what_sits_beside_it() -> None:
     assert "api/client.py: Client (40)" in evidence
     assert "api/models.py" in evidence
     assert "web/page.py" not in evidence
+
+
+async def test_one_long_symbol_is_one_entry_not_several(
+    store: Store, repository: Repository
+) -> None:
+    """A symbol too long for a chunk is stored in parts. Listed separately the parts
+    look like several symbols of one name, and an audit calls that a duplicate. It is
+    the single largest source of false findings this rig has produced."""
+    from auger.context.chunker import Chunk
+    from auger.store.index import replace_file
+
+    replace_file(
+        store,
+        repository.path,
+        "long.ts",
+        "sha",
+        [
+            Chunk(
+                path="long.ts",
+                symbol="handleEmail",
+                kind="function",
+                start_line=64,
+                end_line=189,
+                text="x",
+            ),
+            Chunk(
+                path="long.ts",
+                symbol="handleEmail part 1",
+                kind="function",
+                start_line=53,
+                end_line=212,
+                text="x",
+            ),
+            Chunk(
+                path="long.ts",
+                symbol="handleEmail part 2",
+                kind="function",
+                start_line=205,
+                end_line=284,
+                text="x",
+            ),
+        ],
+    )
+    shape = outline(store, repository.path)
+    line = next(one for one in shape.splitlines() if one.startswith("long.ts:"))
+    assert line.count("handleEmail") == 1, line
+    # The whole span, 53 to 284, not one chunk's 160.
+    assert "handleEmail (232)" in line

@@ -48,6 +48,12 @@ class StubRig:
     async def ensure_models(self) -> dict[str, Health]:
         return {}
 
+    #: The sweep's two members, so the stub still satisfies what a scheduler needs.
+    verifying = False
+
+    async def verify_findings(self, limit: int = 200) -> object:
+        return None
+
     def publish(self, event: str, **data: object) -> None:
         self.events.append((event, data))
 

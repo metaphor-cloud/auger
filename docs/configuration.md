@@ -227,6 +227,7 @@ quiet_hours = "22:00-07:00"
 | `retry_seconds` | `120` | How long to wait before retrying a busy repository. |
 | `quiet_hours` | `""` | `HH:MM-HH:MM` in local time. No audit starts inside it. |
 | `audit_poll_seconds` | `900` | How often it looks for a repository that is due an audit. |
+| `verify_poll_seconds` | `600` | How often the second model is offered the findings nothing has judged. |
 | `idle_only` | `false` | Work only while nobody is using the machine. |
 | `idle_after_seconds` | `300` | How long the machine has to be left alone to count as idle. |
 | `model_poll_seconds` | `60` | How often it checks that the managed models are still running, and starts one that stopped. |

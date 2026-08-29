@@ -26,6 +26,7 @@ from auger.config.schema import JobClass
 from auger.discovery import scan
 from auger.events import Event, EventBus
 from auger.forge import Registry
+from auger.jobs.adversary import Argument, argue
 from auger.llm import Gateway, Health, Supervisor, probe_all
 from auger.log import Logger, create_logger
 from auger.mcp import Access as McpAccess
@@ -40,9 +41,11 @@ from auger.schedule import (
     watch_audits,
     watch_forges,
     watch_models,
+    watch_verify,
 )
 from auger.settings import Settings
 from auger.store import Store
+from auger.store.findings import unjudged
 from auger.store.repositories import list_repositories, record_scan
 from auger.store.runs import close_interrupted
 
@@ -73,6 +76,9 @@ class Rig:
         self.gateway = Gateway(self.config, self.allowlist, self.log)
         self.health: dict[str, Health] = {}
         self.setup_running = False
+        #: True while the second model holds the memory. The watchdog leaves the
+        #: reviewer alone until it is done, or the two fight over the same gigabytes.
+        self.verifying = False
         self.forges = Registry(self.config, self.gateway.client, self.log)
         self.tools = McpRegistry(self.config, self.log, McpAccess(self.allowlist, settings.home))
         self.scheduler = Scheduler(self, self.log)
@@ -80,7 +86,7 @@ class Rig:
 
     #: Every background loop the rig runs. A watcher missing from here never runs, and
     #: nothing else would say so.
-    WATCHERS = (watch, watch_forges, watch_audits, watch_models)
+    WATCHERS = (watch, watch_forges, watch_audits, watch_models, watch_verify)
 
     async def start_background(self) -> None:
         """Start the workers and every watcher, stopped.
@@ -313,6 +319,9 @@ class Rig:
             )
         finally:
             self.setup_running = False
+        #: True while the second model holds the memory. The watchdog leaves the
+        #: reviewer alone until it is done, or the two fight over the same gigabytes.
+        self.verifying = False
         if result.ok:
             save(self.config_path, self.config)
             self._refresh_allowlist()
@@ -358,6 +367,50 @@ class Rig:
         if health.up:
             return True, None
         return False, health.reason or f"{name} does not answer at {health.url}"
+
+    async def verify_findings(self, limit: int = 200) -> Argument:
+        """Swap models, judge every finding that has no verdict, and swap back.
+
+        Two capable models do not fit in memory together, so the reviewer is stopped
+        before the second model starts. Nothing reviews while this runs, which is the
+        point: a rig that works all day can afford to think about what it found.
+        """
+        policy = self.config.defaults
+        entry = self.config.profile.get(policy.model_profile)
+        verify = entry.entry(JobClass.VERIFY).backend if entry else ""
+        if not policy.adversary or not verify or verify not in self.config.backend:
+            return Argument()
+
+        waiting = await asyncio.to_thread(unjudged, self.store, limit)
+        if not waiting:
+            return Argument()
+
+        review = entry.entry(JobClass.REVIEW).backend if entry else ""
+        self.verifying = True
+        self.publish("verify.started", pending=len(waiting), backend=verify)
+        try:
+            # The reviewer goes first, or the second model has nowhere to load.
+            if review and review != verify:
+                await asyncio.to_thread(self.stop_models, review)
+            self.health = await self.supervisor.ensure(
+                self.gateway.client, {verify: self.config.backend[verify]}
+            )
+            if not self.health.get(verify, Health(name=verify, url="", up=False)).up:
+                self.log.warn("verify model did not start", reason="no_model", backend=verify)
+                return Argument()
+            outcome = await argue(self.store, self.gateway, waiting, policy, self.log)
+        finally:
+            # Give the memory back either way. The reviewer starts again when a review
+            # needs it, which is what `ensure_models` is for.
+            await asyncio.to_thread(self.stop_models, verify)
+            self.verifying = False
+        self.publish(
+            "verify.finished",
+            judged=outcome.judged,
+            rejected=outcome.rejected,
+            kept=outcome.kept,
+        )
+        return outcome
 
     def stop_models(self, name: str | None = None) -> None:
         """Stop one managed model server, or every one of them."""

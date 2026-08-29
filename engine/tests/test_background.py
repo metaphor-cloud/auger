@@ -9,14 +9,14 @@ import pytest
 
 from auger.llm import Health
 from auger.rig import Rig
-from auger.schedule import watch, watch_audits, watch_forges, watch_models
+from auger.schedule import watch, watch_audits, watch_forges, watch_models, watch_verify
 from auger.settings import Settings
 from tests.helpers import git_commit, git_init
 
 
 def test_every_watcher_is_in_the_list() -> None:
     """The list is what `start_background` iterates. Adding one here is the only step."""
-    assert set(Rig.WATCHERS) == {watch, watch_forges, watch_audits, watch_models}
+    assert set(Rig.WATCHERS) == {watch, watch_forges, watch_audits, watch_models, watch_verify}
 
 
 @pytest.fixture

@@ -306,6 +306,9 @@ class Schedule(BaseModel):
     audit_poll_seconds: int = Field(default=900, ge=60)
     #: How often it checks that the managed models are still running.
     model_poll_seconds: int = Field(default=60, ge=10)
+    #: How often the second model is offered the findings nothing has judged. The
+    #: swap costs minutes, so this is slow and it waits for a quiet queue.
+    verify_poll_seconds: int = Field(default=600, ge=60)
     #: Work only while nobody is using the machine. A review holds two cores and tens
     #: of gigabytes, which is a laptop's fans and its battery.
     idle_only: bool = False

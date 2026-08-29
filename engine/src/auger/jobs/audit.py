@@ -103,16 +103,33 @@ def outline(store: Store, repository: Path, budget: int = OUTLINE_BUDGET) -> str
         """,
         (str(repository),),
     )
-    by_file: dict[str, list[str]] = {}
+    # A long symbol is stored as several chunks: the symbol, then `name part 1`,
+    # `name part 2`, and so on. Listed separately they look like several symbols of one
+    # name, and an audit reads that as a duplicate definition. It is not: it is one
+    # symbol that did not fit in a chunk. Collapse the parts and measure the whole span.
+    spans: dict[tuple[str, str], tuple[int, int]] = {}
+    order: dict[str, list[str]] = {}
     for row in rows:
         symbol = str(row["symbol"]).split(" part ")[0]
         if not symbol:
             continue
-        lines = int(row["end_line"]) - int(row["start_line"]) + 1
-        entries = by_file.setdefault(str(row["path"]), [])
-        entry = f"{symbol} ({lines})"
-        if entry not in entries:
-            entries.append(entry)
+        path = str(row["path"])
+        key = (path, symbol)
+        start, end = int(row["start_line"]), int(row["end_line"])
+        if key in spans:
+            was = spans[key]
+            spans[key] = (min(was[0], start), max(was[1], end))
+        else:
+            spans[key] = (start, end)
+            order.setdefault(path, []).append(symbol)
+
+    by_file: dict[str, list[str]] = {
+        path: [
+            f"{symbol} ({spans[(path, symbol)][1] - spans[(path, symbol)][0] + 1})"
+            for symbol in symbols
+        ]
+        for path, symbols in order.items()
+    }
 
     ordered = sorted(by_file.items(), key=lambda item: -len(item[1]))[:MAX_FILES]
     parts: list[str] = []

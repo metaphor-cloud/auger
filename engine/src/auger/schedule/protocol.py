@@ -6,7 +6,7 @@ few members it uses, which keeps the dependency one way and keeps the types hone
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol
 
 from auger.config import Config
 from auger.forge import Registry
@@ -28,6 +28,10 @@ class RigLike(Protocol):
     def publish(self, event: str, **data: object) -> None: ...
 
     def repositories(self) -> list[RepositoryView]: ...
+
+    verifying: bool
+
+    async def verify_findings(self, limit: int = 200) -> Any: ...
 
     async def check_models(self) -> dict[str, Health]: ...
 

@@ -282,6 +282,27 @@ def get_finding(store: Store, fingerprint: str) -> Finding | None:
     return _to_finding(rows[0]) if rows else None
 
 
+def unjudged(store: Store, limit: int = 200) -> list[Finding]:
+    """Findings that nothing has checked, worst first.
+
+    A verdict is what the second model writes, so an empty one means it has not seen
+    this finding yet. Suppressed and resolved findings are left alone: nobody is
+    waiting on a judgement about work that is already closed.
+    """
+    rows = store.query(
+        """
+        SELECT * FROM findings
+        WHERE triage IS NULL AND status IN ('open', 'doing')
+        ORDER BY CASE severity
+            WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2
+            WHEN 'low' THEN 3 ELSE 4 END, last_seen_at DESC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+    return [_to_finding(row) for row in rows]
+
+
 def set_status(store: Store, fingerprints: Sequence[str], status: Status) -> int:
     if not fingerprints:
         return 0

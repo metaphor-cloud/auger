@@ -16,7 +16,6 @@ from auger.config import Policy
 from auger.config.schema import CodeGraph as CodeGraphConfig
 from auger.config.schema import JobClass
 from auger.context import ReviewContext, context_for_diff, reindex
-from auger.jobs.adversary import Argument, argue
 from auger.jobs.parse import (
     FINDINGS_SCHEMA,
     REPAIR,
@@ -100,14 +99,6 @@ def to_finding(raw: RawFinding, repository: Repository, diff_text: str, run_id: 
     )
 
 
-def _turn(store: Store, repository: Path) -> bool:
-    """Whether this run is the swapped one. Alternates per repository."""
-    from auger.store.runs import list_runs
-
-    done = [one for one in list_runs(store, repository, limit=1) if one.kind == KIND]
-    return len(done) % 2 == 1
-
-
 def collect_diff(repository: Path, base: str | None, target: str) -> tuple[str, str, str]:
     """Return the patch, the subject line, and the branch."""
     state = git.state(repository)
@@ -137,10 +128,6 @@ async def review(
     head = target if target != "WORKTREE" else "WORKTREE"
     run = start(store, repository.path, KIND, base, head)
     log = log.bind(run=run.id)
-    # With two models in play they trade places between runs, so the one that reviews
-    # is not always the one whose blind spots survive.
-    swapped = policy.adversary and policy.alternate and _turn(store, repository.path)
-    gateway.swap(swapped)
 
     try:
         diff_text, subject, branch = collect_diff(repository.path, base, target)
@@ -217,24 +204,8 @@ async def review(
     if target != "WORKTREE":
         set_reviewed_head(store, repository.path, git.head(repository.path))
 
-    # A second model, from another family, judges what this one found. It marks a
-    # finding it rejects rather than deleting it: the disagreement is worth seeing, and
-    # the model doing the rejecting is not always right either.
-    argument = Argument()
-    if policy.adversary and findings:
-        gateway.swap(False)
-        argument = await argue(store, gateway, diff_text, findings, policy, log)
-
     run.status = "ok"
     run.finding_count = len(findings)
-    if argument.judged:
-        run.error = None
-        log.info(
-            "argument recorded",
-            judged=argument.judged,
-            rejected=argument.rejected,
-            by=argument.backend,
-        )
     run.prompt_tokens = completion.prompt_tokens
     run.completion_tokens = completion.completion_tokens
     run.backend = completion.backend

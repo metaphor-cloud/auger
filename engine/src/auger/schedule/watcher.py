@@ -177,6 +177,10 @@ async def watch_models(rig: RigLike, scheduler: Scheduler, log: Logger | None = 
     log = (log or create_logger("schedule")).bind(component="watcher")
     while True:
         await asyncio.sleep(rig.config.schedule.model_poll_seconds)
+        if getattr(rig, "verifying", False):
+            # The second model holds the memory. Starting the reviewer now would put
+            # two large models in the same machine, which is what the swap avoids.
+            continue
         try:
             health = await rig.check_models()
             down = [
@@ -191,3 +195,30 @@ async def watch_models(rig: RigLike, scheduler: Scheduler, log: Logger | None = 
             raise
         except Exception as error:
             log.error("model cycle failed", reason="watcher_error", error=error)
+
+
+async def watch_verify(rig: RigLike, scheduler: Scheduler, log: Logger | None = None) -> None:
+    """Have the second model judge what the first one found.
+
+    It waits for the queue to go quiet. Swapping models costs minutes, so doing it
+    while reviews are still arriving would spend the whole day loading weights.
+    """
+    log = (log or create_logger("schedule")).bind(component="watcher")
+    while True:
+        await asyncio.sleep(rig.config.schedule.verify_poll_seconds)
+        if not rig.config.defaults.adversary:
+            continue
+        if scheduler.pending or scheduler.in_flight:
+            continue
+        try:
+            outcome = await rig.verify_findings()
+        except Exception as error:
+            log.error("verify sweep failed", reason="verify_failed", error=error)
+            continue
+        if outcome.judged:
+            log.info(
+                "verify sweep finished",
+                judged=outcome.judged,
+                rejected=outcome.rejected,
+                kept=outcome.kept,
+            )
