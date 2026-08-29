@@ -38,6 +38,7 @@ import {
   setFindingStatus,
 } from "../engine";
 import { CATEGORY, SEVERITY_RANK, STATES, categoryOf, severityOf } from "../palette";
+import { matches } from "../parts/matches";
 import Timeline from "../parts/Timeline";
 import type { Finding, Note, Repository, Run } from "../types";
 import { Mono } from "../ui";
@@ -293,19 +294,10 @@ export default function Work({
     void load();
   }, [load, version]);
 
-  const shown = useMemo(() => {
-    const wanted = search.trim().toLowerCase();
-    return findings.filter(
-      (one) =>
-        categories.has(one.category) &&
-        states.has(one.status) &&
-        (dismissed || one.triage !== "false") &&
-        (wanted === "" ||
-          one.title.toLowerCase().includes(wanted) ||
-          one.detail.toLowerCase().includes(wanted) ||
-          one.file.toLowerCase().includes(wanted)),
-    );
-  }, [findings, categories, states, dismissed, search]);
+  const shown = useMemo(
+    () => findings.filter((one) => matches(one, { categories, states, dismissed, search })),
+    [findings, categories, states, dismissed, search],
+  );
 
   /** Grouped by repository, worst first, and inside a group the same rule again. */
   const groups = useMemo(() => {
@@ -404,7 +396,7 @@ export default function Work({
 
       <header className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
         <span className="text-xs text-text-secondary">
-          {shown.length} open in {groups.length} repositories
+          {shown.length} shown in {groups.length} repositories
           {unread > 0 ? ` · ${unread} new` : ""}
           {quiet > 0 ? ` · ${quiet} clear` : ""}
         </span>
@@ -464,7 +456,7 @@ export default function Work({
           <p className="px-4 py-8 text-center text-xs text-text-tertiary">
             {repositories.length === 0
               ? "No repository yet. Add a root in Settings."
-              : "Nothing open under these filters."}
+              : "Nothing under these filters."}
           </p>
         )}
         {groups.map((group) => (
