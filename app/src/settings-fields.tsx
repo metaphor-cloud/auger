@@ -32,33 +32,34 @@ export function TextSetting({
 
 export function NumberSetting({
   value,
-  suffix,
+  title,
   onSave,
 }: {
   value: number;
-  suffix?: string;
+  /** The unit, on hover. It never renders beside the field: a unit of its own width
+   *  per row would leave no two inputs in a column lining up. Say it in the help
+   *  sentence instead. */
+  title?: string;
   onSave: (next: number) => void;
 }) {
   const [draft, setDraft] = useState(String(value));
   useEffect(() => setDraft(String(value)), [value]);
   return (
-    <span className="flex items-center gap-2">
-      <Input
-        type="number"
-        className="w-24"
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={() => {
-          const next = Number(draft);
-          if (Number.isFinite(next) && next !== value) onSave(next);
-          else setDraft(String(value));
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") event.currentTarget.blur();
-        }}
-      />
-      {suffix && <span className="text-xs text-text-secondary">{suffix}</span>}
-    </span>
+    <Input
+      type="number"
+      title={title}
+      className="w-24"
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        const next = Number(draft);
+        if (Number.isFinite(next) && next !== value) onSave(next);
+        else setDraft(String(value));
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+      }}
+    />
   );
 }
 

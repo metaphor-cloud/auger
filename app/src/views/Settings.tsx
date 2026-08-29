@@ -55,12 +55,12 @@ const TRANSPORTS = ["stdio", "http"] as const;
 /** Every polling interval, named. A key with no entry here used to reach the screen
  *  as raw snake case, which is how `verify_poll_seconds` ended up on show. */
 const POLLS = [
-  { key: "poll_seconds", label: "Check for new commits", help: "How often each repository is asked whether anything changed." },
-  { key: "forge_poll_seconds", label: "Check pull requests", help: "How often the connected forges are asked for work assigned to you." },
-  { key: "audit_poll_seconds", label: "Check for due audits", help: "How often Auger looks for a repository whose full audit is due." },
-  { key: "model_poll_seconds", label: "Check model servers", help: "How often the model servers are asked whether they are still answering." },
-  { key: "verify_poll_seconds", label: "Check for findings to judge", help: "How often the second model looks for findings nobody has checked yet." },
-  { key: "retry_seconds", label: "Retry a busy repository", help: "How long to wait before trying a repository that was busy or had no model." },
+  { key: "poll_seconds", label: "Check for new commits", help: "Seconds between asking each repository whether anything changed." },
+  { key: "forge_poll_seconds", label: "Check pull requests", help: "Seconds between asking the connected forges for work assigned to you." },
+  { key: "audit_poll_seconds", label: "Check for due audits", help: "Seconds between looking for a repository whose full audit is due." },
+  { key: "model_poll_seconds", label: "Check model servers", help: "Seconds between asking the model servers whether they still answer." },
+  { key: "verify_poll_seconds", label: "Check for findings to judge", help: "Seconds between looking for findings nobody has checked yet." },
+  { key: "retry_seconds", label: "Retry a busy repository", help: "Seconds to wait before trying a repository that was busy or had no model." },
 ] as const;
 
 /** A config key holds dots of its own, so it goes into the path quoted. */
@@ -248,12 +248,12 @@ export default function SettingsView({
           >
             <Row
               label="Response limit"
-              help="The longest answer the model may write. 0 lets it finish; a small number cuts the findings off mid-answer."
+              help="The longest answer the model may write, in tokens. 0 lets it finish; a small number cuts the findings off mid-answer."
               keywords="max_tokens"
             >
               <NumberSetting
                 value={Number(settings.profile_limits?.review_max_tokens ?? 0)}
-                suffix="tokens"
+                title="tokens"
                 onSave={(next) =>
                   void save(
                     `profile.${quoted(settings.defaults.model_profile)}.review.max_tokens`,
@@ -353,23 +353,23 @@ export default function SettingsView({
             </Row>
             <Row
               label="Full repository audit"
-              help="How often to read a whole repository rather than a single change. Set 0 to never."
+              help="How many hours between reading a whole repository rather than a single change. 0 never does."
               keywords="audit_hours"
             >
               <NumberSetting
                 value={settings.defaults.audit_hours}
-                suffix="hours"
+                title="hours"
                 onSave={(audit_hours) => void change("defaults", "", { audit_hours })}
               />
             </Row>
             <Row
               label="Wait after the last edit"
-              help="How long a repository must sit still before it is reviewed, so you are not reviewed mid-keystroke."
+              help="Seconds a repository must sit still before it is reviewed, so you are not reviewed mid-keystroke."
               keywords="idle_seconds"
             >
               <NumberSetting
                 value={settings.defaults.idle_seconds}
-                suffix="seconds"
+                title="seconds"
                 onSave={(idle_seconds) => void change("defaults", "", { idle_seconds })}
               />
             </Row>
@@ -566,11 +566,16 @@ export default function SettingsView({
                       }}
                     />
                   </div>
-                  <div className="mt-2 flex items-center gap-2">
-                    <span className="w-28 shrink-0 text-xs text-text-secondary">Depth</span>
+                  <div className="mt-2 flex items-start justify-between gap-6">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs text-text-primary">Depth</p>
+                      <p className="mt-0.5 text-[11px] leading-snug text-text-secondary">
+                        How many folders below this one to walk. 0 walks all the way down.
+                      </p>
+                    </div>
                     <NumberSetting
                       value={one.max_depth ?? 0}
-                      suffix="levels below the root, 0 means no limit"
+                      title="levels below the root"
                       onSave={(depth) => {
                         const next = [...settings.roots];
                         next[index] = { ...one, max_depth: depth > 0 ? depth : null };
@@ -775,7 +780,7 @@ export default function SettingsView({
                         <TableCell>
                           <NumberSetting
                             value={Number(entry.timeout_seconds ?? 30)}
-                            suffix="s"
+                            title="seconds"
                             onSave={(next) =>
                               void save(`mcp.${quoted(entry.name)}.timeout_seconds`, next)
                             }
@@ -902,12 +907,12 @@ export default function SettingsView({
             </Row>
             <Row
               label="Count as away after"
-              help="How long the machine must be untouched before Auger treats you as gone."
+              help="Seconds the machine must be untouched before Auger treats you as gone."
               keywords="idle_after_seconds"
             >
               <NumberSetting
                 value={Number(settings.schedule.idle_after_seconds)}
-                suffix="seconds"
+                title="seconds"
                 onSave={(next) => void save("schedule.idle_after_seconds", next)}
               />
             </Row>
@@ -917,7 +922,7 @@ export default function SettingsView({
               keywords="quiet_hours"
             >
               <TextSetting
-                className="w-40"
+                className="w-44"
                 value={String(settings.schedule.quiet_hours ?? "")}
                 placeholder="09:00-18:00"
                 onSave={(next) => void save("schedule.quiet_hours", next)}
@@ -944,7 +949,7 @@ export default function SettingsView({
               <Row key={one.key} label={one.label} help={one.help} keywords={one.key}>
                 <NumberSetting
                   value={Number(settings.schedule[one.key])}
-                  suffix="seconds"
+                  title="seconds"
                   onSave={(next) => void save(`schedule.${one.key}`, next)}
                 />
               </Row>

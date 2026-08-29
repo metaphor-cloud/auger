@@ -52,7 +52,7 @@ function Control({
     return (
       <NumberSetting
         value={Number(field.value ?? 0)}
-        suffix={field.key.endsWith("_seconds") ? "seconds" : ""}
+        title={field.key.endsWith("_seconds") ? "seconds" : undefined}
         onSave={(next) => onSave(field.path, field.kind === "integer" ? Math.round(next) : next)}
       />
     );
