@@ -69,7 +69,7 @@ export default function SystemView({
                 checked={startsAtLogin}
                 onCheckedChange={(next) => void setAutostart(next).then(setStartsAtLogin)}
               />
-              <span className="text-text-secondary">The rig is useful only while it runs.</span>
+              <span className="text-text-secondary">Auger is only useful while it runs.</span>
             </div>
           </Fact>
           <Fact label="Version">

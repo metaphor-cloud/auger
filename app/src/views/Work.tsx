@@ -1,4 +1,4 @@
-/** What needs attention, and what the rig has been doing.
+/** What needs attention, and what Auger has been doing.
  *
  * A rank is the answer to "what do I act on now", so the list is the surface and the
  * one picture sits above it, on the axis where the data actually varies: time.

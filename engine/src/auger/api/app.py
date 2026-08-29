@@ -666,6 +666,7 @@ def create_app(rig: Rig) -> FastAPI:
             ],
             schedule=rig.config.schedule.model_dump(mode="json"),
             allow_hosted=rig.config.egress.allow_hosted,
+            models_token_env=rig.config.models.token_env,
             profile_limits=(
                 ProfileLimits(
                     review_max_tokens=active.review.max_tokens,

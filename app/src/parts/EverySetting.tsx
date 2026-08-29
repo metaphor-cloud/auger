@@ -14,7 +14,14 @@ import { useCallback, useEffect, useState } from "react";
 import { getSettingsSchema } from "../engine";
 import { ChoiceSetting, NumberSetting, SwitchSetting, TextSetting } from "../settings-fields";
 import type { SettingField, SettingsSchema } from "../types";
-import { Fact, Facts, Section } from "../ui";
+import { Group, Row } from "../settings/parts";
+
+/** `max_concurrent_reviews` -> `Max concurrent reviews`. A key is not a label, but a
+ *  readable key beats a raw one on a page whose job is to leave nothing out. */
+function sentence(key: string) {
+  const words = key.replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 
 function Control({
   field,
@@ -95,15 +102,18 @@ export default function EverySetting({
         </Alert>
       )}
       {(schema?.sections ?? []).map((section) => (
-        <Section key={section.name} title={section.title} description={section.describes}>
-          <Facts>
-            {section.fields.map((field) => (
-              <Fact key={field.path} label={field.key.replace(/_/g, " ")}>
-                <Control field={field} onSave={(path, value) => void save(path, value)} />
-              </Fact>
-            ))}
-          </Facts>
-        </Section>
+        <Group key={section.name} title={section.title} description={section.describes}>
+          {section.fields.map((field) => (
+            <Row
+              key={field.path}
+              label={sentence(field.key)}
+              help={field.describes}
+              keywords={field.path}
+            >
+              <Control field={field} onSave={(path, value) => void save(path, value)} />
+            </Row>
+          ))}
+        </Group>
       ))}
     </>
   );

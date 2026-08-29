@@ -1,4 +1,4 @@
-/** What the rig is saying to the models, as it happens.
+/** What Auger is saying to the models, as it happens.
  *
  * A reviewer that runs all day is otherwise invisible: findings appear, and nothing
  * says what was asked or what came back. This is the window into the work.

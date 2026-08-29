@@ -359,6 +359,9 @@ class SettingsOut(BaseModel):
     forges: list[ForgeSetting]
     schedule: dict[str, object]
     allow_hosted: bool
+    #: The environment variable that holds the Hugging Face token. The value never
+    #: leaves the environment, so the window shows the name and nothing else.
+    models_token_env: str = ""
     profile_limits: ProfileLimits | None = None
 
 

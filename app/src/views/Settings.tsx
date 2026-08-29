@@ -4,11 +4,6 @@ import {
   Badge,
   Button,
   Input,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   Tabs,
   TabsContent,
   TabsList,
@@ -38,26 +33,35 @@ import {
 } from "../engine";
 import EverySetting from "../parts/EverySetting";
 import PromptEditor from "../parts/PromptEditor";
+import { Block, Group, Row, SearchProvider } from "../settings/parts";
 import { ChoiceSetting, NumberSetting, SwitchSetting, TextSetting } from "../settings-fields";
 import type { Forge, McpServer, Mode, Root, Settings, SetupProgress, System } from "../types";
 import Models from "./Models";
 import SystemView from "./System";
-import { Fact, Facts, Mono, PageTitle, Section } from "../ui";
+import { Mono, PageTitle } from "../ui";
+
+const SECTIONS = [
+  { id: "where", label: "Repositories" },
+  { id: "review", label: "Review" },
+  { id: "models", label: "Models" },
+  { id: "integrations", label: "Integrations" },
+  { id: "system", label: "System" },
+  { id: "advanced", label: "Advanced" },
+] as const;
 
 const MODES: readonly Mode[] = ["off", "draft", "complete"] as const;
 const TRANSPORTS = ["stdio", "http"] as const;
 
-const SCHEDULE_LABEL: Record<string, string> = {
-  max_concurrent_reviews: "Reviews at once",
-  poll_seconds: "Look for a new commit every",
-  forge_poll_seconds: "Ask the forges every",
-  retry_seconds: "Retry a busy repository after",
-  audit_poll_seconds: "Look for a due audit every",
-  model_poll_seconds: "Check the models every",
-  quiet_hours: "No audit during",
-  idle_only: "Work only when the machine is free",
-  idle_after_seconds: "Count as free after",
-};
+/** Every polling interval, named. A key with no entry here used to reach the screen
+ *  as raw snake case, which is how `verify_poll_seconds` ended up on show. */
+const POLLS = [
+  { key: "poll_seconds", label: "Check for new commits", help: "How often each repository is asked whether anything changed." },
+  { key: "forge_poll_seconds", label: "Check pull requests", help: "How often the connected forges are asked for work assigned to you." },
+  { key: "audit_poll_seconds", label: "Check for due audits", help: "How often Auger looks for a repository whose full audit is due." },
+  { key: "model_poll_seconds", label: "Check model servers", help: "How often the model servers are asked whether they are still answering." },
+  { key: "verify_poll_seconds", label: "Check for findings to judge", help: "How often the second model looks for findings nobody has checked yet." },
+  { key: "retry_seconds", label: "Retry a busy repository", help: "How long to wait before trying a repository that was busy or had no model." },
+] as const;
 
 /** A config key holds dots of its own, so it goes into the path quoted. */
 function quoted(key: string) {
@@ -92,6 +96,7 @@ export default function SettingsView({
   const [server, setServer] = useState<NewServer>(EMPTY_SERVER);
   const [raw, setRaw] = useState<string | null>(null);
   const [rawSaved, setRawSaved] = useState(true);
+  const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -205,20 +210,114 @@ export default function SettingsView({
         </Alert>
       )}
 
-      <Tabs defaultValue="where">
-        <TabsList className="mb-4">
-          <TabsTrigger value="where">Where to look</TabsTrigger>
-          <TabsTrigger value="models">Models</TabsTrigger>
-          <TabsTrigger value="review">Review</TabsTrigger>
-          <TabsTrigger value="tools">Tools</TabsTrigger>
-          <TabsTrigger value="forges">Forges</TabsTrigger>
-          <TabsTrigger value="system">System</TabsTrigger>
-          <TabsTrigger value="everything">Everything</TabsTrigger>
-          <TabsTrigger value="advanced">The file</TabsTrigger>
-        </TabsList>
+      <Tabs
+        defaultValue="where"
+        orientation="vertical"
+        className="flex flex-row items-start gap-6"
+      >
+        <div className="sticky top-0 w-40 shrink-0 space-y-3">
+          <Input
+            value={query}
+            placeholder="Search settings"
+            className="h-7 text-xs"
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <TabsList className="flex h-auto w-full flex-col items-stretch gap-0.5 bg-transparent p-0">
+            {SECTIONS.map((one) => (
+              <TabsTrigger
+                key={one.id}
+                value={one.id}
+                className="justify-start px-2.5 py-1.5 text-xs data-[state=active]:bg-bg-selected"
+              >
+                {one.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+
+        <SearchProvider query={query}>
+        <div className="min-w-0 flex-1">
 
         <TabsContent value="models">
           <Models setup={setup} nested />
+
+          <Group
+            title="Generation"
+            description="How the reviewer is asked to answer. Leave these alone unless an answer is coming back wrong."
+            keywords="tokens temperature profile sampling"
+          >
+            <Row
+              label="Response limit"
+              help="The longest answer the model may write. 0 lets it finish; a small number cuts the findings off mid-answer."
+              keywords="max_tokens"
+            >
+              <NumberSetting
+                value={Number(settings.profile_limits?.review_max_tokens ?? 0)}
+                suffix="tokens"
+                onSave={(next) =>
+                  void save(
+                    `profile.${quoted(settings.defaults.model_profile)}.review.max_tokens`,
+                    next,
+                  )
+                }
+              />
+            </Row>
+            <Row
+              label="Temperature"
+              help="0 makes the model pick its likeliest answer every time, which is what a structured review wants."
+            >
+              <NumberSetting
+                value={Number(settings.profile_limits?.review_temperature ?? 0)}
+                onSave={(next) =>
+                  void save(
+                    `profile.${quoted(settings.defaults.model_profile)}.review.temperature`,
+                    next,
+                  )
+                }
+              />
+            </Row>
+            {(settings.profile_limits?.names.length ?? 0) > 1 && (
+              <Row
+                label="Model profile"
+                help="Which set of model assignments to use. A job asks for a role, and the profile decides which server answers."
+              >
+                <ChoiceSetting
+                  value={settings.defaults.model_profile}
+                  options={settings.profile_limits?.names ?? []}
+                  onSave={(model_profile) => void change("defaults", "", { model_profile })}
+                />
+              </Row>
+            )}
+          </Group>
+
+          <Group
+            title="Access"
+            description="Where weights come from, and whether your code may leave this machine."
+            keywords="hugging face token hosted egress"
+          >
+            <Row
+              label="Hugging Face token"
+              help="The name of an environment variable holding your token. Auger reads the variable, never the value in this file."
+              keywords="token_env"
+            >
+              <TextSetting
+                className="w-44"
+                value={settings.models_token_env}
+                placeholder="HF_TOKEN"
+                onSave={(next) => void save("models.token_env", next)}
+              />
+            </Row>
+            <Row
+              label="Allow hosted models"
+              help="Off by default. A hosted model means your code is sent to somebody else's server, and the backend must be marked hosted as well."
+              keywords="allow_hosted"
+            >
+              <SwitchSetting
+                checked={settings.allow_hosted}
+                onSave={(next) => void save("egress.allow_hosted", next)}
+              />
+            </Row>
+          </Group>
         </TabsContent>
 
         <TabsContent value="system">
@@ -227,121 +326,97 @@ export default function SettingsView({
 
         {/* ---------------------------------------------------------------- review */}
         <TabsContent value="review">
-          <Section title="All repositories" description="What every repository gets, unless it overrides it.">
-            <Facts>
-              <Fact label="Mode">
-                <ChoiceSetting
-                  value={settings.defaults.mode}
-                  options={MODES}
-                  onSave={(mode) => void change("defaults", "", { mode })}
-                />
-              </Fact>
-              <Fact label="Review pull requests assigned to me">
-                <SwitchSetting
-                  checked={settings.defaults.auto_review_assigned_prs}
-                  onSave={(next) =>
-                    void change("defaults", "", { auto_review_assigned_prs: next })
-                  }
-                />
-              </Fact>
-              <Fact label="Priority">
-                <NumberSetting
-                  value={settings.defaults.priority}
-                  suffix="1 first, 9 last"
-                  onSave={(priority) => void change("defaults", "", { priority })}
-                />
-              </Fact>
-              <Fact label="Wait after an agent stops">
-                <NumberSetting
-                  value={settings.defaults.idle_seconds}
-                  suffix="seconds"
-                  onSave={(idle_seconds) => void change("defaults", "", { idle_seconds })}
-                />
-              </Fact>
-              <Fact label="Audit a whole repository every">
-                <NumberSetting
-                  value={settings.defaults.audit_hours}
-                  suffix="hours, 0 turns it off"
-                  onSave={(audit_hours) => void change("defaults", "", { audit_hours })}
-                />
-              </Fact>
-              <Fact label="Let a second model argue">
-                <SwitchSetting
-                  checked={settings.defaults.adversary}
-                  note="The other model judges what the first one found. Needs a verify backend in Models."
-                  onSave={(adversary) => void change("defaults", "", { adversary })}
-                />
-              </Fact>
-              <Fact label="Trade the two models between runs">
-                <SwitchSetting
-                  checked={settings.defaults.alternate}
-                  note="So neither one's blind spots decide on their own."
-                  onSave={(alternate) => void change("defaults", "", { alternate })}
-                />
-              </Fact>
-              <Fact label="Ceiling on tool calls per review">
-                <NumberSetting
-                  value={settings.defaults.max_tool_calls}
-                  suffix="0 is no ceiling. The loop ends when the model stops asking."
-                  onSave={(max_tool_calls) => void change("defaults", "", { max_tool_calls })}
-                />
-              </Fact>
-              <Fact label="Ceiling on what the reviewer writes back">
-                <NumberSetting
-                  suffix="0 is no ceiling. A small one cuts the findings off mid-answer."
-                  value={Number(settings.profile_limits?.review_max_tokens ?? 0)}
-                  onSave={(next) =>
-                    void save(
-                      `profile.${quoted(settings.defaults.model_profile)}.review.max_tokens`,
-                      next,
-                    )
-                  }
-                />
-              </Fact>
-              <Fact label="How much the reviewer improvises">
-                <NumberSetting
-                  value={Number(settings.profile_limits?.review_temperature ?? 0)}
-                  suffix="0 is greedy, and what a structured answer wants"
-                  onSave={(next) =>
-                    void save(
-                      `profile.${quoted(settings.defaults.model_profile)}.review.temperature`,
-                      next,
-                    )
-                  }
-                />
-              </Fact>
-              {(settings.profile_limits?.names.length ?? 0) > 1 && (
-                <Fact label="Model profile">
-                  <Select
-                    value={settings.defaults.model_profile}
-                    onValueChange={(model_profile) =>
-                      void change("defaults", "", { model_profile })
-                    }
-                  >
-                    <SelectTrigger className="w-40">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {settings.profile_limits?.names.map((one) => (
-                        <SelectItem key={one} value={one}>
-                          {one}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Fact>
-              )}
-            </Facts>
-          </Section>
+          <Group
+            title="What gets reviewed"
+            description="Applies to every repository. An override below takes precedence."
+            keywords="defaults policy"
+          >
+            <Row
+              label="Pull request reviews"
+              help="Off reviews nothing. Draft leaves a review for you to submit. Complete posts it under your name."
+              keywords="mode"
+            >
+              <ChoiceSetting
+                value={settings.defaults.mode}
+                options={MODES}
+                onSave={(mode) => void change("defaults", "", { mode })}
+              />
+            </Row>
+            <Row
+              label="Review pull requests assigned to you"
+              help="Auger watches the forges you have connected and reviews what lands on your plate."
+            >
+              <SwitchSetting
+                checked={settings.defaults.auto_review_assigned_prs}
+                onSave={(next) => void change("defaults", "", { auto_review_assigned_prs: next })}
+              />
+            </Row>
+            <Row
+              label="Full repository audit"
+              help="How often to read a whole repository rather than a single change. Set 0 to never."
+              keywords="audit_hours"
+            >
+              <NumberSetting
+                value={settings.defaults.audit_hours}
+                suffix="hours"
+                onSave={(audit_hours) => void change("defaults", "", { audit_hours })}
+              />
+            </Row>
+            <Row
+              label="Wait after the last edit"
+              help="How long a repository must sit still before it is reviewed, so you are not reviewed mid-keystroke."
+              keywords="idle_seconds"
+            >
+              <NumberSetting
+                value={settings.defaults.idle_seconds}
+                suffix="seconds"
+                onSave={(idle_seconds) => void change("defaults", "", { idle_seconds })}
+              />
+            </Row>
+            <Row
+              label="Queue priority"
+              help="Which repositories go first when several are waiting. 1 is first, 9 is last."
+            >
+              <NumberSetting
+                value={settings.defaults.priority}
+                onSave={(priority) => void change("defaults", "", { priority })}
+              />
+            </Row>
+          </Group>
 
-          <Section
-            title="The system prompt"
+          <Group
+            title="Second opinion"
+            description="A second model reads the findings and throws out the ones it cannot stand up."
+            keywords="adversary verify judge"
+          >
+            <Row
+              label="Check findings with a second model"
+              help="Needs a second model set up under Models. It runs when the queue is quiet."
+            >
+              <SwitchSetting
+                checked={settings.defaults.adversary}
+                onSave={(adversary) => void change("defaults", "", { adversary })}
+              />
+            </Row>
+            <Row
+              label="Swap the two models each run"
+              help="The reviewer and the checker trade places, so one model's blind spots do not decide alone."
+              keywords="alternate"
+            >
+              <SwitchSetting
+                checked={settings.defaults.alternate}
+                onSave={(alternate) => void change("defaults", "", { alternate })}
+              />
+            </Row>
+          </Group>
+
+          <Group
+            title="System prompt"
             description={
               <>
-                What the reviewer is told, word for word. Start from one of these or write
-                your own: the rules, the tone, and what counts as a defect are all yours.
-                A repository&apos;s own <code>hints</code> are separate, and are treated as
-                data.
+                What the reviewer is told, word for word. Start from a preset or write your
+                own. A repository&apos;s <code>hints</code> are separate and are read as
+                information, not as instructions.
               </>
             }
           >
@@ -349,16 +424,16 @@ export default function SettingsView({
               rules={settings.defaults.system_prompt}
               onSave={(next) => void change("defaults", "", { system_prompt: next })}
             />
-          </Section>
+          </Group>
 
-          <Section
+          <Group
             title="Overrides"
-            description="One organisation or one repository, over the settings above."
+            description="Settings for one organisation or one repository, on top of the defaults above."
           >
             {settings.levels.length === 0 ? (
               <p className="text-xs text-text-secondary">
                 None. Add an <code>[org.&quot;host/name&quot;]</code> or{" "}
-                <code>[repo.&quot;/path&quot;]</code> section in Advanced.
+                <code>[repo.&quot;/path&quot;]</code> section under Advanced.
               </p>
             ) : (
               <Table>
@@ -439,18 +514,18 @@ export default function SettingsView({
                 </TableBody>
               </Table>
             )}
-          </Section>
+          </Group>
         </TabsContent>
 
         {/* ----------------------------------------------------------------- where */}
         <TabsContent value="where">
-          <Section
-            title="Roots"
-            description="Every directory the rig walks. A directory that holds .git is a repository, and the walk stops there."
+          <Group
+            title="Where to look"
+            description="Auger walks each of these directories. A folder holding .git is a repository, and the walk stops there."
           >
             {settings.roots.length === 0 && (
               <p className="mb-3 text-xs text-text-secondary">
-                No root. The rig finds nothing until you add one.
+                No folder yet. Add one and Auger will find the repositories inside it.
               </p>
             )}
             <div className="space-y-3">
@@ -524,10 +599,10 @@ export default function SettingsView({
                 Add root
               </Button>
             </div>
-          </Section>
+          </Group>
 
-          <Section
-            title="Excluded repositories"
+          <Group
+            title="Skipped repositories"
             description={
               <>
                 A path, a glob, or a forge key such as <code>github.com/acme</code>. An excluded
@@ -578,14 +653,65 @@ export default function SettingsView({
                 Exclude
               </Button>
             </div>
-          </Section>
+          </Group>
         </TabsContent>
 
         {/* ----------------------------------------------------------------- tools */}
-        <TabsContent value="tools">
-          <Section
+        <TabsContent value="integrations">
+                  <Group
+            title="Forges"
+            description="A connected forge is added to the network allowlist, and its pull requests become reviewable."
+          >
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Forge</TableHead>
+                  <TableHead>Host</TableHead>
+                  <TableHead>On</TableHead>
+                  <TableHead>State</TableHead>
+                  <TableHead>Signed in as</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {settings.forges.map((entry) => {
+                  const live = forges.find((one) => one.name === entry.name);
+                  return (
+                    <TableRow key={entry.name}>
+                      <TableCell>{entry.name}</TableCell>
+                      <TableCell>
+                        <Mono>{entry.host}</Mono>
+                      </TableCell>
+                      <TableCell>
+                        <SwitchSetting
+                          checked={entry.enabled}
+                          onSave={(next) =>
+                            void save(`forge.${quoted(entry.name)}.enabled`, next).then(() =>
+                              getForges().then((body) => setForges(body.forges)),
+                            )
+                          }
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={live?.reachable ? "success" : "outline"}>
+                          {!entry.enabled ? "off" : live?.reachable ? "connected" : "unavailable"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-text-secondary" title={live?.reason ?? ""}>
+                        {live?.user || live?.reason || ""}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+            <p className="mt-2 text-xs text-text-secondary">
+              The token comes from the variable the config names, or from <code>gh</code> and{" "}
+              <code>glab</code>. A token is never written to the config file.
+            </p>
+          </Group>
+                  <Group
             title="MCP servers"
-            description="A server runs outside the sandbox and speaks for you. Nothing it returns is treated as an instruction."
+            description="A server runs outside the sandbox and acts as you. What it returns is read as information, never as instructions."
             action={
               <Button
                 size="sm"
@@ -660,7 +786,7 @@ export default function SettingsView({
                             <Button
                               size="sm"
                               variant="secondary"
-                              title="Opens your browser. Nothing else in the rig ever does."
+                              title="Opens your browser. Nothing else in Auger ever does."
                               onClick={() =>
                                 void signInTool(entry.name)
                                   .then((body) => setServers(body.servers))
@@ -728,21 +854,20 @@ export default function SettingsView({
               A server sees only <code>PATH</code>, <code>HOME</code>, and the variables its{" "}
               <code>pass_env</code> names. Add <code>pass_env</code> in Advanced.
             </p>
-          </Section>
+          </Group>
 
-          <Section
-            title="Which tools a review may call"
-            description="A tool runs only when a policy names it."
+          <Group
+            title="Tool access"
+            description="A review can call a tool only when it is named here."
           >
-            <Facts>
-              <Fact label="Allowed by default">
-                <Mono>{allowed.length ? allowed.join(", ") : "nothing"}</Mono>
-              </Fact>
-              <Fact label="Form">
-                <Mono>server.tool, or server.*</Mono>
-              </Fact>
-            </Facts>
-            <div className="mt-3">
+            <Row label="Allowed now" help="What a review can reach with the current list.">
+              <Mono>{allowed.length ? allowed.join(", ") : "nothing"}</Mono>
+            </Row>
+            <Block
+              label="Allow these"
+              help="One tool as server.tool, or every tool on a server as server.*, separated by commas."
+              keywords="tools allowlist"
+            >
               <TextSetting
                 value={settings.defaults.tools.join(", ")}
                 placeholder="linear.*, jira.search"
@@ -755,142 +880,105 @@ export default function SettingsView({
                   })
                 }
               />
-            </div>
-          </Section>
-        </TabsContent>
-
-        {/* ---------------------------------------------------------------- forges */}
-        <TabsContent value="forges">
-          <Section
-            title="Forges"
-            description="An enabled forge joins the egress allowlist, and the rig reads its pull requests."
-          >
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Forge</TableHead>
-                  <TableHead>Host</TableHead>
-                  <TableHead>On</TableHead>
-                  <TableHead>State</TableHead>
-                  <TableHead>Signed in as</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {settings.forges.map((entry) => {
-                  const live = forges.find((one) => one.name === entry.name);
-                  return (
-                    <TableRow key={entry.name}>
-                      <TableCell>{entry.name}</TableCell>
-                      <TableCell>
-                        <Mono>{entry.host}</Mono>
-                      </TableCell>
-                      <TableCell>
-                        <SwitchSetting
-                          checked={entry.enabled}
-                          onSave={(next) =>
-                            void save(`forge.${quoted(entry.name)}.enabled`, next).then(() =>
-                              getForges().then((body) => setForges(body.forges)),
-                            )
-                          }
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={live?.reachable ? "success" : "outline"}>
-                          {!entry.enabled ? "off" : live?.reachable ? "connected" : "unavailable"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-text-secondary" title={live?.reason ?? ""}>
-                        {live?.user || live?.reason || ""}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-            <p className="mt-2 text-xs text-text-secondary">
-              The token comes from the variable the config names, or from <code>gh</code> and{" "}
-              <code>glab</code>. The rig never writes a token to its config.
-            </p>
-          </Section>
-        </TabsContent>
-
-        {/* -------------------------------------------------------------- advanced */}
-        <TabsContent value="everything">
-          <p className="mb-3 text-xs text-text-secondary">
-            Every setting the engine has, drawn from what it says it holds. The tabs
-            above group the ones you reach for; this one leaves nothing out.
-          </p>
-          <EverySetting version={version} onSave={save} />
+            </Block>
+          </Group>
         </TabsContent>
 
         <TabsContent value="advanced">
-          <Section title="Retrieval">
-            <Facts>
-              <Fact label="Use CodeGraph">
-                <SwitchSetting
-                  checked={settings.codegraph}
-                  disabled={!settings.codegraph_available}
-                  note={
-                    settings.codegraph_available
-                      ? "Asks a real call graph who calls a changed symbol, where a repository has an index."
-                      : "codegraph is not installed."
-                  }
-                  onSave={(next) =>
-                    void setCodegraph(next).then(setSettings).catch((cause) => setError(String(cause)))
-                  }
+          <Group
+            title="When Auger works"
+            description="Reviewing holds two cores and tens of gigabytes. These decide when it is allowed to."
+            keywords="schedule idle quiet hours concurrency"
+          >
+            <Row
+              label="Only work when you are away"
+              help="Nothing is reviewed while you are at the keyboard, so the fans stay down while you work."
+              keywords="idle_only"
+            >
+              <SwitchSetting
+                checked={settings.schedule.idle_only as boolean}
+                onSave={(next) => void save("schedule.idle_only", next)}
+              />
+            </Row>
+            <Row
+              label="Count as away after"
+              help="How long the machine must be untouched before Auger treats you as gone."
+              keywords="idle_after_seconds"
+            >
+              <NumberSetting
+                value={Number(settings.schedule.idle_after_seconds)}
+                suffix="seconds"
+                onSave={(next) => void save("schedule.idle_after_seconds", next)}
+              />
+            </Row>
+            <Row
+              label="Quiet hours"
+              help="No full audits during these hours. Leave empty for none."
+              keywords="quiet_hours"
+            >
+              <TextSetting
+                className="w-40"
+                value={String(settings.schedule.quiet_hours ?? "")}
+                placeholder="09:00-18:00"
+                onSave={(next) => void save("schedule.quiet_hours", next)}
+              />
+            </Row>
+            <Row
+              label="Reviews at once"
+              help="More finishes the queue sooner and takes more of the machine."
+              keywords="max_concurrent_reviews"
+            >
+              <NumberSetting
+                value={Number(settings.schedule.max_concurrent_reviews)}
+                onSave={(next) => void save("schedule.max_concurrent_reviews", next)}
+              />
+            </Row>
+          </Group>
+
+          <Group
+            title="How often Auger checks"
+            description="Polling intervals. The defaults suit a machine you work on all day."
+            keywords="poll interval seconds timing"
+          >
+            {POLLS.map((one) => (
+              <Row key={one.key} label={one.label} help={one.help} keywords={one.key}>
+                <NumberSetting
+                  value={Number(settings.schedule[one.key])}
+                  suffix="seconds"
+                  onSave={(next) => void save(`schedule.${one.key}`, next)}
                 />
-              </Fact>
-            </Facts>
-          </Section>
+              </Row>
+            ))}
+          </Group>
 
-          <Section title="Hosted models">
-            <Facts>
-              <Fact label="Allow a hosted backend">
-                <SwitchSetting
-                  checked={settings.allow_hosted}
-                  note="A hosted backend sends your code off this machine. The backend must also be marked hosted."
-                  onSave={(next) => void save("egress.allow_hosted", next)}
-                />
-              </Fact>
-            </Facts>
-          </Section>
+          <Group
+            title="Call graph"
+            description="A real call graph tells the reviewer who calls a symbol that changed."
+            keywords="codegraph retrieval"
+          >
+            <Row
+              label="Use CodeGraph"
+              help={
+                settings.codegraph_available
+                  ? "Where a repository has an index, changed symbols come with their callers."
+                  : "codegraph is not installed on this machine."
+              }
+            >
+              <SwitchSetting
+                checked={settings.codegraph}
+                disabled={!settings.codegraph_available}
+                onSave={(next) =>
+                  void setCodegraph(next)
+                    .then(setSettings)
+                    .catch((cause) => setError(String(cause)))
+                }
+              />
+            </Row>
+          </Group>
 
-          <Section title="Schedule" description="How hard the rig works.">
-            <Facts>
-              {Object.entries(settings.schedule).map(([name, value]) => (
-                <Fact key={name} label={SCHEDULE_LABEL[name] ?? name}>
-                  {typeof value === "boolean" ? (
-                    <SwitchSetting
-                      checked={value}
-                      note={
-                        name === "idle_only"
-                          ? "A review holds two cores and tens of gigabytes, which on a laptop is the fans."
-                          : undefined
-                      }
-                      onSave={(next) => void save(`schedule.${name}`, next)}
-                    />
-                  ) : typeof value === "number" ? (
-                    <NumberSetting
-                      value={value}
-                      suffix={name.endsWith("_seconds") ? "seconds" : ""}
-                      onSave={(next) => void save(`schedule.${name}`, next)}
-                    />
-                  ) : (
-                    <TextSetting
-                      className="w-40"
-                      value={String(value)}
-                      placeholder="09:00-18:00"
-                      onSave={(next) => void save(`schedule.${name}`, next)}
-                    />
-                  )}
-                </Fact>
-              ))}
-            </Facts>
-          </Section>
-
-          <Section
+          <Group
             title="Config file"
-            description="Everything, including the keys no form covers. A refused file is not written."
+            description="The whole file, including anything no form covers. A file that fails to parse is not saved."
             action={
               raw === null ? (
                 <Button size="sm" variant="secondary" onClick={() => void openRaw()}>
@@ -923,8 +1011,15 @@ export default function SettingsView({
                 }}
               />
             )}
-          </Section>
+          </Group>
+                  <p className="mb-3 text-xs text-text-secondary">
+            Every setting there is, listed straight from the engine. The sections above
+            group the ones people reach for. This one leaves nothing out.
+          </p>
+          <EverySetting version={version} onSave={save} />
         </TabsContent>
+        </div>
+        </SearchProvider>
       </Tabs>
     </>
   );

@@ -178,7 +178,7 @@ export default function Models({
         <Button
           size="sm"
           variant="ghost"
-          title="Stop every server the rig started, and give the memory back"
+          title="Stop every server Auger started and give the memory back"
           onClick={() => act("stop")}
           disabled={busy !== "" || !(data?.backends ?? []).some((one) => one.ours)}
         >
@@ -194,7 +194,7 @@ export default function Models({
 
       <Section
         title="Choose and fetch"
-        description={`The rig brings its own runtime and its own weights. This machine can hold about ${
+        description={`Auger brings its own runtime and its own weights. This machine can hold about ${
           catalog?.usable_memory_gb ?? "?"
         } GB.`}
       >

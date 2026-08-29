@@ -31,7 +31,7 @@ export default function Runs({ version }: { version: number }) {
       {runs !== null && runs.length === 0 && (
         <EmptyState
           title="Nothing has run yet"
-          description="The rig reviews a repository when its commit moves and nothing else is working in it."
+          description="A repository is reviewed when its commit moves and nothing else is working in it."
         />
       )}
       {runs !== null && runs.length > 0 && (

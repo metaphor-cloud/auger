@@ -1,4 +1,4 @@
-/** What the rig has been doing, over time.
+/** What Auger has been doing, over time.
  *
  * This is the one picture in the window, because time is the one axis where the data
  * varies. A column per slice of time, stacked by outcome, and a finding marked below at

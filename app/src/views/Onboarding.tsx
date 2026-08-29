@@ -1,6 +1,6 @@
 /** The first run.
  *
- * Three things must be true before the rig can do anything: it must know where to look,
+ * Three things must be true before Auger can do anything: it must know where to look,
  * it must have a model, and it must have found something to review. This walks through
  * those three and gets out of the way. It never appears again once it is finished.
  */
@@ -28,13 +28,13 @@ const STEPS: Step[] = [
     key: "roots",
     title: "Where should it look?",
     blurb:
-      "Name a directory that holds your git checkouts. The rig walks it, and it stops at every repository it finds.",
+      "Name a folder that holds your git checkouts. Auger walks it and stops at every repository it finds.",
   },
   {
     key: "model",
     title: "Which model should review?",
     blurb:
-      "The rig brings its own runtime and its own weights. Nothing else has to be installed, and your code never leaves this machine.",
+      "Auger brings its own runtime and its own weights. Nothing else has to be installed, and your code never leaves this machine.",
   },
   {
     key: "ready",
