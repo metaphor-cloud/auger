@@ -59,10 +59,9 @@ class Resolved:
     size_bytes: int
 
 
-#: What the rig recommends, largest first, and it picks the first that fits.
-#:
-#: Three families, so a reviewer and an adversary can always come from different ones.
-#: A second opinion from the same family is barely a second opinion.
+#: What Auger offers, largest first. Three families, so the reviewer and the model that
+#: checks it always come from different ones. A second opinion from the same family is
+#: barely a second opinion.
 REVIEW_MODELS: tuple[Choice, ...] = (
     Choice(
         name="gpt-oss-120b",
@@ -89,17 +88,28 @@ REVIEW_MODELS: tuple[Choice, ...] = (
         description="Fits a laptop. 12 GB of weights.",
     ),
     Choice(
-        name="gemma-3-12b-qat",
+        name="gemma-4-31b-qat",
         job_class=JobClass.REVIEW,
-        # Google gate their own copy behind a licence that has to be accepted in a
-        # browser. These are the same quantisation aware trained weights, published
-        # openly, so a first run needs no token and no browser.
-        repo="lmstudio-community/gemma-3-12B-it-qat-GGUF",
-        filename="gemma-3-12B-it-QAT-Q4_0.gguf",
+        repo="google/gemma-4-31B-it-qat-q4_0-gguf",
+        filename="gemma-4-31B_q4_0-it.gguf",
+        memory_gb=22.0,
+        description="Quantisation aware trained, so it holds up at four bits. 18 GB.",
+    ),
+    Choice(
+        name="gemma-4-12b-qat",
+        job_class=JobClass.REVIEW,
+        repo="google/gemma-4-12B-it-qat-q4_0-gguf",
+        filename="gemma-4-12b-it-qat-q4_0.gguf",
         memory_gb=11.0,
-        description="Quantisation aware trained, so it holds up at four bits. 8 GB.",
+        description="The same training at a size a laptop can hold. 7 GB.",
     ),
 )
+
+#: What a first run gets when the machine can hold it. The largest that fits is not the
+#: same question as the best pairing: these two come from different families and are
+#: close enough in size that neither dominates the other's verdict.
+DEFAULT_REVIEWER = "Muse-Glimmer-30B"
+DEFAULT_ADVERSARY = "gemma-4-31b-qat"
 
 #: Models that argue with the reviewer. The same three families: what matters is that
 #: the one judging is not the one that wrote the finding.
@@ -207,9 +217,31 @@ def recommended_review_model(
     downloaded means an hour of waiting and a rig that cannot review in the meantime.
     """
     available = usable_memory_gb() if memory_gb is None else memory_gb
-    return _already_here(REVIEW_MODELS, available, models_dir) or _largest_that_fits(
-        REVIEW_MODELS, available
-    )
+    here = _already_here(REVIEW_MODELS, available, models_dir)
+    if here is not None:
+        return here
+    preferred = by_name(DEFAULT_REVIEWER)
+    if preferred.memory_gb <= available:
+        return preferred
+    return _largest_that_fits(REVIEW_MODELS, available)
+
+
+def recommended_adversary_model(
+    memory_gb: float | None = None, models_dir: Path | None = None
+) -> Choice | None:
+    """The model to have check the reviewer, or None if this machine cannot hold one.
+
+    It must not be the reviewer: a model that agrees with itself has judged nothing.
+    """
+    available = usable_memory_gb() if memory_gb is None else memory_gb
+    reviewer = recommended_review_model(available, models_dir)
+    preferred = by_name(DEFAULT_ADVERSARY)
+    if preferred.name != reviewer.name and preferred.memory_gb <= available:
+        return next(one for one in ADVERSARY_MODELS if one.name == preferred.name)
+    for choice in ADVERSARY_MODELS:
+        if choice.name != reviewer.name and choice.memory_gb <= available:
+            return choice
+    return None
 
 
 def recommended_embed_model(

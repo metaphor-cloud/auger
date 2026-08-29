@@ -439,6 +439,9 @@ def create_app(rig: Rig) -> FastAPI:
                 for choice in catalog.CATALOG
             ],
             recommended=catalog.recommended_review_model(None, here).name,
+            recommended_adversary=(
+                second.name if (second := catalog.recommended_adversary_model(None, here)) else ""
+            ),
             chosen=_chosen_models(rig.config),
             usable_memory_gb=round(usable, 1),
             runtime_installed=runtime.resolve(rig.settings.home) is not None,

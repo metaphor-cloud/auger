@@ -242,17 +242,21 @@ async def test_an_archive_that_would_escape_is_refused(tmp_path: Path) -> None:
 # --- the catalogue -------------------------------------------------------------------
 
 
-def test_a_workstation_gets_the_large_model() -> None:
-    assert catalog.recommended_review_model(96).name == "gpt-oss-120b"
+def test_a_machine_with_room_to_spare_still_gets_the_default_reviewer() -> None:
+    """Largest that fits is not the same question as best pairing. Muse Glimmer leaves
+    room to swap in a second model of its own size, which is what makes the check
+    worth having. A larger reviewer is a deliberate choice, not a default."""
+    assert catalog.recommended_review_model(96).name == "Muse-Glimmer-30B"
+    assert catalog.by_name("gpt-oss-120b").memory_gb <= 96, "the larger one is still offered"
 
 
 def test_a_laptop_gets_a_model_that_fits() -> None:
-    assert catalog.recommended_review_model(11).name == "gemma-3-12b-qat"
+    assert catalog.recommended_review_model(11).name == "gemma-4-12b-qat"
 
 
 def test_a_tiny_machine_still_gets_a_model() -> None:
     """Returning nothing would leave the user with no way forward."""
-    assert catalog.recommended_review_model(1).name == "gemma-3-12b-qat"
+    assert catalog.recommended_review_model(1).name == "gemma-4-12b-qat"
 
 
 def test_this_machine_reports_its_memory() -> None:
@@ -445,7 +449,7 @@ def test_it_prefers_a_model_that_is_already_downloaded(tmp_path: Path) -> None:
 
 
 def test_with_nothing_downloaded_it_picks_by_memory(tmp_path: Path) -> None:
-    assert catalog.recommended_review_model(96, tmp_path).name == "gpt-oss-120b"
+    assert catalog.recommended_review_model(96, tmp_path).name == "Muse-Glimmer-30B"
 
 
 def test_a_downloaded_model_that_does_not_fit_is_not_chosen(tmp_path: Path) -> None:
@@ -453,7 +457,7 @@ def test_a_downloaded_model_that_does_not_fit_is_not_chosen(tmp_path: Path) -> N
     models.mkdir()
     large = catalog.by_name("gpt-oss-120b")
     (models / large.filename).write_bytes(b"weights")
-    assert catalog.recommended_review_model(11, models).name == "gemma-3-12b-qat"
+    assert catalog.recommended_review_model(11, models).name == "gemma-4-12b-qat"
 
 
 def test_a_half_finished_download_does_not_count(tmp_path: Path) -> None:
@@ -465,21 +469,25 @@ def test_a_half_finished_download_does_not_count(tmp_path: Path) -> None:
     assert catalog.downloaded(small, models) is False
 
 
-def test_every_recommended_model_is_fetchable_without_a_token() -> None:
-    """A first run has no Hugging Face token and no browser. A catalogue entry that
-    points at a gated repository turns that first run into a 401, so none does:
-    Gemma comes from an open build of the same quantisation aware trained weights.
-    """
-    from auger.llm.catalog import CATALOG
+def test_the_default_pair_comes_from_two_families(tmp_path: Path) -> None:
+    """A model that checks its own findings has judged nothing, so the reviewer and the
+    one that checks it must never be the same weights."""
+    reviewer = catalog.recommended_review_model(200, tmp_path)
+    checker = catalog.recommended_adversary_model(200, tmp_path)
+    assert reviewer.name == "Muse-Glimmer-30B"
+    assert checker is not None
+    assert checker.name == "gemma-4-31b-qat"
+    assert checker.repo.split("/")[0] != reviewer.repo.split("/")[0]
 
-    assert all(not choice.repo.startswith("google/") for choice in CATALOG)
-    gemma = catalog.by_name("gemma-3-12b-qat")
-    assert gemma.repo == "lmstudio-community/gemma-3-12B-it-qat-GGUF"
-    assert gemma.filename == "gemma-3-12B-it-QAT-Q4_0.gguf"
+
+def test_a_machine_that_holds_one_model_is_offered_no_second_one(tmp_path: Path) -> None:
+    """Two large models never sit in memory together, but they do swap, and a machine
+    with room for one cannot swap at all."""
+    assert catalog.recommended_adversary_model(12, tmp_path) is None
 
 
 def test_a_model_on_disk_counts_as_here(tmp_path: Path) -> None:
-    gemma = catalog.by_name("gemma-3-12b-qat")
+    gemma = catalog.by_name("gemma-4-12b-qat")
     assert catalog.downloaded(gemma, tmp_path) is False
     (tmp_path / gemma.filename).write_bytes(b"weights")
     assert catalog.downloaded(gemma, tmp_path) is True

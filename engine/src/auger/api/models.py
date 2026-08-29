@@ -529,6 +529,8 @@ class CatalogOut(BaseModel):
 
     models: list[ModelChoiceOut]
     recommended: str
+    #: The model to have check the reviewer. Empty when this machine holds only one.
+    recommended_adversary: str = ""
     #: The model each job class uses right now, by job class name. The window seeds its
     #: pickers from this, or it would open showing a recommendation and look as though
     #: the choice the user made had been forgotten.

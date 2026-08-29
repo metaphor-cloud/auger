@@ -103,7 +103,7 @@ export default function Models({
         body.models.find((one) => one.job_class === "embed" && one.fits)?.name ||
         "",
     );
-    setAdversary((current) => current || body.chosen.verify || "");
+    setAdversary((current) => current || body.chosen.verify || body.recommended_adversary);
   }, []);
 
   useEffect(() => {
@@ -226,7 +226,7 @@ export default function Models({
                 value={adversary}
                 onChange={setAdversary}
                 models={adversaries}
-                placeholder="None. The reviewer judges its own work."
+                placeholder="None. Nothing checks the reviewer's findings."
               />
             </div>
           )}

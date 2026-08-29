@@ -330,6 +330,7 @@ export type ModelChoice = {
 export type Catalog = {
   models: ModelChoice[];
   recommended: string;
+  recommended_adversary: string;
   /** The model each job class runs right now, keyed by job class. */
   chosen: Record<string, string>;
   usable_memory_gb: number;
