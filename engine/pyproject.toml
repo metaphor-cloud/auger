@@ -44,16 +44,20 @@ build-backend = "hatchling.build"
 packages = ["src/auger"]
 
 [tool.ruff]
+extend-exclude = ["bench/cases"]
 line-length = 100
-src = ["src", "tests"]
+src = ["src", "tests", "bench"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF"]
 
 [tool.mypy]
+# The defect corpus is code written to be wrong. Checking it would report the very
+# faults it exists to hide, and two cases share a module name on purpose.
+exclude = ["^bench/cases/"]
 strict = true
 python_version = "3.12"
-files = ["src", "tests"]
+files = ["src", "tests", "bench"]
 
 # These ship no type information. The wrappers around them are typed.
 [[tool.mypy.overrides]]

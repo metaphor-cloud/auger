@@ -1,0 +1,11 @@
+title = "the dict is mutated while it is being iterated"
+tier = 3
+tags = ["correctness"]
+file = "registry.py"
+lines = [19, 24]
+summary = """
+Deleting during iteration raises RuntimeError on the next step. The list comprehension it
+replaced finished reading before deleting anything, which is why the original was written
+in two passes. This raises only when at least one server is unhealthy and it is not the
+last one, so it survives every test with a healthy fixture.
+"""

@@ -1,0 +1,13 @@
+title = "the prefix index turns a constant-time check into an oracle"
+tier = 4
+tags = ["security", "timing", "subtle"]
+file = "auth.py"
+lines = [11, 20]
+summary = """
+Indexing by the first eight characters makes the lookup constant time in the number of
+tokens, which is a real improvement, and keeps `compare_digest` for the secret, which
+looks like it preserves the property. It does not. A wrong prefix returns before any
+comparison and a right prefix does not, so the response time reveals when the first eight
+characters are correct. An attacker recovers the token eight characters at a time instead
+of guessing it whole. The docstring stating the property was deleted with the loop.
+"""

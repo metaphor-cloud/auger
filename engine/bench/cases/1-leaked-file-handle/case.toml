@@ -1,0 +1,10 @@
+title = "the file is left open when a write raises"
+tier = 1
+tags = ["correctness", "resource-leak"]
+file = "report.py"
+lines = [9, 13]
+summary = """
+Dropping the context manager means a raise from `handle.write` skips `close`. The handle
+is released whenever the object is collected, which on CPython is soon and on any other
+runtime is not, and the partial file stays on disk either way.
+"""

@@ -1,0 +1,10 @@
+title = "every worker built without a queue shares one list"
+tier = 1
+tags = ["correctness", "shared-state"]
+file = "queue.py"
+lines = [9, 11]
+summary = """
+The default list is created once, when the function is defined. Two workers made with no
+`pending` argument share it, so a path added to one appears in the other. The previous
+code copied the argument as well, which the new code drops.
+"""

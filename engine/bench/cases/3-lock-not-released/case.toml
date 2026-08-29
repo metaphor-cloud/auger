@@ -1,0 +1,11 @@
+title = "the early return and a raise both leave the lock held"
+tier = 3
+tags = ["correctness", "concurrency"]
+file = "backends.py"
+lines = [17, 22]
+summary = """
+Two paths skip `release`: the `return False` when the server is already running, and any
+raise from `_spawn`. A non-reentrant Lock held forever deadlocks every later caller of
+`start`, and the first path is the common one, so the deadlock arrives on the second
+call rather than on a rare error.
+"""

@@ -1,0 +1,10 @@
+title = "total_pages reports one page too many when the count divides evenly"
+tier = 1
+tags = ["correctness", "off-by-one"]
+file = "paging.py"
+lines = [19, 20]
+summary = """
+`count // size + 1` returns 3 for 20 rows at 10 a page, and 1 for 0 rows. The ceiling
+division it replaced was right. A caller that loops `range(total_pages(...))` fetches an
+empty page every time the count divides evenly.
+"""

@@ -1,0 +1,11 @@
+title = "the containment check is replaced by a substring test"
+tier = 2
+tags = ["security", "path-traversal"]
+file = "assets.py"
+lines = [13, 16]
+summary = """
+Rejecting `..` is not the same as proving the resolved path is inside the root. An
+absolute name like `/etc/passwd` holds no `..` and escapes, and so does a symlink inside
+the root that points out of it. The check that was removed proved containment after
+resolution, which handles both.
+"""

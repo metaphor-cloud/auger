@@ -1,0 +1,12 @@
+title = "a backend added after construction gets no limit until first use, and reloading the config replaces the semaphore under waiters"
+tier = 3
+tags = ["correctness", "concurrency"]
+file = "gateway.py"
+lines = [18, 27]
+summary = """
+Building semaphores lazily looks like an improvement and mostly is. The defect is that
+nothing removes an entry, so after a config reload changes `max_concurrent` the old
+semaphore stays and the new limit never applies. Worse, if `_limits` is ever cleared to
+pick up the new value, tasks already holding a permit release into a semaphore nobody
+is waiting on, and the new one admits `max_concurrent` more on top of those in flight.
+"""

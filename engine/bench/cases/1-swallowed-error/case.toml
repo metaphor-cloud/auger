@@ -1,0 +1,10 @@
+title = "every failure now returns the defaults, including a corrupt file"
+tier = 1
+tags = ["correctness", "error-handling"]
+file = "settings.py"
+lines = [14, 15]
+summary = """
+Catching `Exception` turns a syntax error in the settings file, a permissions failure and
+a disk error into an empty dict. The user's settings are silently replaced by defaults
+and nothing says so.
+"""

@@ -1,0 +1,12 @@
+title = "the fingerprint stops being stable across processes"
+tier = 4
+tags = ["correctness", "subtle"]
+file = "fingerprint.py"
+lines = [17, 19]
+summary = """
+CPython salts `hash()` of str and bytes with PYTHONHASHSEED, which is random per process.
+The fingerprint is therefore stable within one run and different in the next, so every
+finding is recorded again after a restart and nothing is ever recognised as a repeat.
+Every test passes: they compute both fingerprints in the same process. The docstring
+above the function states the property the change breaks.
+"""

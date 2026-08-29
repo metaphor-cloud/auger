@@ -1,0 +1,11 @@
+title = "two downloads of the same file now write the same scratch path"
+tier = 3
+tags = ["correctness", "concurrency", "race"]
+file = "download.py"
+lines = [11, 15]
+summary = """
+The scratch name is derived from the target, so two processes fetching the same file use
+one path. Each unlinks the other's partial write and both rename, and the file that lands
+holds bytes from both. `mkstemp` gave every writer its own name, which is what made the
+rename atomic in practice. The exception path that cleaned up the partial file also went.
+"""

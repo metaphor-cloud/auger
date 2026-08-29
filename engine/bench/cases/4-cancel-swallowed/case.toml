@@ -1,0 +1,12 @@
+title = "the cleanup await is no longer shielded, so cancellation leaves the second model resident"
+tier = 4
+tags = ["correctness", "concurrency", "subtle"]
+file = "sweep.py"
+lines = [17, 19]
+summary = """
+Dropping `asyncio.shield` looks like removing a needless wrapper. It is not. When the
+task is cancelled, the `finally` block still runs, but the first `await` inside it raises
+CancelledError immediately, so `_stop_verifier` never runs. The second model keeps
+eighteen gigabytes of memory and the reviewer cannot start again. It only shows on
+shutdown or on a timeout, which is exactly when nobody is reading the log.
+"""

@@ -1,0 +1,13 @@
+title = "the nonce is drawn once and reused across retries"
+tier = 4
+tags = ["security", "cryptography", "subtle"]
+file = "seal.py"
+lines = [16, 22]
+summary = """
+Hoisting the nonce and the AESGCM object out of the loop reads as an obvious
+optimisation, and for the object it is. For the nonce it is not: a partial failure inside
+the backend can emit a keystream before it raises, and a second encryption under the same
+key and nonce lets an attacker XOR two ciphertexts to recover the plaintext and forge the
+authentication tag. GCM requires a nonce to be used once per key, without exception. The
+behaviour is identical in every test, because no test makes the first attempt fail.
+"""

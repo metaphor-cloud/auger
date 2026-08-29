@@ -1,0 +1,10 @@
+title = "a stored timestamp with no zone now raises instead of being read as UTC"
+tier = 2
+tags = ["correctness", "datetime"]
+file = "schedule.py"
+lines = [11, 12]
+summary = """
+Rows written before the code stored zones parse as naive datetimes. Subtracting a naive
+datetime from an aware one raises TypeError, so the audit that was due never runs and the
+scheduler records a failure it cannot explain. The removed two lines were the migration.
+"""

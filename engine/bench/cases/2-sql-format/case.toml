@@ -1,0 +1,11 @@
+title = "the repository path is interpolated into the SQL"
+tier = 2
+tags = ["security", "sql-injection"]
+file = "store.py"
+lines = [12, 16]
+summary = """
+`repo` goes into the statement as text while `severity` and `limit` stay bound. A path
+holding a quote breaks the query, and a path an attacker controls rewrites it. The
+`ORDER BY` is a constant here, which is what makes the interpolation look deliberate
+and safe.
+"""

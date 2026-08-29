@@ -1,0 +1,11 @@
+title = "a failed fetch becomes an exception object that is then cast to int"
+tier = 2
+tags = ["correctness", "error-handling"]
+file = "fetch.py"
+lines = [17, 20]
+summary = """
+`return_exceptions=True` makes `gather` return the exception instead of raising it, so
+one failed request puts an exception object in `results`. `int(one)` then raises a
+TypeError far from the request that failed, and the other results are lost with it.
+Nothing filters or re-raises.
+"""

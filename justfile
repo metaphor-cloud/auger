@@ -33,6 +33,17 @@ test:
     cd {{root}}/app && pnpm test
     cd {{root}}/app/src-tauri && cargo test
 
+# Compare embedding models on real retrieval from one repository. Pass catalogue
+# names: `just bench ~/git/thing nomic-embed-code Qwen3-Embedding-8B`. It downloads
+# nothing, and skips a model whose weights are not here.
+bench repository *models:
+    cd {{root}}/engine && uv run python -m bench.retrieval {{repository}} {{models}}
+
+# Measure how much of the planted defect corpus a reviewer model finds.
+# `just bench-review --tier 4` runs only the ones that need real understanding.
+bench-review *flags:
+    cd {{root}}/engine && uv run python -m bench.review {{flags}}
+
 lint:
     cd {{root}}/engine && uv run ruff check .
     cd {{root}}/engine && uv run ruff format --check .
