@@ -32,3 +32,22 @@ export function matches(finding: Finding, filters: Filters): boolean {
     (wanted === "" || hit(finding, wanted))
   );
 }
+
+/** What a click on one pill does to a filter set.
+ *
+ * Every pill starts on, so a plain toggle means the only thing a first click can do is
+ * subtract: clicking "Open" hides every open finding, which is the opposite of what the
+ * word says. A click narrows to what was clicked instead, and clicking the one that is
+ * already alone widens back out. Holding a modifier keeps the old add-and-remove.
+ */
+export function clicked(current: Set<string>, name: string, add: boolean): Set<string> {
+  const next = new Set(current);
+  if (add) {
+    if (next.has(name)) next.delete(name);
+    else next.add(name);
+    return next;
+  }
+  // Already the only one on: widen back out. An empty set restricts nothing.
+  if (next.size === 1 && next.has(name)) return new Set();
+  return new Set([name]);
+}

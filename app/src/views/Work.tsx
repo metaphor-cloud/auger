@@ -38,7 +38,7 @@ import {
   setFindingStatus,
 } from "../engine";
 import { CATEGORY, SEVERITY_RANK, STATES, categoryOf, severityOf } from "../palette";
-import { matches } from "../parts/matches";
+import { clicked, matches } from "../parts/matches";
 import Timeline from "../parts/Timeline";
 import type { Finding, Note, Repository, Run } from "../types";
 import { Mono } from "../ui";
@@ -69,15 +69,18 @@ function Chip({
   colour,
   children,
   onClick,
+  title,
 }: {
   on: boolean;
   colour?: string;
   children: React.ReactNode;
-  onClick: () => void;
+  onClick: (add: boolean) => void;
+  title?: string;
 }) {
   return (
     <button
-      onClick={onClick}
+      title={title}
+      onClick={(event) => onClick(event.metaKey || event.shiftKey)}
       className="rounded-full border px-2.5 py-0.5 text-[11px] transition-colors"
       style={{
         borderColor: on ? (colour ?? "var(--color-accent)") : "var(--color-border-subtle)",
@@ -404,16 +407,10 @@ export default function Work({
         {CATEGORY_NAMES.map((name) => (
           <Chip
             key={name}
-            on={categories.has(name)}
+            on={categories.size === 0 || categories.has(name)}
             colour={CATEGORY[name].colour}
-            onClick={() =>
-              setCategories((current) => {
-                const next = new Set(current);
-                if (next.has(name)) next.delete(name);
-                else next.add(name);
-                return next;
-              })
-            }
+            title={`Show ${CATEGORY[name].label} only. Hold shift to add it to what is shown.`}
+            onClick={(add) => setCategories((current) => clicked(current, name, add))}
           >
             {CATEGORY[name].label}
           </Chip>
@@ -422,20 +419,14 @@ export default function Work({
         {STATE_NAMES.map((name) => (
           <Chip
             key={name}
-            on={states.has(name)}
-            onClick={() =>
-              setStates((current) => {
-                const next = new Set(current);
-                if (next.has(name)) next.delete(name);
-                else next.add(name);
-                return next;
-              })
-            }
+            on={states.size === 0 || states.has(name)}
+            title={`Show ${STATES[name]} only. Hold shift to add it to what is shown.`}
+            onClick={(add) => setStates((current) => clicked(current, name, add))}
           >
             {STATES[name]}
           </Chip>
         ))}
-        <Chip on={dismissed} onClick={() => setDismissed((value) => !value)}>
+        <Chip on={dismissed} onClick={() => setDismissed((value) => !value)} title="Also show what a model judged false">
           Dismissed
         </Chip>
         <div className="ml-auto flex items-center gap-2">

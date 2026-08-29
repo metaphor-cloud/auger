@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { matches, type Filters } from "./matches";
+import { clicked, matches, type Filters } from "./matches";
 import type { Finding } from "../types";
 
 function finding(over: Partial<Finding> = {}): Finding {
@@ -67,5 +67,31 @@ describe("matches", () => {
       expect(matches(finding(), { ...all, search: wanted })).toBe(true);
     }
     expect(matches(finding(), { ...all, search: "nothing like it" })).toBe(false);
+  });
+});
+
+describe("clicked", () => {
+  const everyState = new Set(["open", "doing"]);
+
+  it("narrows to the pill that was clicked", () => {
+    // Every pill starts on, so a plain toggle would hide open findings on a click of
+    // the pill that says Open. That is the report this rule exists to answer.
+    expect([...clicked(everyState, "open", false)]).toEqual(["open"]);
+  });
+
+  it("widens back out when the clicked pill is already the only one", () => {
+    expect(clicked(new Set(["open"]), "open", false).size).toBe(0);
+  });
+
+  it("adds and removes when a modifier is held", () => {
+    expect([...clicked(new Set(["open"]), "doing", true)].sort()).toEqual(["doing", "open"]);
+    expect([...clicked(everyState, "doing", true)]).toEqual(["open"]);
+  });
+
+  it("never empties by narrowing, so a click cannot hide everything", () => {
+    for (const name of ["open", "doing", "resolved", "suppressed"]) {
+      const next = clicked(everyState, name, false);
+      expect(next.size === 0 || next.has(name)).toBe(true);
+    }
   });
 });
