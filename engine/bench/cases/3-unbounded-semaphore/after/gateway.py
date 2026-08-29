@@ -15,15 +15,9 @@ class Backend:
 class Gateway:
     def __init__(self, backends: dict[str, Backend]) -> None:
         self.backends = backends
-        self._limits: dict[str, asyncio.Semaphore] = {}
-
-    def _limit(self, name: str) -> asyncio.Semaphore:
-        if name not in self._limits:
-            self._limits[name] = asyncio.Semaphore(self.backends[name].max_concurrent)
-        return self._limits[name]
 
     async def complete(self, name: str, prompt: str) -> str:
-        async with self._limit(name):
+        async with asyncio.Semaphore(self.backends[name].max_concurrent):
             return await self._post(name, prompt)
 
     async def _post(self, name: str, prompt: str) -> str:

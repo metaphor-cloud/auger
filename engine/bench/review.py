@@ -164,9 +164,12 @@ async def run_case(case: Case, config: Config, gateway: Gateway, policy: Policy)
             if outcome.run.error:
                 result.error = outcome.run.error
             for finding in outcome.findings:
-                result.reported.append(f"{finding.file}:{finding.line} {finding.title}")
                 if case.hit_by(finding.file, finding.line):
                     result.found = True
+                    # What it said, so a detection can be read rather than trusted. A
+                    # rule that matches on line number alone will call any finding near
+                    # the defect a hit, and only the words show whether it is one.
+                    result.reported.append(f"{finding.line}: {finding.title}")
                 else:
                     result.noise += 1
         except Exception as error:  # a harness failure is not a model failure
@@ -195,6 +198,8 @@ def report(results: list[Result], model: str) -> None:
             mark = "failed" if one.error else ("FOUND " if one.found else "missed")
             note = f"  [{one.error}]" if one.error else ""
             print(f"  {mark} {one.case.name:26} {one.noise:2} noise {one.seconds:6.1f}s{note}")
+            for said in one.reported:
+                print(f"         said: {said}")
 
     answered = [one for one in results if not one.error]
     failed = len(results) - len(answered)

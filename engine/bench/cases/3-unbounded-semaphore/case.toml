@@ -1,12 +1,12 @@
-title = "a backend added after construction gets no limit until first use, and reloading the config replaces the semaphore under waiters"
+title = "a new semaphore per call limits nothing"
 tier = 3
 tags = ["correctness", "concurrency"]
 file = "gateway.py"
-lines = [18, 27]
+lines = [17, 22]
 summary = """
-Building semaphores lazily looks like an improvement and mostly is. The defect is that
-nothing removes an entry, so after a config reload changes `max_concurrent` the old
-semaphore stays and the new limit never applies. Worse, if `_limits` is ever cleared to
-pick up the new value, tasks already holding a permit release into a semaphore nobody
-is waiting on, and the new one admits `max_concurrent` more on top of those in flight.
+Building the semaphore inside `complete` reads as a tidy simplification: the dict of
+limits goes away and the value is taken straight from the backend. But a semaphore only
+counts the callers that share it, and every call now makes its own, so each one acquires
+its own permit immediately and the limit never applies. A hundred concurrent reviews all
+reach the server at once, which is the overrun the class exists to prevent.
 """
