@@ -4,9 +4,14 @@ A diff review reads what moved. It never reaches a file nobody has touched, so a
 that has sat there since the file was written is never seen. An audit goes looking.
 
 A repository does not fit in one prompt, so the audit runs in two passes. The first is
-given the outline, which is every file with the symbols it defines and their sizes, and
-it answers one question: which files are worth reading? The second pass reads those
-files and reviews the code in them, the same way a diff review reviews a change.
+given the outline, which is every file with the symbols it defines and their sizes, plus
+whatever Semgrep flagged, and it answers one question: which files are worth reading?
+The second pass reads those files and reviews the code in them, the same way a diff
+review reviews a change.
+
+Semgrep is a signal about where to look, never a verdict. It matches a pattern without
+reading what surrounds it, so its output was mostly noise when it went straight into the
+list, and asking a model to judge a one-line match is asking it to guess.
 
 The outline chooses. It never decides. A claim drawn from file names alone is a guess
 about code nobody read, and this used to report those guesses as findings.
@@ -14,6 +19,7 @@ about code nobody read, and this used to report those guesses as findings.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,9 +33,11 @@ from auger.jobs.parse import (
     extract_object,
     parse_findings,
 )
+from auger.jobs.semgrep import scan
 from auger.llm import Gateway, Message, ModelError
 from auger.log import Logger, create_logger
 from auger.models import Repository
+from auger.sandbox import Sandbox
 from auger.store import Store
 from auger.store.findings import Finding, close_missing, record
 from auger.store.runs import Run, finish, set_audited, start
@@ -47,12 +55,22 @@ READ_FILES = 6
 #: with a line saying so, because half a file reviewed beats a file skipped.
 FILE_BUDGET = 24_000
 
+#: How many of the read files are chosen by Semgrep rather than by the model. A scanner
+#: that finds something real must not be talked out of it by a model reading names.
+FLAGGED_FILES = 2
+#: Files named in the prompt as flagged. Beyond this it is a list nobody reads.
+FLAGGED_SHOWN = 25
+
 CHOOSE = """\
 You are choosing which files to read.
 
 You are given the outline of a repository: every file, and the names of the symbols each \
 file defines with their size in lines. The outline may be cut short, so say nothing \
 about what is absent from it.
+
+You may also be given what a static analyser flagged. It matches patterns without \
+reading the code around them, so most of what it flags is not a problem. Treat it as a \
+place to look, never as a defect: it tells you nothing about whether that code is wrong.
 
 Pick the files most likely to hold a real defect, and say in one line why each one. \
 Prefer:
@@ -212,6 +230,42 @@ def wanted_files(text: str, known: set[str], limit: int = READ_FILES) -> list[st
     return chosen
 
 
+def flagged_text(matches: list[Finding], shown: int = FLAGGED_SHOWN) -> str:
+    """What the scanner flagged, by file, worst first. Empty when it flagged nothing."""
+    if not matches:
+        return ""
+    rank = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+    by_file: dict[str, list[Finding]] = {}
+    for one in matches:
+        by_file.setdefault(one.file, []).append(one)
+    order = sorted(
+        by_file.items(),
+        key=lambda item: (min(rank.get(one.severity, 5) for one in item[1]), -len(item[1])),
+    )
+    rows = [
+        f"{path}: " + ", ".join(sorted({one.title for one in found})[:4])
+        for path, found in order[:shown]
+    ]
+    return "\n".join(rows)
+
+
+def flagged_first(matches: list[Finding], known: set[str], limit: int = FLAGGED_FILES) -> list[str]:
+    """The files the scanner is most worried about, which are read whatever else is.
+
+    A model choosing from names alone can talk itself out of a file a scanner matched
+    on. It should not get to.
+    """
+    rank = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+    order = sorted(matches, key=lambda one: rank.get(one.severity, 5))
+    chosen: list[str] = []
+    for one in order:
+        if one.file in known and one.file not in chosen:
+            chosen.append(one.file)
+        if len(chosen) >= limit:
+            break
+    return chosen
+
+
 def read_files(repository: Path, paths: list[str]) -> tuple[str, list[str]]:
     """The source of each file, numbered, and which ones could be read."""
     blocks: list[str] = []
@@ -245,6 +299,8 @@ async def audit(
     repository: Repository,
     policy: Policy,
     log: Logger | None = None,
+    sandbox: Sandbox | None = None,
+    image: str = "",
 ) -> AuditOutcome:
     """Audit one repository. Never raises."""
     log = (log or create_logger("jobs")).bind(repo=repository.slug, kind=KIND)
@@ -265,6 +321,15 @@ async def audit(
         f"\n\nThe repository owner wrote: {policy.hints.strip()}" if policy.hints.strip() else ""
     )
 
+    # --- Semgrep, as a place to look and nothing more ---------------------------------
+    matches: list[Finding] = []
+    if sandbox is not None and image:
+        found = await asyncio.to_thread(scan, sandbox, str(repository.path), image, run.id, log=log)
+        matches = found.findings
+        if found.errors:
+            log.warn("scan incomplete", reason="scan_errors", errors=found.errors[:3])
+        log.info("scan finished", matched=len(matches), files=len({one.file for one in matches}))
+
     # --- pass one: which files are worth reading -------------------------------------
     try:
         choice = await gateway.complete(
@@ -273,7 +338,14 @@ async def audit(
                 Message(role="system", content=CHOOSE),
                 Message(
                     role="user",
-                    content=f"Repository: {repository.slug}{hints}\n\nOutline:\n{shape}",
+                    content=(
+                        f"Repository: {repository.slug}{hints}\n\nOutline:\n{shape}"
+                        + (
+                            f"\n\nA static analyser flagged:\n{flagged}"
+                            if (flagged := flagged_text(matches))
+                            else ""
+                        )
+                    ),
                 ),
             ],
             profile=policy.model_profile,
@@ -288,7 +360,13 @@ async def audit(
             "SELECT DISTINCT path FROM chunks WHERE repo_path = ?", (str(repository.path),)
         )
     }
-    chosen = wanted_files(choice.text, known)
+    # The scanner's worst files go in whatever the model said, then the model's picks
+    # fill the rest of the budget.
+    forced = flagged_first(matches, known)
+    chosen = forced + [
+        path for path in wanted_files(choice.text, known, READ_FILES) if path not in forced
+    ]
+    chosen = chosen[:READ_FILES]
     if not chosen:
         run.status = "skipped"
         run.reason = "nothing_chosen"

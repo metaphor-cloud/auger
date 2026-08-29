@@ -18,8 +18,7 @@ from pathlib import Path
 from auger.config import Policy
 from auger.config.schema import JobClass
 from auger.forge import PullRequest
-from auger.jobs import JobOutcome, audit, diff_review, pr_review, semgrep
-from auger.jobs.scan_job import run_scan
+from auger.jobs import JobOutcome, audit, diff_review, pr_review
 from auger.log import Logger, create_logger
 from auger.models import Repository
 from auger.schedule.protocol import RigLike
@@ -52,17 +51,6 @@ class Task:
             policy=policy,
             kind=audit.KIND,
             target="audit",
-        )
-
-    @classmethod
-    def for_scan(cls, repository: Repository, policy: Policy) -> Task:
-        # A scan is slower and less urgent than a review of a change the user just made.
-        return cls(
-            priority=min(9, policy.priority + 2),
-            repository=repository,
-            policy=policy,
-            kind=semgrep.KIND,
-            target="scan",
         )
 
     @classmethod
@@ -203,7 +191,7 @@ class Scheduler:
         A job never names a model, so this asks the same question the job will: the
         profile decides, and the kind of work decides which entry of it.
         """
-        wanted = JobClass.TRIAGE if task.kind == semgrep.KIND else JobClass.REVIEW
+        wanted = JobClass.REVIEW
         profile = self.rig.config.profile.get(task.policy.model_profile)
         return profile.entry(wanted).backend if profile else ""
 
@@ -255,16 +243,8 @@ class Scheduler:
                 repository=task.repository,
                 policy=task.policy,
                 log=self.log,
-            )
-        if task.kind == semgrep.KIND:
-            return await run_scan(
-                store=rig.store,
-                gateway=rig.gateway,
                 sandbox=rig.selection.sandbox,
-                repository=task.repository,
-                policy=task.policy,
                 image=rig.config.image,
-                log=self.log,
             )
         return await diff_review.review(
             store=rig.store,

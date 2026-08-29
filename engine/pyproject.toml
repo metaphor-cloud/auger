@@ -30,6 +30,7 @@ dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-timeout>=2.3",
+    "pytest-xdist>=3.6",
     "mypy>=1.13",
     "ruff>=0.8",
     "pyinstaller>=6.11",
@@ -68,4 +69,5 @@ ignore_missing_imports = true
 asyncio_mode = "auto"
 # A hung test must fail, not stall the run.
 timeout = 30
+addopts = "-n auto"
 testpaths = ["tests"]

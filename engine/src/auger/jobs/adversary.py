@@ -22,7 +22,7 @@ from pathlib import Path
 from auger.config import Policy
 from auger.config.schema import JobClass
 from auger.jobs.parse import as_response_format
-from auger.jobs.triage import VERDICT_SCHEMA, parse_verdicts
+from auger.jobs.verdicts import VERDICT_SCHEMA, parse_verdicts
 from auger.llm import Gateway, Message, ModelError
 from auger.log import Logger, create_logger
 from auger.store import Store

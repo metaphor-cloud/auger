@@ -97,7 +97,7 @@ async def test_it_queues_a_pull_request_assigned_to_the_user(
     store: Store, registry: Registry, hub: FakeGitHub
 ) -> None:
     hub.add_pull(number=7, assignees=["ru"])
-    assert await queued(store, registry, Policy()) == ["pull/7"]
+    assert await queued(store, registry, Policy(mode="draft")) == ["pull/7"]
 
 
 async def test_it_leaves_someone_elses_pull_request_alone(
@@ -111,7 +111,7 @@ async def test_it_can_be_told_to_read_every_pull_request(
     store: Store, registry: Registry, hub: FakeGitHub
 ) -> None:
     hub.add_pull(number=7, assignees=["someone"])
-    policy = Policy(auto_review_assigned_prs=False)
+    policy = Policy(mode="draft", auto_review_assigned_prs=False)
     assert await queued(store, registry, policy) == ["pull/7"]
 
 
@@ -147,7 +147,7 @@ async def test_a_new_commit_brings_the_pull_request_back(
     run.status = "ok"
     finish(store, run)
     hub.add_pull(number=7, assignees=["ru"], sha="new-sha")
-    assert await queued(store, registry, Policy()) == ["pull/7"]
+    assert await queued(store, registry, Policy(mode="draft")) == ["pull/7"]
 
 
 async def test_a_forge_that_refuses_does_not_stop_the_cycle(

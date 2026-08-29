@@ -237,9 +237,18 @@ def test_audits_can_be_turned_off(store: Store, repository: Repository) -> None:
     assert audit_due(rig, None) == []  # type: ignore[arg-type]
 
 
-def test_a_repository_in_off_mode_is_never_audited(store: Store, repository: Repository) -> None:
-    rig = StubRig(store, Policy(mode="off"), repository)
+def test_a_disabled_repository_is_never_audited(store: Store, repository: Repository) -> None:
+    rig = StubRig(store, Policy(enabled=False), repository)
     assert audit_due(rig, None) == []  # type: ignore[arg-type]
+
+
+def test_turning_pull_request_reviews_off_does_not_turn_audits_off(
+    store: Store, repository: Repository
+) -> None:
+    """`mode` says how a pull request review is delivered. An audit posts nothing to a
+    forge, so a user who wants no comments on their pull requests still gets audited."""
+    rig = StubRig(store, Policy(mode="off"), repository)
+    assert len(audit_due(rig, None)) == 1  # type: ignore[arg-type]
 
 
 # --- quiet hours -------------------------------------------------------------------

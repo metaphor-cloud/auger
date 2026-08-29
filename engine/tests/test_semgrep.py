@@ -8,17 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from auger.config import Policy
 from auger.config.schema import Backend, Config, ProfileEntry
-from auger.jobs.scan_job import run_scan
 from auger.jobs.semgrep import command, parse, scan
-from auger.jobs.triage import item_text, messages_for, parse_verdicts, triage
 from auger.llm import Gateway
 from auger.models import Remote, Repository
 from auger.net import Allowlist
 from auger.sandbox import Network, RunResult, RunSpec, SandboxError
 from auger.store import Store
-from auger.store.findings import counts, list_findings, record
 from tests.helpers import FakeModelServer
 
 Serve = Callable[[object], Awaitable[str]]
@@ -176,129 +172,6 @@ def test_an_exit_code_of_one_means_it_found_something() -> None:
 
 def verdicts(entries: list[dict[str, object]]) -> str:
     return json.dumps({"verdicts": entries})
-
-
-def test_only_the_findings_go_to_the_model() -> None:
-    """This is why an audit costs a fraction of a review."""
-    findings = parse(OUTPUT, "/x/thing", "r1").findings
-    body = messages_for(findings)[1].content
-    assert "runner.py:12" in body
-    assert "subprocess.run(command, shell=True)" in body
-    assert len(body) < 2000
-
-
-def test_each_item_carries_its_rule_and_its_code() -> None:
-    finding = parse(OUTPUT, "/x/thing", "r1").findings[0]
-    text = item_text(1, finding)
-    assert "dangerous-subprocess-use" in text
-    assert "shell=True" in text
-
-
-def test_it_reads_the_verdicts() -> None:
-    found, problems = parse_verdicts(
-        verdicts([{"id": 1, "verdict": "false", "reason": "constant"}]), 2
-    )
-    assert found[1] == ("false", "constant")
-    assert problems == []
-
-
-def test_an_unknown_verdict_is_refused() -> None:
-    _, problems = parse_verdicts(verdicts([{"id": 1, "verdict": "maybe"}]), 1)
-    assert problems
-
-
-def test_a_verdict_for_an_item_that_was_not_sent_is_refused() -> None:
-    found, problems = parse_verdicts(verdicts([{"id": 99, "verdict": "true"}]), 2)
-    assert found == {}
-    assert problems
-
-
-async def test_a_dismissed_finding_leaves_the_list_but_stays_in_the_database(
-    store: Store, gateway: Gateway, model: FakeModelServer
-) -> None:
-    """Deleting it would bring it back on the next scan."""
-    findings = parse(OUTPUT, "/x/thing", "r1").findings
-    record(store, findings)
-    model.reply = verdicts(
-        [
-            {"id": 1, "verdict": "true", "reason": "the command is user input"},
-            {"id": 2, "verdict": "false", "reason": "the file is ascii by construction"},
-        ]
-    )
-    outcome = await triage(store, gateway, findings, Policy())
-    assert outcome.real == 1
-    assert outcome.dismissed == 1
-    assert [finding.file for finding in list_findings(store)] == ["runner.py"]
-    assert len(list_findings(store, include_dismissed=True)) == 2
-
-
-async def test_a_dismissed_finding_is_not_counted(
-    store: Store, gateway: Gateway, model: FakeModelServer
-) -> None:
-    findings = parse(OUTPUT, "/x/thing", "r1").findings
-    record(store, findings)
-    model.reply = verdicts([{"id": 2, "verdict": "false", "reason": "not affected"}])
-    await triage(store, gateway, findings, Policy())
-    assert counts(store)["total"] == 1
-
-
-async def test_the_reason_is_kept_with_the_finding(
-    store: Store, gateway: Gateway, model: FakeModelServer
-) -> None:
-    findings = parse(OUTPUT, "/x/thing", "r1").findings
-    record(store, findings)
-    model.reply = verdicts([{"id": 1, "verdict": "true", "reason": "the command is user input"}])
-    await triage(store, gateway, findings, Policy())
-    assert "the command is user input" in list_findings(store)[0].detail
-
-
-async def test_a_model_that_is_down_leaves_the_findings_showing(
-    store: Store, gateway: Gateway
-) -> None:
-    """An untriaged finding still shows. Losing it would be worse."""
-    findings = parse(OUTPUT, "/x/thing", "r1").findings
-    record(store, findings)
-    gateway.config.backend["triage"].url = "https://api.openai.com/v1"
-    outcome = await triage(store, gateway, findings, Policy())
-    assert outcome.judged == 0
-    assert len(list_findings(store)) == 2
-
-
-# --- the whole job -----------------------------------------------------------------
-
-
-async def test_a_scan_run_stores_and_judges(
-    store: Store, gateway: Gateway, model: FakeModelServer
-) -> None:
-    model.reply = verdicts([{"id": 2, "verdict": "false", "reason": "ascii by construction"}])
-    outcome = await run_scan(
-        store, gateway, StubSandbox(), REPOSITORY, Policy(), "auger/analysis:0.1"
-    )
-    assert outcome.run.status == "ok"
-    assert outcome.run.finding_count == 2
-    assert outcome.triage is not None
-    assert outcome.triage.dismissed == 1
-    assert [finding.file for finding in list_findings(store)] == ["runner.py"]
-
-
-async def test_a_scan_that_fails_is_recorded_with_its_reason(
-    store: Store, gateway: Gateway
-) -> None:
-    outcome = await run_scan(
-        store, gateway, StubSandbox(error="no runtime"), REPOSITORY, Policy(), "image"
-    )
-    assert outcome.run.status == "failed"
-    assert outcome.run.reason == "scan_failed"
-    assert outcome.run.error == "no runtime"
-
-
-async def test_a_clean_scan_calls_no_model(
-    store: Store, gateway: Gateway, model: FakeModelServer
-) -> None:
-    empty = RunResult("stub", 0, json.dumps({"results": [], "errors": []}), "", 0.2)
-    outcome = await run_scan(store, gateway, StubSandbox(empty), REPOSITORY, Policy(), "image")
-    assert outcome.run.status == "ok"
-    assert model.requests == []
 
 
 def test_a_file_the_parser_cannot_read_is_not_a_failure() -> None:

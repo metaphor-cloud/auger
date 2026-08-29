@@ -164,7 +164,7 @@ async def test_a_judge_that_is_down_leaves_the_findings_alone(
 
 
 def test_the_verdict_shape_is_held_to() -> None:
-    from auger.jobs.triage import VERDICT_SCHEMA
+    from auger.jobs.verdicts import VERDICT_SCHEMA
 
     shape = json.dumps(VERDICT_SCHEMA)
     assert '"enum": ["true", "false", "uncertain"]' in shape

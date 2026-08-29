@@ -59,8 +59,11 @@ class Policy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = True
-    mode: Mode = "draft"
-    auto_review_assigned_prs: bool = True
+    #: Off until somebody turns it on. Draft leaves a review on a real pull request for
+    #: the user to submit, and complete submits it under their name. Neither is
+    #: something to start doing because a default said so.
+    mode: Mode = "off"
+    auto_review_assigned_prs: bool = False
     #: Wait this long after another agent stops before a review starts.
     idle_seconds: int = Field(default=300, ge=0)
     priority: Priority = 5

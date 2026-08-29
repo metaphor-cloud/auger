@@ -164,12 +164,14 @@ async def test_a_repeat_skip_shares_one_row(
     ]
 
 
-async def test_a_security_scan_can_be_asked_for_by_hand(
+async def test_an_audit_can_be_asked_for_by_hand(
     http: httpx.AsyncClient, token: str, rig: Rig, tree: Path
 ) -> None:
+    """There is no scan of its own any more. Semgrep runs inside the audit, as one
+    signal about where to look, and the audit reads the code."""
     async with http:
         await call(http, token, "POST", "/scan")
-        body = await call(http, token, "POST", "/scan/security", json={"path": str(tree / "alpha")})
+        body = await call(http, token, "POST", "/audit", json={"path": str(tree / "alpha")})
     assert body["pending"] >= 1
 
 

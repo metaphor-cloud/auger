@@ -225,8 +225,8 @@ export async function resumeQueue(): Promise<Queue> {
   return request("/queue/resume", { method: "POST" });
 }
 
-export async function requestScan(path: string): Promise<Queue> {
-  return request("/scan/security", {
+export async function requestAudit(path: string): Promise<Queue> {
+  return request("/audit", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path }),

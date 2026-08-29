@@ -142,7 +142,7 @@ async def test_the_findings_are_stored_like_any_other(
     store: Store, gateway: Gateway, entry: Entry
 ) -> None:
     pull = await one_pull(entry)
-    await review_pull(store, gateway, entry, REPO, pull, REPOSITORY, Policy())
+    await review_pull(store, gateway, entry, REPO, pull, REPOSITORY, Policy(mode="draft"))
     assert len(list_findings(store)) == 2
 
 
@@ -151,7 +151,7 @@ async def test_a_reviewed_head_is_not_reviewed_again(
 ) -> None:
     """A pull request that gains no commit must cost nothing on the next poll."""
     pull = await one_pull(entry)
-    await review_pull(store, gateway, entry, REPO, pull, REPOSITORY, Policy())
+    await review_pull(store, gateway, entry, REPO, pull, REPOSITORY, Policy(mode="draft"))
     assert pull_reviewed(store, REPOSITORY.path, "abc123") is True
     assert pull_reviewed(store, REPOSITORY.path, "other-sha") is False
 
@@ -161,7 +161,7 @@ async def test_a_forge_that_refuses_fails_the_run_and_not_the_rig(
 ) -> None:
     pull = await one_pull(entry)
     hub.rate_limited = True
-    outcome = await review_pull(store, gateway, entry, REPO, pull, REPOSITORY, Policy())
+    outcome = await review_pull(store, gateway, entry, REPO, pull, REPOSITORY, Policy(mode="draft"))
     assert outcome.run.status == "failed"
     assert outcome.run.reason == "forge_failed"
     assert list_runs(store)[0].status == "failed"
@@ -178,7 +178,7 @@ async def test_a_review_that_cannot_be_posted_still_keeps_its_findings(
         raise ForgeError("posting refused")
 
     entry.forge.post_review = refuse  # type: ignore[method-assign]
-    outcome = await review_pull(store, gateway, entry, REPO, pull, REPOSITORY, Policy())
+    outcome = await review_pull(store, gateway, entry, REPO, pull, REPOSITORY, Policy(mode="draft"))
     assert outcome.run.status == "ok"
     assert outcome.run.error == "posting refused"
     assert len(list_findings(store)) == 2

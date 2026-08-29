@@ -24,7 +24,9 @@ def due(rig: RigLike, log: Logger) -> list[Task]:
     tasks: list[Task] = []
     for view in rig.repositories():
         policy = view.policy
-        if not policy.enabled or policy.mode == "off":
+        # `enabled` is the switch for this repository. `mode` says how a pull request
+        # review is delivered, and a local review posts nothing anywhere.
+        if not policy.enabled:
             continue
         path = view.repository.path
         if not path.is_dir():
@@ -127,7 +129,7 @@ def audit_due(rig: RigLike, log: Logger, now: datetime | None = None) -> list[Ta
     tasks: list[Task] = []
     for view in rig.repositories():
         policy = view.policy
-        if not policy.enabled or policy.mode == "off" or policy.audit_hours <= 0:
+        if not policy.enabled or policy.audit_hours <= 0:
             continue
         last = last_audit(rig.store, view.repository.path)
         if last:

@@ -955,16 +955,6 @@ def create_app(rig: Rig) -> FastAPI:
         rig.publish("queue.resumed", pending=rig.scheduler.pending)
         return _queue_out(rig)
 
-    @router.post("/scan/security")
-    async def request_scan(request: ReviewRequest) -> QueueOut:
-        """Queue a Semgrep scan and its triage for one repository."""
-        repository = rig.find_repository(request.path)
-        if repository is None:
-            raise HTTPException(status_code=404, detail=f"no repository at {request.path}")
-        rig.submit_scan(repository)
-        rig.publish("queue.changed", pending=rig.scheduler.pending)
-        return _queue_out(rig)
-
     @router.post("/audit")
     async def request_audit(request: ReviewRequest) -> QueueOut:
         """Queue a whole repository audit."""

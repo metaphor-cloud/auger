@@ -57,7 +57,7 @@ def test_a_narrow_organisation_key_beats_a_broad_one() -> None:
 
 def test_a_repository_with_no_remote_gets_no_organisation_settings() -> None:
     config = Config.model_validate({"org": {"github.com": {"mode": "complete"}}})
-    assert resolve_policy(repository("/x/thing", slug=None), config).mode == "draft"
+    assert resolve_policy(repository("/x/thing", slug=None), config).mode == "off"
 
 
 def test_an_exact_repository_key_beats_a_glob() -> None:
