@@ -86,7 +86,7 @@ ADVERSARY_MODELS: tuple[Choice, ...] = (
     Choice(
         name="Qwen3-Coder-30B",
         job_class=JobClass.VERIFY,
-        repo="Qwen/Qwen3-Coder-30B-A3B-Instruct-GGUF",
+        repo="unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
         filename="Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
         memory_gb=24.0,
         description="Trained on code, from a different family than the reviewer. 18 GB.",
