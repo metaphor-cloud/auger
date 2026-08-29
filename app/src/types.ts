@@ -266,7 +266,11 @@ export type Settings = {
   schedule: Record<string, number | string | boolean>;
   allow_hosted: boolean;
   //: What the active profile spends on a review.
-  profile_limits: { review_max_tokens: number; review_temperature: number } | null;
+  profile_limits: {
+    review_max_tokens: number;
+    review_temperature: number;
+    names: string[];
+  } | null;
 };
 
 export type Tool = {

@@ -88,6 +88,9 @@ class Completion:
     tool_calls: tuple[ToolCall, ...] = ()
     #: The assistant turn as the model sent it, so a tool loop can send it back.
     raw_tool_calls: tuple[dict[str, Any], ...] = ()
+    #: True when the reply stopped at `max_tokens` rather than at its own end. The
+    #: text is then cut mid-sentence, and JSON parsed out of it is short of findings.
+    truncated: bool = False
 
 
 @dataclass
@@ -258,10 +261,11 @@ class Gateway:
         payload: dict[str, Any] = {
             "model": resolved.backend.model,
             "messages": [message.as_dict() for message in messages],
-            "max_tokens": resolved.entry.max_tokens,
             "temperature": resolved.entry.temperature,
             "stream": False,
         }
+        if resolved.entry.max_tokens:
+            payload["max_tokens"] = resolved.entry.max_tokens
         if response_format:
             payload["response_format"] = response_format
         if tools:
@@ -294,6 +298,17 @@ class Gateway:
             duration_ms=int((time.monotonic() - started) * 1000),
             repo=self.subject,
         )
+        if completion.truncated:
+            # The reply stopped at the ceiling, so the JSON in it is cut off and the
+            # findings after the cut are gone. Silently returning fewer is worse than
+            # saying so.
+            self.log.warn(
+                "reply hit the token ceiling",
+                reason="max_tokens",
+                backend=resolved.name,
+                job_class=job_class.value,
+                max_tokens=resolved.entry.max_tokens,
+            )
         return completion
 
     async def embed(self, texts: list[str], profile: str = "balanced") -> list[list[float]]:
@@ -381,6 +396,10 @@ def _completion(body: Any, resolved: Resolved, usage: Usage) -> Completion:
     except (KeyError, IndexError, TypeError) as error:
         raise ModelError(f"{resolved.name} returned no message") from error
     calls, raw_calls = _tool_calls(message)
+    try:
+        finish = str(body["choices"][0].get("finish_reason") or "")
+    except (KeyError, IndexError, TypeError):
+        finish = ""
     counts = body.get("usage") or {}
     prompt = int(counts.get("prompt_tokens", 0))
     completion = int(counts.get("completion_tokens", 0))
@@ -394,4 +413,5 @@ def _completion(body: Any, resolved: Resolved, usage: Usage) -> Completion:
         completion_tokens=completion,
         tool_calls=calls,
         raw_tool_calls=raw_calls,
+        truncated=finish == "length",
     )

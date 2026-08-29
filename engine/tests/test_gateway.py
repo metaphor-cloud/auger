@@ -61,6 +61,27 @@ async def test_the_profile_sets_the_limits(gateway: Gateway, fake: FakeModelServ
     assert fake.requests[0]["temperature"] == 0.3
 
 
+async def test_no_ceiling_is_sent_when_the_profile_sets_none(
+    gateway: Gateway, fake: FakeModelServer
+) -> None:
+    """`max_tokens` caps what the model writes, and a cap that is too small cuts the
+    findings JSON in half. Off is the default, so the field is left out entirely."""
+    gateway.config.profile["balanced"].review = ProfileEntry(backend="review")
+    await gateway.complete(JobClass.REVIEW, HELLO)
+    assert "max_tokens" not in fake.requests[0]
+
+
+async def test_a_reply_that_stopped_at_the_ceiling_says_so(
+    gateway: Gateway, fake: FakeModelServer
+) -> None:
+    """Truncated JSON parses into fewer findings, which looks like a quiet reviewer
+    rather than a lost answer."""
+    fake.finish_reason = "length"
+    assert (await gateway.complete(JobClass.REVIEW, HELLO)).truncated is True
+    fake.finish_reason = "stop"
+    assert (await gateway.complete(JobClass.REVIEW, HELLO)).truncated is False
+
+
 async def test_a_changed_profile_changes_the_model_with_no_other_edit(
     gateway: Gateway, fake: FakeModelServer
 ) -> None:

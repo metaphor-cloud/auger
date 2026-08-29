@@ -282,6 +282,46 @@ async def test_the_loop_stops_at_the_call_limit(
     assert run.calls == 2
 
 
+async def test_with_no_ceiling_the_loop_ends_when_the_model_stops_asking(
+    gateway: Gateway, model: FakeModelServer, config_with_server: Config
+) -> None:
+    """A count is an arbitrary number, so the default is none. The allowlist decides
+    whether a review gets tools at all."""
+    model.reply = FINDINGS
+    model.tool_calls = [tool_turn("fixture.read_pull_request")]
+    model.tool_call_rounds = 5
+    registry = McpRegistry(config_with_server)
+    await registry.refresh()
+    from auger.llm import Message
+
+    _, run = await complete_with_tools(
+        gateway,
+        registry,
+        JobClass.REVIEW,
+        [Message("system", "rules")],
+        Policy(tools=["fixture.*"]),
+        None,
+    )
+    assert Policy().max_tool_calls == 0, "off is the default"
+    assert run.calls == 5
+
+
+async def test_no_tools_reach_a_review_whose_allowlist_is_empty(
+    gateway: Gateway, model: FakeModelServer, config_with_server: Config
+) -> None:
+    model.reply = FINDINGS
+    model.tool_calls = [tool_turn("fixture.read_pull_request")]
+    registry = McpRegistry(config_with_server)
+    await registry.refresh()
+    from auger.llm import Message
+
+    _, run = await complete_with_tools(
+        gateway, registry, JobClass.REVIEW, [Message("system", "rules")], Policy(tools=[]), None
+    )
+    assert run.calls == 0
+    assert all("tools" not in request for request in model.requests)
+
+
 async def test_a_refused_tool_comes_back_as_text_and_the_review_goes_on(
     gateway: Gateway, model: FakeModelServer, config_with_server: Config
 ) -> None:

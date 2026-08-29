@@ -649,6 +649,7 @@ def create_app(rig: Rig) -> FastAPI:
                 ProfileLimits(
                     review_max_tokens=active.review.max_tokens,
                     review_temperature=active.review.temperature,
+                    names=sorted(rig.config.profile),
                 )
                 if (active := rig.config.profile.get(rig.config.defaults.model_profile))
                 else None

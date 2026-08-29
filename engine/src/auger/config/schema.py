@@ -79,8 +79,9 @@ class Policy(BaseModel):
     hints: str = ""
     #: MCP tools a job may call, as `server.tool` or `server.*`. Empty means none.
     tools: list[str] = Field(default_factory=list)
-    #: How many tool calls one review may make.
-    max_tool_calls: int = Field(default=8, ge=0, le=64)
+    #: A ceiling on how many tool calls one review may make. 0 means no ceiling, and
+    #: the loop ends when the model stops asking. `tools` decides whether it gets any.
+    max_tool_calls: int = Field(default=0, ge=0, le=64)
     #: Run a whole repository audit this often. 0 turns audits off.
     audit_hours: int = Field(default=24, ge=0)
     #: Have a second model judge what the first one found. It needs a `verify` backend.
@@ -152,7 +153,10 @@ class ProfileEntry(BaseModel):
 
     #: Empty turns this job class off.
     backend: str = ""
-    max_tokens: int = Field(default=4096, ge=1)
+    #: A ceiling on what the model writes back, not on what it is sent. 0 means no
+    #: ceiling, and the server runs to its own context limit. A number here that is
+    #: too small cuts the reply off mid-JSON and loses findings.
+    max_tokens: int = Field(default=0, ge=0)
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
 
 
@@ -166,13 +170,13 @@ class Profile(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     # Structured work decodes greedily. There is nothing creative about a severity.
-    triage: ProfileEntry = ProfileEntry(backend="local-review", max_tokens=2048, temperature=0.0)
-    review: ProfileEntry = ProfileEntry(backend="local-review", max_tokens=8192, temperature=0.0)
+    triage: ProfileEntry = ProfileEntry(backend="local-review", temperature=0.0)
+    review: ProfileEntry = ProfileEntry(backend="local-review", temperature=0.0)
     #: A second model that argues with the reviewer. Empty turns it off, which is the
     #: default: it needs a second set of weights and a second server.
-    verify: ProfileEntry = ProfileEntry(backend="", max_tokens=2048, temperature=0.0)
-    embed: ProfileEntry = ProfileEntry(backend="local-embed", max_tokens=512)
-    rerank: ProfileEntry = ProfileEntry(backend="", max_tokens=512)
+    verify: ProfileEntry = ProfileEntry(backend="", temperature=0.0)
+    embed: ProfileEntry = ProfileEntry(backend="local-embed")
+    rerank: ProfileEntry = ProfileEntry(backend="")
 
     def entry(self, job_class: JobClass) -> ProfileEntry:
         return getattr(self, job_class.value)  # type: ignore[no-any-return]

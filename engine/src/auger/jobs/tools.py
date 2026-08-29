@@ -78,7 +78,7 @@ async def complete_with_tools(
     allowlist = ToolAllowlist(policy.tools)
     run = ToolRun()
     available: list[Tool] = []
-    if registry is not None and not allowlist.empty and policy.max_tool_calls > 0:
+    if registry is not None and not allowlist.empty:
         available = registry.tools_for(allowlist)
 
     if not available:
@@ -94,12 +94,13 @@ async def complete_with_tools(
     schema = as_openai_tools(available)
 
     completion = await gateway.complete(job_class, turn, profile=policy.model_profile, tools=schema)
-    while completion.tool_calls and run.calls < policy.max_tool_calls:
+    limit = policy.max_tool_calls or None
+    while completion.tool_calls and (limit is None or run.calls < limit):
         turn.append(
             Message(role="assistant", content=completion.text, tool_calls=completion.raw_tool_calls)
         )
         for call in completion.tool_calls:
-            if run.calls >= policy.max_tool_calls:
+            if limit is not None and run.calls >= limit:
                 break
             run.calls += 1
             run.names.append(call.name)

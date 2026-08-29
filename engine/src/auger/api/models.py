@@ -336,6 +336,9 @@ class ProfileLimits(BaseModel):
 
     review_max_tokens: int
     review_temperature: float
+    #: Every profile the config defines. With one, there is nothing to choose and the
+    #: window says so rather than offering a text box with one right answer.
+    names: list[str] = []
 
 
 class ForgeSetting(BaseModel):

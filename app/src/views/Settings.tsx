@@ -4,6 +4,11 @@ import {
   Badge,
   Button,
   Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Tabs,
   TabsContent,
   TabsList,
@@ -274,15 +279,17 @@ export default function SettingsView({
                   onSave={(alternate) => void change("defaults", "", { alternate })}
                 />
               </Fact>
-              <Fact label="Tool calls one review may make">
+              <Fact label="Ceiling on tool calls per review">
                 <NumberSetting
                   value={settings.defaults.max_tool_calls}
+                  suffix="0 is no ceiling. The loop ends when the model stops asking."
                   onSave={(max_tool_calls) => void change("defaults", "", { max_tool_calls })}
                 />
               </Fact>
-              <Fact label="Tokens one review may use">
+              <Fact label="Ceiling on what the reviewer writes back">
                 <NumberSetting
-                  value={Number(settings.profile_limits?.review_max_tokens ?? 8192)}
+                  suffix="0 is no ceiling. A small one cuts the findings off mid-answer."
+                  value={Number(settings.profile_limits?.review_max_tokens ?? 0)}
                   onSave={(next) =>
                     void save(
                       `profile.${quoted(settings.defaults.model_profile)}.review.max_tokens`,
@@ -303,13 +310,27 @@ export default function SettingsView({
                   }
                 />
               </Fact>
-              <Fact label="Model profile">
-                <TextSetting
-                  className="w-40"
-                  value={settings.defaults.model_profile}
-                  onSave={(model_profile) => void change("defaults", "", { model_profile })}
-                />
-              </Fact>
+              {(settings.profile_limits?.names.length ?? 0) > 1 && (
+                <Fact label="Model profile">
+                  <Select
+                    value={settings.defaults.model_profile}
+                    onValueChange={(model_profile) =>
+                      void change("defaults", "", { model_profile })
+                    }
+                  >
+                    <SelectTrigger className="w-40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {settings.profile_limits?.names.map((one) => (
+                        <SelectItem key={one} value={one}>
+                          {one}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Fact>
+              )}
             </Facts>
           </Section>
 

@@ -51,6 +51,8 @@ class FakeModelServer:
         self.tool_call_rounds = 99
         self.concurrent = 0
         self.peak_concurrent = 0
+        #: What a real server sends when a reply stopped at `max_tokens`.
+        self.finish_reason = "stop"
 
     def app(self) -> FastAPI:
         app = FastAPI()
@@ -75,7 +77,7 @@ class FakeModelServer:
                 message["content"] = ""
             return JSONResponse(
                 {
-                    "choices": [{"message": message}],
+                    "choices": [{"message": message, "finish_reason": self.finish_reason}],
                     "usage": {"prompt_tokens": 11, "completion_tokens": 7},
                 }
             )
