@@ -321,6 +321,8 @@ export type ModelChoice = {
   fits: boolean;
   downloaded: boolean;
   gated: boolean;
+  from_repo: string;
+  from_publisher: boolean;
 };
 
 export type Catalog = {

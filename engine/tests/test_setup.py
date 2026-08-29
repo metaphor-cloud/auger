@@ -476,3 +476,37 @@ def test_a_gated_model_is_still_offered_to_choose() -> None:
     from auger.llm.catalog import CATALOG
 
     assert any(choice.gated for choice in CATALOG), "the list holds one to pick on purpose"
+
+
+# --- a gate, and the way round it ------------------------------------------------------
+
+
+def test_a_gated_model_comes_from_the_publisher_when_a_token_can_open_it() -> None:
+    gemma = catalog.by_name("gemma-3-12b-qat")
+    assert gemma.gated is True
+    assert gemma.source("hf_token")[0] == gemma.repo
+
+
+def test_a_gated_model_still_downloads_without_one() -> None:
+    """A licence acceptance happens in a browser, once. A rig that cannot fetch a
+    model it recommends is worse than one that says where the bytes came from."""
+    gemma = catalog.by_name("gemma-3-12b-qat")
+    repo, filename = gemma.source(None)
+    assert repo != gemma.repo
+    assert repo == gemma.open_repo
+    assert filename == gemma.open_filename
+
+
+def test_an_ungated_model_ignores_all_of_that() -> None:
+    for name in ("gpt-oss-120b", "Muse-Glimmer-30B"):
+        choice = catalog.by_name(name)
+        assert choice.source(None) == choice.source("hf_token") == (choice.repo, choice.filename)
+
+
+def test_a_model_on_disk_under_either_name_counts_as_here(tmp_path: Path) -> None:
+    """Fetched without a token it lands under the community build's file name, and
+    asking for the publisher's would say no to a model that is right there."""
+    gemma = catalog.by_name("gemma-3-12b-qat")
+    (tmp_path / gemma.open_filename).write_bytes(b"weights")
+    assert catalog.downloaded(gemma, tmp_path) is True
+    assert catalog.downloaded(gemma, tmp_path, "hf_token") is True

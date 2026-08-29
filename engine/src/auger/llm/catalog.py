@@ -43,14 +43,36 @@ class Choice:
     description: str
     #: Its publisher requires a licence acceptance, so fetching it needs a token.
     gated: bool = False
+    #: Where to get it when the publisher's gate is shut. A licence acceptance happens
+    #: in a browser, once, and a rig that cannot fetch a model it recommends is worse
+    #: than one that says where the bytes came from.
+    #:
+    #: This is a community build of the same weights, not a copy of the publisher's
+    #: file, and the window says which one it used.
+    open_repo: str = ""
+    open_filename: str = ""
+
+    def source(self, token: str | None = None) -> tuple[str, str]:
+        """The repository and file to fetch, and whether a token changes it."""
+        if self.gated and not token and self.open_repo:
+            return self.open_repo, self.open_filename or self.filename
+        return self.repo, self.filename
+
+    def url_for(self, token: str | None = None) -> str:
+        repo, filename = self.source(token)
+        return f"{HUGGINGFACE}/{repo}/resolve/main/{filename}"
+
+    def tree_for(self, token: str | None = None) -> str:
+        repo, _ = self.source(token)
+        return f"{HUGGINGFACE}/api/models/{repo}/tree/main"
 
     @property
     def url(self) -> str:
-        return f"{HUGGINGFACE}/{self.repo}/resolve/main/{self.filename}"
+        return self.url_for(None)
 
     @property
     def tree_url(self) -> str:
-        return f"{HUGGINGFACE}/api/models/{self.repo}/tree/main"
+        return self.tree_for(None)
 
 
 @dataclass(frozen=True)
@@ -59,6 +81,9 @@ class Resolved:
     url: str
     sha256: str
     size_bytes: int
+    #: Where the bytes are actually coming from, which is not always the publisher.
+    repo: str = ""
+    filename: str = ""
 
 
 #: What the rig recommends, largest first, and it picks the first that fits.
@@ -97,7 +122,12 @@ REVIEW_MODELS: tuple[Choice, ...] = (
         filename="gemma-3-12b-it-q4_0.gguf",
         memory_gb=11.0,
         description="Quantisation aware trained, so it holds up at four bits. 8 GB.",
+        # Google require a licence acceptance, which happens in a browser, once. With
+        # a token the file comes from them. Without one it comes from the community
+        # build below, and the window says which one it used.
         gated=True,
+        open_repo="lmstudio-community/gemma-3-12B-it-qat-GGUF",
+        open_filename="gemma-3-12B-it-QAT-Q4_0.gguf",
     ),
 )
 
@@ -112,6 +142,8 @@ ADVERSARY_MODELS: tuple[Choice, ...] = tuple(
         memory_gb=one.memory_gb,
         description=one.description,
         gated=one.gated,
+        open_repo=one.open_repo,
+        open_filename=one.open_filename,
     )
     for one in REVIEW_MODELS
 )
@@ -193,8 +225,18 @@ def _largest_that_fits(choices: tuple[Choice, ...], available: float) -> Choice:
     return open_ones[-1]
 
 
-def downloaded(choice: Choice, models_dir: Path | None) -> bool:
-    return models_dir is not None and (models_dir / choice.filename).is_file()
+def downloaded(choice: Choice, models_dir: Path | None, token: str | None = None) -> bool:
+    """Whether the file this would fetch is already here.
+
+    A gated model fetched without a token lands under the community build's file name,
+    so asking for the publisher's name would say no to a model that is on the disk.
+    """
+    if models_dir is None:
+        return False
+    # Every name it could be under. Setting a token later must not make a model that
+    # is already on the disk look missing.
+    names = {choice.filename, choice.open_filename, choice.source(token)[1]}
+    return any(name and (models_dir / name).is_file() for name in names)
 
 
 def _already_here(
@@ -258,30 +300,46 @@ async def resolve(
     from auger.net.download import auth_for
 
     try:
-        response = await http.get(choice.tree_url, headers=auth_for(choice.tree_url, token))
+        tree = choice.tree_for(token)
+        response = await http.get(tree, headers=auth_for(tree, token))
         response.raise_for_status()
         entries = response.json()
     except httpx.HTTPStatusError as error:
         if error.response.status_code in (401, 403):
             # A gate is not a network fault, and the way past it is a licence and a
             # token, so the message says that rather than the status code.
+            repo, _ = choice.source(token)
             raise CatalogError(
-                f"{choice.repo} is gated. Accept its licence at "
-                f"https://huggingface.co/{choice.repo}, then set a Hugging Face token "
+                f"{repo} is gated. Accept its licence at "
+                f"https://huggingface.co/{repo}, then set a Hugging Face token "
                 f"in the variable your config names."
             ) from error
         raise CatalogError(f"could not read {choice.repo}: {error}") from error
     except (httpx.HTTPError, ValueError) as error:
         raise CatalogError(f"could not read {choice.repo}: {error}") from error
 
+    repo, filename = choice.source(token)
     for entry in entries:
-        if entry.get("path") != choice.filename:
+        if entry.get("path") != filename:
             continue
         oid = str((entry.get("lfs") or {}).get("oid", ""))
         if not oid:
-            raise CatalogError(f"{choice.filename} publishes no checksum")
-        log.info("model resolved", model=choice.name, size=entry.get("size"))
-        return Resolved(
-            choice=choice, url=choice.url, sha256=oid, size_bytes=int(entry.get("size", 0))
+            raise CatalogError(f"{filename} publishes no checksum")
+        log.info(
+            "model resolved",
+            model=choice.name,
+            size=entry.get("size"),
+            # Which source answered. A model that came from a community build rather
+            # than from its publisher is a fact worth having in the log.
+            repo=repo,
+            publisher=repo == choice.repo,
         )
-    raise CatalogError(f"{choice.repo} has no file named {choice.filename}")
+        return Resolved(
+            choice=choice,
+            url=choice.url_for(token),
+            sha256=oid,
+            size_bytes=int(entry.get("size", 0)),
+            repo=repo,
+            filename=filename,
+        )
+    raise CatalogError(f"{repo} has no file named {filename}")

@@ -317,6 +317,7 @@ class Rig:
                 adversary_model,
                 report,
                 self.log,
+                self.model_token(),
             )
         finally:
             self.setup_running = False

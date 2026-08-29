@@ -103,7 +103,7 @@ def backend_for(config: Config, choice: Choice, job_class: JobClass) -> str:
     return name
 
 
-def apply_to_verify(config: Config, adversary: Choice) -> Config:
+def apply_to_verify(config: Config, adversary: Choice, filename: str | None = None) -> Config:
     """Point the verify class at a second server, so a second model can argue.
 
     It gets a port of its own, because both models are up at once: one reviews while
@@ -115,7 +115,7 @@ def apply_to_verify(config: Config, adversary: Choice) -> Config:
         update={
             "managed": True,
             "model": adversary.name,
-            "model_file": adversary.filename,
+            "model_file": filename or adversary.filename,
             "model_url": adversary.url,
             "max_concurrent": 2,
         }
@@ -127,14 +127,18 @@ def apply_to_verify(config: Config, adversary: Choice) -> Config:
 
 
 def apply_to_config(
-    config: Config, review: Choice, embed: Choice, rerank: Choice | None = None
+    config: Config,
+    review: Choice,
+    embed: Choice,
+    rerank: Choice | None = None,
+    names: dict[str, str] | None = None,
 ) -> Config:
     """Point the managed backends at the files that were fetched."""
     config.backend[REVIEW_BACKEND] = (config.backend.get(REVIEW_BACKEND) or Backend()).model_copy(
         update={
             "managed": True,
             "model": review.name,
-            "model_file": review.filename,
+            "model_file": (names or {}).get(review.name, review.filename),
             "model_url": review.url,
         }
     )
@@ -142,7 +146,7 @@ def apply_to_config(
         update={
             "managed": True,
             "model": embed.name,
-            "model_file": embed.filename,
+            "model_file": (names or {}).get(embed.name, embed.filename),
             "model_url": embed.url,
             "args": ["--embedding", "--pooling", "last"],
         }
@@ -174,6 +178,7 @@ async def install(
     adversary_model: str | None = None,
     on_step: Callable[[Step], None] | None = None,
     log: Logger | None = None,
+    token: str | None = None,
 ) -> SetupResult:
     """Fetch the runtime and the weights, and write the config. Never raises."""
     log = (log or create_logger("llm")).bind(component="setup")
@@ -194,6 +199,9 @@ async def install(
     )
     adversary = catalog.by_name(adversary_model) if adversary_model else None
 
+    #: What each model is called on disk. A gated model fetched from a community build
+    #: keeps that build's file name, and the backend has to point at what landed.
+    landed: dict[str, str] = {}
     async with client() as http:
         try:
             report(Step("runtime", message="Looking for a model runtime"))
@@ -219,7 +227,7 @@ async def install(
                 wanted.append(adversary)
             for choice in wanted:
                 report(Step("model", choice.name, message=f"Looking up {choice.name}"))
-                resolved = await catalog.resolve(http, choice, log)
+                resolved = await catalog.resolve(http, choice, log, token)
 
                 def model_progress(progress: Progress) -> None:
                     report(
@@ -236,10 +244,14 @@ async def install(
                 await fetch(
                     http,
                     resolved.url,
-                    models_dir(home) / choice.filename,
+                    # The name on disk is the name of the file that was fetched, which
+                    # is not the publisher's when the gate sent us elsewhere.
+                    models_dir(home)
+                    / landed.setdefault(choice.name, resolved.filename or choice.filename),
                     resolved.sha256,
                     model_progress,
                     log,
+                    token,
                 )
         except (RuntimeInstallError, CatalogError, DownloadError) as error:
             log.error("setup failed", reason="setup_failed", error=error)
@@ -247,9 +259,9 @@ async def install(
             report(Step("failed", message=str(error)))
             return result
 
-    apply_to_config(config, review, embed)
+    apply_to_config(config, review, embed, names=landed)
     if adversary is not None:
-        apply_to_verify(config, adversary)
+        apply_to_verify(config, adversary, landed.get(adversary.name))
         result.adversary_model = adversary.name
     result.review_model = review.name
     result.embed_model = embed.name
