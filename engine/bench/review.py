@@ -178,24 +178,37 @@ async def run_case(case: Case, config: Config, gateway: Gateway, policy: Policy)
 
 
 def report(results: list[Result], model: str) -> None:
+    """What the model did, over the cases it actually got to answer.
+
+    A run that failed is not a miss. Counting a dead model server as a model that saw
+    the defect and said nothing would report a number that means nothing.
+    """
     print(f"\nreviewer: {model}")
     for tier in sorted({one.case.tier for one in results}):
         rows = [one for one in results if one.case.tier == tier]
-        found = sum(1 for one in rows if one.found)
-        noise = sum(one.noise for one in rows)
+        answered = [one for one in rows if not one.error]
+        found = sum(1 for one in answered if one.found)
+        noise = sum(one.noise for one in answered)
         print(f"\ntier {tier}: {TIER_NAMES.get(tier, '')}")
-        print(f"  found {found} of {len(rows)}, {noise} other findings")
+        print(f"  found {found} of {len(answered)}, {noise} other findings")
         for one in rows:
-            mark = "FOUND " if one.found else "missed"
+            mark = "failed" if one.error else ("FOUND " if one.found else "missed")
             note = f"  [{one.error}]" if one.error else ""
             print(f"  {mark} {one.case.name:26} {one.noise:2} noise {one.seconds:6.1f}s{note}")
 
-    found = sum(1 for one in results if one.found)
-    noise = sum(one.noise for one in results)
+    answered = [one for one in results if not one.error]
+    failed = len(results) - len(answered)
+    if not answered:
+        print(f"\ntotal: nothing was measured. {failed} runs failed.")
+        return
+    found = sum(1 for one in answered if one.found)
+    noise = sum(one.noise for one in answered)
     print(
-        f"\ntotal: found {found} of {len(results)}"
-        f" ({found / len(results):.0%}), {noise / len(results):.1f} other findings per case"
+        f"\ntotal: found {found} of {len(answered)}"
+        f" ({found / len(answered):.0%}), {noise / len(answered):.1f} other findings per case"
     )
+    if failed:
+        print(f"{failed} runs failed and are not counted.")
 
 
 async def main(argv: list[str]) -> int:
@@ -235,6 +248,11 @@ async def main(argv: list[str]) -> int:
         policy = Policy(tools=[], adversary=False)
         for case in chosen:
             for _ in range(arguments.repeat):
+                # A long run outlives its server: something else stops it, or it runs
+                # out of memory. Without this, every case after that reads as a miss.
+                if not (await supervisor.ensure(gateway.client, wanted))[backend].up:
+                    print(f"{backend} stopped answering and will not start again")
+                    break
                 result = await run_case(case, config, gateway, policy)
                 print(
                     f"{'FOUND ' if result.found else 'missed'} {case.name}"
