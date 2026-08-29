@@ -247,12 +247,12 @@ def test_a_workstation_gets_the_large_model() -> None:
 
 
 def test_a_laptop_gets_a_model_that_fits() -> None:
-    assert catalog.recommended_review_model(11).name == "gpt-oss-20b"
+    assert catalog.recommended_review_model(11).name == "gemma-3-12b-qat"
 
 
 def test_a_tiny_machine_still_gets_a_model() -> None:
     """Returning nothing would leave the user with no way forward."""
-    assert catalog.recommended_review_model(1).name == "gpt-oss-20b"
+    assert catalog.recommended_review_model(1).name == "gemma-3-12b-qat"
 
 
 def test_this_machine_reports_its_memory() -> None:
@@ -453,7 +453,7 @@ def test_a_downloaded_model_that_does_not_fit_is_not_chosen(tmp_path: Path) -> N
     models.mkdir()
     large = catalog.by_name("gpt-oss-120b")
     (models / large.filename).write_bytes(b"weights")
-    assert catalog.recommended_review_model(11, models).name == "gpt-oss-20b"
+    assert catalog.recommended_review_model(11, models).name == "gemma-3-12b-qat"
 
 
 def test_a_half_finished_download_does_not_count(tmp_path: Path) -> None:
@@ -465,48 +465,21 @@ def test_a_half_finished_download_does_not_count(tmp_path: Path) -> None:
     assert catalog.downloaded(small, models) is False
 
 
-def test_a_gated_model_is_never_the_recommendation() -> None:
-    """It needs a licence acceptance and a token, so recommending one to a machine
-    that has neither is a first run that ends in a 401."""
-    for memory in (1, 11, 24, 200):
-        assert catalog.recommended_review_model(memory).gated is False
-
-
-def test_a_gated_model_is_still_offered_to_choose() -> None:
+def test_every_recommended_model_is_fetchable_without_a_token() -> None:
+    """A first run has no Hugging Face token and no browser. A catalogue entry that
+    points at a gated repository turns that first run into a 401, so none does:
+    Gemma comes from an open build of the same quantisation aware trained weights.
+    """
     from auger.llm.catalog import CATALOG
 
-    assert any(choice.gated for choice in CATALOG), "the list holds one to pick on purpose"
-
-
-# --- a gate, and the way round it ------------------------------------------------------
-
-
-def test_a_gated_model_comes_from_the_publisher_when_a_token_can_open_it() -> None:
+    assert all(not choice.repo.startswith("google/") for choice in CATALOG)
     gemma = catalog.by_name("gemma-3-12b-qat")
-    assert gemma.gated is True
-    assert gemma.source("hf_token")[0] == gemma.repo
+    assert gemma.repo == "lmstudio-community/gemma-3-12B-it-qat-GGUF"
+    assert gemma.filename == "gemma-3-12B-it-QAT-Q4_0.gguf"
 
 
-def test_a_gated_model_still_downloads_without_one() -> None:
-    """A licence acceptance happens in a browser, once. A rig that cannot fetch a
-    model it recommends is worse than one that says where the bytes came from."""
+def test_a_model_on_disk_counts_as_here(tmp_path: Path) -> None:
     gemma = catalog.by_name("gemma-3-12b-qat")
-    repo, filename = gemma.source(None)
-    assert repo != gemma.repo
-    assert repo == gemma.open_repo
-    assert filename == gemma.open_filename
-
-
-def test_an_ungated_model_ignores_all_of_that() -> None:
-    for name in ("gpt-oss-120b", "Muse-Glimmer-30B"):
-        choice = catalog.by_name(name)
-        assert choice.source(None) == choice.source("hf_token") == (choice.repo, choice.filename)
-
-
-def test_a_model_on_disk_under_either_name_counts_as_here(tmp_path: Path) -> None:
-    """Fetched without a token it lands under the community build's file name, and
-    asking for the publisher's would say no to a model that is right there."""
-    gemma = catalog.by_name("gemma-3-12b-qat")
-    (tmp_path / gemma.open_filename).write_bytes(b"weights")
+    assert catalog.downloaded(gemma, tmp_path) is False
+    (tmp_path / gemma.filename).write_bytes(b"weights")
     assert catalog.downloaded(gemma, tmp_path) is True
-    assert catalog.downloaded(gemma, tmp_path, "hf_token") is True

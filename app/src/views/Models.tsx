@@ -36,7 +36,6 @@ function label(model: ModelChoice) {
   const notes = [`${model.memory_gb.toFixed(0)} GB`];
   if (model.downloaded) notes.push("downloaded");
   if (!model.fits) notes.push("too large for this machine");
-  if (model.gated && !model.from_publisher) notes.push("a community build");
   return `${model.name} · ${notes.join(" · ")}`;
 }
 
@@ -230,16 +229,6 @@ export default function Models({
               "Nothing chosen"}
             {toFetch.length > 0 && ` · ${toFetch.length} to download`}
           </p>
-          {chosen.some((one) => one.gated && !one.from_publisher) && (
-            <p className="text-[11px] text-text-tertiary">
-              {chosen
-                .filter((one) => one.gated && !one.from_publisher)
-                .map((one) => `${one.name} comes from ${one.from_repo}`)
-                .join(", ")}
-              . Its publisher wants a licence accepted in a browser first. Accept it and
-              set a Hugging Face token, and Auger fetches their own file instead.
-            </p>
-          )}
           <div className="flex items-center gap-3">
             <Button onClick={() => void fetchModels()} disabled={busy !== "" || !review}>
               {busy === "setup"

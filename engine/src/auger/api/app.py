@@ -404,7 +404,6 @@ def create_app(rig: Rig) -> FastAPI:
 
         usable = catalog.usable_memory_gb()
         here = models_dir(rig.settings.home)
-        token = rig.model_token()
         return CatalogOut(
             models=[
                 ModelChoiceOut(
@@ -415,10 +414,7 @@ def create_app(rig: Rig) -> FastAPI:
                     memory_gb=choice.memory_gb,
                     description=choice.description,
                     fits=choice.memory_gb <= usable,
-                    downloaded=catalog.downloaded(choice, here, token),
-                    gated=choice.gated,
-                    from_repo=choice.source(token)[0],
-                    from_publisher=choice.source(token)[0] == choice.repo,
+                    downloaded=catalog.downloaded(choice, here),
                 )
                 for choice in catalog.CATALOG
             ],

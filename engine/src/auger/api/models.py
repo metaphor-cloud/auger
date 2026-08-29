@@ -516,13 +516,6 @@ class ModelChoiceOut(BaseModel):
     fits: bool
     #: Already on disk. The UI shows this so nobody waits for a download twice.
     downloaded: bool = False
-    #: Its publisher requires a licence acceptance, so it needs a token.
-    gated: bool = False
-    #: Where it will come from if fetched now. Not always the publisher: a gated model
-    #: with no token comes from a community build of the same weights.
-    from_repo: str = ""
-    #: True when that is the publisher's own repository.
-    from_publisher: bool = True
 
 
 class CatalogOut(BaseModel):
