@@ -25,6 +25,7 @@ from auger.store.findings import (
     SEVERITY_ORDER,
     Finding,
     Status,
+    counts,
     get_finding,
     list_findings,
     record_one,
@@ -32,6 +33,7 @@ from auger.store.findings import (
     set_status,
 )
 from auger.store.notes import Note, add_note, note_counts, notes_for
+from auger.store.runs import list_runs
 
 #: What an agent calls a state, and what the store calls it. `resolved` and
 #: `suppressed` are the review's words. `done` and `dropped` are the work's words, and
@@ -70,13 +72,26 @@ review of this code, not from a person.
 """
 
 
+def _rows(store: Store, sql: str) -> list[dict[str, Any]]:
+    return [dict(row) for row in store.query(sql, [])]
+
+
+def _tally(store: Store, sql: str) -> dict[str, Any]:
+    """A `k, n` query as a plain mapping. Read across, not row by row."""
+    return {str(row["k"]): row["n"] for row in store.query(sql, [])}
+
+
 def item(finding: Finding, notes: list[Note] | None = None, note_count: int = 0) -> dict[str, Any]:
     body: dict[str, Any] = {
         "id": finding.fingerprint,
+        # An item carries where it lives, because a list can hold several repositories
+        # and an agent reads these one item at a time.
+        "repository": finding.repo_path,
         "title": finding.title,
         "detail": finding.detail,
         "state": BACK.get(finding.status, finding.status),
         "severity": finding.severity,
+        "category": finding.category,
         "source": finding.source,
         "file": finding.file,
         "line": finding.line,
@@ -196,5 +211,111 @@ def build(store: Store, repository: Path, version: str = "") -> MCPServer:
     def list_open(limit: int = 20) -> dict[str, Any]:
         found = list_findings(store, repo, ACTIVE, limit)
         return {"repository": repo, "items": _with_counts(store, found)}
+
+    # --- across every repository, read only -------------------------------------------
+    #
+    # The tools above are for an agent working in one repository. These are for judging
+    # whether the reviews are worth having at all, which is not a question one
+    # repository can answer.
+
+    @server.tool(
+        description=(
+            "The state of every repository at once: how much work is open, what has "
+            "run, what failed and why, and how much of it a second model threw out. "
+            "Start here when the question is whether the reviews are any good."
+        )
+    )
+    def overview() -> dict[str, Any]:
+        return {
+            "findings": {
+                "by_status": _tally(
+                    store, "SELECT status AS k, COUNT(*) n FROM findings GROUP BY 1"
+                ),
+                "by_category": _tally(
+                    store,
+                    "SELECT category AS k, COUNT(*) n FROM findings"
+                    " WHERE status IN ('open','doing') GROUP BY 1",
+                ),
+                "by_severity": counts(store),
+                "judged": _tally(
+                    store,
+                    "SELECT COALESCE(triage,'unjudged') AS k, COUNT(*) n FROM findings GROUP BY 1",
+                ),
+            },
+            "runs": {
+                "by_kind": _tally(
+                    store, "SELECT kind || ':' || status AS k, COUNT(*) n FROM runs GROUP BY 1"
+                ),
+                "findings_per_run": _tally(
+                    store,
+                    "SELECT kind AS k, ROUND(CAST(SUM(finding_count) AS REAL) / COUNT(*), 2) n"
+                    " FROM runs WHERE status = 'ok' GROUP BY 1",
+                ),
+                "skips": _tally(
+                    store,
+                    "SELECT reason AS k, COUNT(*) n FROM runs WHERE status = 'skipped'"
+                    " AND reason IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 10",
+                ),
+                "failures": _tally(
+                    store,
+                    "SELECT SUBSTR(COALESCE(error,'no reason recorded'),1,80) AS k, COUNT(*) n"
+                    " FROM runs WHERE status = 'failed' GROUP BY 1 ORDER BY 2 DESC LIMIT 10",
+                ),
+            },
+            "repositories": _rows(
+                store,
+                "SELECT repo_path, COUNT(*) open FROM findings"
+                " WHERE status IN ('open','doing') AND (triage IS NULL OR triage != 'false')"
+                " GROUP BY 1 ORDER BY 2 DESC LIMIT 40",
+            ),
+        }
+
+    @server.tool(
+        description=(
+            "Work items from every repository, most severe first. Pass a repository "
+            "path to narrow it, or words to search for. This is what to read when "
+            "deciding whether the findings are worth acting on."
+        )
+    )
+    def everywhere(
+        query: str = "",
+        repository: str = "",
+        limit: int = 20,
+        include_closed: bool = False,
+        include_dismissed: bool = False,
+    ) -> dict[str, Any]:
+        where = repository or None
+        statuses = () if include_closed else ACTIVE
+        if query.strip():
+            found = search_findings(store, query, where, statuses, limit)
+        else:
+            found = list_findings(store, where, statuses, limit, include_dismissed)
+        return {"items": _with_counts(store, found)}
+
+    @server.tool(
+        description=(
+            "The most recent runs across every repository, newest first, with what "
+            "each one found and why it stopped."
+        )
+    )
+    def runs(repository: str = "", limit: int = 20) -> dict[str, Any]:
+        found = list_runs(store, repository or None, limit)
+        return {
+            "runs": [
+                {
+                    "id": one.id,
+                    "repository": one.repo_path,
+                    "kind": one.kind,
+                    "status": one.status,
+                    "reason": one.reason,
+                    "started_at": one.started_at,
+                    "duration_ms": one.duration_ms,
+                    "findings": one.finding_count,
+                    "tokens": one.prompt_tokens + one.completion_tokens,
+                    "error": one.error,
+                }
+                for one in found
+            ]
+        }
 
     return server

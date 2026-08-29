@@ -205,6 +205,9 @@ async def test_an_agent_can_record_search_and_close_work(tmp_path: Path) -> None
             "note",
             "set_state",
             "list_open",
+            "overview",
+            "everywhere",
+            "runs",
         }
 
         first = await call(
@@ -379,3 +382,46 @@ async def test_a_category_survives_a_repeat(store: Store) -> None:
     assert existed is True
     assert first.fingerprint == second.fingerprint
     assert second.category == "security"
+
+
+@pytest.mark.timeout(60)
+async def test_the_whole_machine_can_be_read_from_inside_one_repository(tmp_path: Path) -> None:
+    """Whether the reviews are worth having is not a question one repository answers,
+    so the read-only tools ignore the repository the agent is standing in."""
+    from mcp import ClientSession
+
+    home = tmp_path / "home"
+    store = Store.open(home)
+    record(
+        store,
+        [
+            Finding(
+                fingerprint="a",
+                repo_path="/somewhere/else",
+                source="diff_review",
+                severity="high",
+                title="a leak in the other repository",
+                detail="not the one the agent is in",
+                file="x.py",
+                line=1,
+            )
+        ],
+    )
+    store.close()
+
+    async with (
+        tracker(home, checkout(tmp_path)) as streams,
+        ClientSession(streams[0], streams[1]) as client,
+    ):
+        await client.initialize()
+
+        mine = await call(client, "list_open")
+        assert mine["items"] == [], "this repository has nothing"
+
+        everywhere = await call(client, "everywhere")
+        assert [one["repository"] for one in everywhere["items"]] == ["/somewhere/else"]
+
+        overview = await call(client, "overview")
+        assert overview["findings"]["by_status"]["open"] == 1
+        assert overview["repositories"][0]["repo_path"] == "/somewhere/else"
+        assert "runs" in overview

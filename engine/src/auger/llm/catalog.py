@@ -137,6 +137,17 @@ ADVERSARY_MODELS: tuple[Choice, ...] = tuple(
 #: user can choose the other in the Models view.
 EMBED_MODELS: tuple[Choice, ...] = (
     Choice(
+        name="Qwen3-Embedding-8B",
+        job_class=JobClass.EMBED,
+        repo="Qwen/Qwen3-Embedding-8B-GGUF",
+        filename="Qwen3-Embedding-8B-Q8_0.gguf",
+        memory_gb=11.0,
+        description=(
+            "General purpose, and strong at it. 8 GB, 4096 dimensions, and the slowest "
+            "to index. Not measured against the code one on code."
+        ),
+    ),
+    Choice(
         name="nomic-embed-code",
         job_class=JobClass.EMBED,
         repo="nomic-ai/nomic-embed-code-GGUF",
@@ -171,6 +182,12 @@ RERANK_MODEL = Choice(
 
 #: The small embedder, for a machine that cannot spare the memory for the code one.
 SMALL_EMBED_MODEL = EMBED_MODELS[-1]
+
+#: The embedder a first run gets. Not the largest that fits: this one was measured on
+#: this repository and the larger general purpose one was not. Recall at 12 rose from
+#: 0.613 to 0.686 against the small embedder, and the first correct file moved from
+#: rank 2 to rank 1.
+DEFAULT_EMBEDDER = "nomic-embed-code"
 
 CATALOG: tuple[Choice, ...] = (
     *REVIEW_MODELS,
@@ -262,9 +279,13 @@ def recommended_embed_model(
     about six times the indexing time, which is paid once and then only per changed file.
     """
     available = usable_memory_gb() if memory_gb is None else memory_gb
-    return _already_here(EMBED_MODELS, available, models_dir) or _largest_that_fits(
-        EMBED_MODELS, available
-    )
+    here = _already_here(EMBED_MODELS, available, models_dir)
+    if here is not None:
+        return here
+    preferred = by_name(DEFAULT_EMBEDDER)
+    if preferred.memory_gb <= available:
+        return preferred
+    return _largest_that_fits(EMBED_MODELS, available)
 
 
 def by_name(name: str) -> Choice:

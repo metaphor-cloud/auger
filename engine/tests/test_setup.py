@@ -250,6 +250,17 @@ def test_a_machine_with_room_to_spare_still_gets_the_default_reviewer() -> None:
     assert catalog.by_name("gpt-oss-120b").memory_gb <= 96, "the larger one is still offered"
 
 
+def test_the_measured_embedder_wins_over_the_larger_one() -> None:
+    """Largest that fits is the wrong rule here: the code embedder was measured on real
+    retrieval and the larger general purpose one was not. Switching also drops every
+    vector, because the dimension changes."""
+    assert catalog.recommended_embed_model(200).name == "nomic-embed-code"
+    assert (
+        catalog.by_name("Qwen3-Embedding-8B").memory_gb
+        > catalog.by_name("nomic-embed-code").memory_gb
+    ), "the larger one is offered, and is not the default"
+
+
 def test_the_catalogue_stays_ordered_largest_first() -> None:
     """`_largest_that_fits` walks the list and takes the first that fits, so an entry
     added in the wrong place would hand a big machine a small model."""
