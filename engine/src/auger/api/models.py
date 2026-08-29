@@ -526,6 +526,10 @@ class CatalogOut(BaseModel):
 
     models: list[ModelChoiceOut]
     recommended: str
+    #: The model each job class uses right now, by job class name. The window seeds its
+    #: pickers from this, or it would open showing a recommendation and look as though
+    #: the choice the user made had been forgotten.
+    chosen: dict[str, str] = {}
     usable_memory_gb: float
     runtime_installed: bool
     setup_running: bool

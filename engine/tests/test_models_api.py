@@ -84,6 +84,29 @@ async def test_the_catalogue_says_what_this_machine_can_hold(
     assert any(model["fits"] for model in review)
 
 
+async def test_the_catalogue_says_which_model_each_job_class_runs_now(
+    http: httpx.AsyncClient, token: str, home: Path, rig: Rig
+) -> None:
+    """The window seeds its pickers from this. Without it the page opens showing the
+    recommendation, and a choice that was saved looks as though it was not."""
+    (home / "config.toml").write_text(
+        "[backend.local-review]\n"
+        'model = "a-chosen-reviewer"\n'
+        "[backend.local-adversary]\n"
+        'url = "http://127.0.0.1:1340/v1"\n'
+        'model = "a-chosen-adversary"\n'
+        "[profile.balanced.verify]\n"
+        'backend = "local-adversary"\n',
+        encoding="utf-8",
+    )
+    rig.reload_config()
+    async with http:
+        body = await get(http, token, "/models/catalog")
+    assert body["chosen"]["review"] == "a-chosen-reviewer"
+    assert body["chosen"]["verify"] == "a-chosen-adversary"
+    assert body["chosen"]["review"] != body["recommended"], "a recommendation is not a choice"
+
+
 async def test_a_model_too_large_for_this_machine_is_marked(
     http: httpx.AsyncClient, token: str
 ) -> None:

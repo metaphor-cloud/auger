@@ -80,6 +80,7 @@ from auger.api.models import (
     TranscriptOut,
     TurnOut,
 )
+from auger.config import Config
 from auger.config.schema import JobClass
 from auger.events import Event
 from auger.jobs.presets import PRESETS, matching
@@ -313,6 +314,25 @@ def _backend_out(rig: Rig, name: str) -> BackendOut:
     )
 
 
+def _chosen_models(config: Config) -> dict[str, str]:
+    """The model each job class runs right now, by job class name.
+
+    A job never names a model, so this asks the profile which backend answers and then
+    the backend which weights it holds. Without it the window opens on a recommendation
+    and the choice the user made looks forgotten.
+    """
+    profile = config.profile.get(config.defaults.model_profile)
+    if profile is None:
+        return {}
+    chosen: dict[str, str] = {}
+    for job_class in JobClass:
+        name = profile.entry(job_class).backend
+        backend = config.backend.get(name) if name else None
+        if backend is not None and backend.model:
+            chosen[job_class.value] = backend.model
+    return chosen
+
+
 def create_app(rig: Rig) -> FastAPI:
     log = rig.log.bind(component="api")
     settings = rig.settings
@@ -419,6 +439,7 @@ def create_app(rig: Rig) -> FastAPI:
                 for choice in catalog.CATALOG
             ],
             recommended=catalog.recommended_review_model(None, here).name,
+            chosen=_chosen_models(rig.config),
             usable_memory_gb=round(usable, 1),
             runtime_installed=runtime.resolve(rig.settings.home) is not None,
             setup_running=rig.setup_running,

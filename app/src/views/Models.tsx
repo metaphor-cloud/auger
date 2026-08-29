@@ -93,11 +93,17 @@ export default function Models({
   const loadCatalog = useCallback(async () => {
     const body = await getCatalog();
     setCatalog(body);
-    setReview((current) => current || body.recommended);
+    // What is configured comes first. Seeding from the recommendation instead makes the
+    // page open on a model nobody picked, which reads as a choice that was not saved.
+    setReview((current) => current || body.chosen.review || body.recommended);
     setEmbed(
       (current) =>
-        current || body.models.find((one) => one.job_class === "embed" && one.fits)?.name || "",
+        current ||
+        body.chosen.embed ||
+        body.models.find((one) => one.job_class === "embed" && one.fits)?.name ||
+        "",
     );
+    setAdversary((current) => current || body.chosen.verify || "");
   }, []);
 
   useEffect(() => {
