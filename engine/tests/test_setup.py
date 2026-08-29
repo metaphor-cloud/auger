@@ -250,6 +250,22 @@ def test_a_machine_with_room_to_spare_still_gets_the_default_reviewer() -> None:
     assert catalog.by_name("gpt-oss-120b").memory_gb <= 96, "the larger one is still offered"
 
 
+def test_the_catalogue_stays_ordered_largest_first() -> None:
+    """`_largest_that_fits` walks the list and takes the first that fits, so an entry
+    added in the wrong place would hand a big machine a small model."""
+    for group in (catalog.REVIEW_MODELS, catalog.ADVERSARY_MODELS, catalog.EMBED_MODELS):
+        sizes = [choice.memory_gb for choice in group]
+        assert sizes == sorted(sizes, reverse=True), [choice.name for choice in group]
+
+
+def test_every_model_comes_from_a_named_publisher() -> None:
+    """A community re-upload can vanish or change under us. These are the accounts that
+    publish the weights or maintain llama.cpp itself."""
+    allowed = {"ggml-org", "google", "meta-models", "Qwen", "nomic-ai"}
+    for choice in catalog.CATALOG:
+        assert choice.repo.split("/")[0] in allowed, choice.repo
+
+
 def test_a_laptop_gets_a_model_that_fits() -> None:
     assert catalog.recommended_review_model(11).name == "gemma-4-12b-qat"
 

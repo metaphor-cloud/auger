@@ -59,7 +59,7 @@ class Resolved:
     size_bytes: int
 
 
-#: What Auger offers, largest first. Three families, so the reviewer and the model that
+#: What Auger offers, largest first. Four families, so the reviewer and the model that
 #: checks it always come from different ones. A second opinion from the same family is
 #: barely a second opinion.
 REVIEW_MODELS: tuple[Choice, ...] = (
@@ -72,6 +72,14 @@ REVIEW_MODELS: tuple[Choice, ...] = (
         description="The strongest reviewer. 63 GB of weights.",
     ),
     Choice(
+        name="Qwen3.6-27B",
+        job_class=JobClass.REVIEW,
+        repo="ggml-org/Qwen3.6-27B-GGUF",
+        filename="Qwen3.6-27B-Q4_K_M.gguf",
+        memory_gb=24.0,
+        description="A fourth family to check the other three against. 19 GB.",
+    ),
+    Choice(
         name="Muse-Glimmer-30B",
         job_class=JobClass.REVIEW,
         repo="meta-models/Muse-Glimmer-30B-GGUF",
@@ -80,20 +88,20 @@ REVIEW_MODELS: tuple[Choice, ...] = (
         description="Meta's, and Apache licensed. 17 GB.",
     ),
     Choice(
-        name="gpt-oss-20b",
-        job_class=JobClass.REVIEW,
-        repo="ggml-org/gpt-oss-20b-GGUF",
-        filename="gpt-oss-20b-MXFP4.gguf",
-        memory_gb=18.0,
-        description="Fits a laptop. 12 GB of weights.",
-    ),
-    Choice(
         name="gemma-4-31b-qat",
         job_class=JobClass.REVIEW,
         repo="google/gemma-4-31B-it-qat-q4_0-gguf",
         filename="gemma-4-31B_q4_0-it.gguf",
         memory_gb=22.0,
         description="Quantisation aware trained, so it holds up at four bits. 18 GB.",
+    ),
+    Choice(
+        name="gpt-oss-20b",
+        job_class=JobClass.REVIEW,
+        repo="ggml-org/gpt-oss-20b-GGUF",
+        filename="gpt-oss-20b-MXFP4.gguf",
+        memory_gb=18.0,
+        description="Fits a laptop. 12 GB of weights.",
     ),
     Choice(
         name="gemma-4-12b-qat",
@@ -155,8 +163,8 @@ EMBED_MODELS: tuple[Choice, ...] = (
 RERANK_MODEL = Choice(
     name="Qwen3-Reranker-0.6B",
     job_class=JobClass.RERANK,
-    repo="DevQuasar/Qwen.Qwen3-Reranker-0.6B-GGUF",
-    filename="Qwen.Qwen3-Reranker-0.6B.Q8_0.gguf",
+    repo="ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF",
+    filename="qwen3-reranker-0.6b-q8_0.gguf",
     memory_gb=1.5,
     description="Reorders the retrieved code. Measured worse than not reordering.",
 )
