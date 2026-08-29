@@ -12,6 +12,9 @@ dist/
 # Node
 node_modules/
 app/dist/
+# pnpm writes its content-addressed cache here when the store is set to the repo.
+# It is a build cache, not source.
+.pnpm-store/
 
 # Rust
 target/

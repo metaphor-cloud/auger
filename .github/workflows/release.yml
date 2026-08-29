@@ -12,27 +12,31 @@ jobs:
   release:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: astral-sh/setup-uv@v5
-      - uses: pnpm/action-setup@v4
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 11
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: app/pnpm-lock.yaml
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: extractions/setup-just@v2
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+      - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2
 
       - name: Read the version from the tag
         id: version
         run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       # A tag that disagrees with the bundle makes the updater offer the same release
-      # for ever, so the build stops here rather than shipping it.
-      - run: ./scripts/check-version.sh "${{ steps.version.outputs.value }}"
+      # for ever, so the build stops here rather than shipping it. The tag name reaches
+      # the script through the environment, never the command line: whoever pushes a tag
+      # chooses that string, and a tag may hold shell metacharacters.
+      - run: ./scripts/check-version.sh "$VERSION"
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
 
       - run: just setup
       - run: just lint
@@ -56,13 +60,15 @@ jobs:
       - run: just verify
 
       - name: Write the updater manifest
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
         run: |
-          ./scripts/write-latest-json.py "${{ steps.version.outputs.value }}" \
+          ./scripts/write-latest-json.py "$VERSION" \
             app/src-tauri/target/release/bundle latest.json
 
       # The updater reads latest.json from the newest release, so it must be an asset of
       # this one. The .dmg is what a new user downloads.
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           draft: true
           generate_release_notes: true
