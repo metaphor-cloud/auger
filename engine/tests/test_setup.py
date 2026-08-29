@@ -463,3 +463,16 @@ def test_a_half_finished_download_does_not_count(tmp_path: Path) -> None:
     small = catalog.by_name("gpt-oss-20b")
     (models / f"{small.filename}.part").write_bytes(b"partial")
     assert catalog.downloaded(small, models) is False
+
+
+def test_a_gated_model_is_never_the_recommendation() -> None:
+    """It needs a licence acceptance and a token, so recommending one to a machine
+    that has neither is a first run that ends in a 401."""
+    for memory in (1, 11, 24, 200):
+        assert catalog.recommended_review_model(memory).gated is False
+
+
+def test_a_gated_model_is_still_offered_to_choose() -> None:
+    from auger.llm.catalog import CATALOG
+
+    assert any(choice.gated for choice in CATALOG), "the list holds one to pick on purpose"

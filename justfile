@@ -60,16 +60,39 @@ build-sidecar:
 package: build-sidecar
     cd {{root}}/app && pnpm tauri build
 
-# Build a signed and notarised .dmg. Needs an Apple Developer certificate:
+# Build a signed and notarised .dmg, and the artefacts the updater needs.
+#
+# Needs an Apple Developer certificate:
 #   APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
+# and the updater key:
+#   TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 release: build-sidecar
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
-        echo "APPLE_SIGNING_IDENTITY is not set. See docs/install.md." >&2
-        exit 1
-    fi
-    cd {{root}}/app && pnpm tauri build --bundles app,dmg
+    for name in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID \
+                TAURI_SIGNING_PRIVATE_KEY; do
+        if [ -z "${!name:-}" ]; then
+            echo "${name} is not set. See docs/install.md." >&2
+            exit 1
+        fi
+    done
+    # The bundler signs the .app, but not the Mach-O files inside a resource. It calls
+    # codesign without --deep, so the frozen engine is signed here first.
+    {{root}}/scripts/sign-engine.sh
+    cd {{root}}/app && pnpm tauri build --bundles app,dmg \
+        --config src-tauri/tauri.release.conf.json
+
+# Check that the built bundle is signed all the way down, and that Gatekeeper takes it.
+verify:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bundle={{root}}/app/src-tauri/target/release/bundle
+    codesign --verify --deep --strict --verbose=2 "${bundle}/macos/Auger.app"
+    # --deep verifies what --deep signing would have covered, so an unsigned library
+    # under Resources/engine fails here rather than at notarisation.
+    spctl --assess --type execute --verbose=4 "${bundle}/macos/Auger.app"
+    codesign --display --entitlements - \
+        "${bundle}/macos/Auger.app/Contents/Resources/engine/auger"
 
 clean:
     rm -rf {{root}}/app/src-tauri/binaries {{root}}/engine/build {{root}}/engine/dist {{root}}/app/dist

@@ -69,3 +69,29 @@ async def test_a_file_already_there_is_not_fetched_again(serve: Serve, tmp_path:
     async with httpx.AsyncClient() as client:
         await download(client, f"{base}/model.gguf", destination)
     assert destination.read_bytes() == b"already here"
+
+
+# --- the token -----------------------------------------------------------------------
+
+
+def test_the_token_goes_to_the_service_it_belongs_to() -> None:
+    from auger.net.download import auth_for
+
+    assert auth_for("https://huggingface.co/api/models", "abc") == {"Authorization": "Bearer abc"}
+    assert auth_for("https://cdn-lfs.hf.co/thing", "abc") == {"Authorization": "Bearer abc"}
+
+
+def test_the_token_never_goes_anywhere_else() -> None:
+    """A redirect must not be able to carry a credential to another service."""
+    from auger.net.download import auth_for
+
+    assert auth_for("https://api.github.com/repos", "abc") == {}
+    assert auth_for("https://objects.githubusercontent.com/x", "abc") == {}
+    assert auth_for("https://evil.example.com/x", "abc") == {}
+
+
+def test_no_token_means_no_header() -> None:
+    from auger.net.download import auth_for
+
+    assert auth_for("https://huggingface.co/x", None) == {}
+    assert auth_for("https://huggingface.co/x", "") == {}

@@ -265,6 +265,28 @@ export type McpServer = {
 
 export type ToolList = { servers: McpServer[]; allowed: string[] };
 
+export type Found = {
+  source: string;
+  id: string;
+  url: string;
+  downloads: number;
+  likes: number;
+  gated: boolean;
+  updated: string;
+};
+
+export type SearchResults = { results: Found[]; token: boolean; token_env: string };
+
+export type ModelFile = {
+  name: string;
+  size_bytes: number;
+  gigabytes: number;
+  fits: boolean;
+  downloaded: boolean;
+};
+
+export type FileResults = { repo: string; files: ModelFile[]; usable_memory_gb: number };
+
 export type ModelChoice = {
   name: string;
   job_class: string;
@@ -274,6 +296,7 @@ export type ModelChoice = {
   description: string;
   fits: boolean;
   downloaded: boolean;
+  gated: boolean;
 };
 
 export type Catalog = {

@@ -7,6 +7,7 @@ import type {
   BackendList,
   Catalog,
   Dashboard,
+  FileResults,
   FindingList,
   ForgeList,
   Queue,
@@ -16,6 +17,7 @@ import type {
   Prompt,
   Recorded,
   RunList,
+  SearchResults,
   Settings,
   TranscriptList,
   System,
@@ -89,6 +91,26 @@ export async function setupModels(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model, embed, adversary }),
+  });
+}
+
+export async function searchModels(query: string): Promise<SearchResults> {
+  return request(`/models/search?q=${encodeURIComponent(query)}`);
+}
+
+export async function modelFiles(repo: string): Promise<FileResults> {
+  return request(`/models/files?repo=${encodeURIComponent(repo)}`);
+}
+
+export async function fetchModel(
+  repo: string,
+  filename: string,
+  jobClass: string,
+): Promise<{ ok: boolean; error: string | null }> {
+  return request("/models/fetch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repo, filename, job_class: jobClass }),
   });
 }
 

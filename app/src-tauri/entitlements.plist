@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The engine is a PyInstaller build. CPython opens more than eighty shared
+	     libraries at run time, and the ones a wheel ships carry no Apple team of their
+	     own. Library validation refuses those, so the engine dies at its first import.
+
+	     The App Sandbox is absent on purpose. The rig reads the git repositories the
+	     user names and starts a container runtime, and a sandboxed process can do
+	     neither. This is a Developer ID application, not an App Store one. -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+
+	<!-- The PyInstaller bootloader passes DYLD_LIBRARY_PATH to the engine so that the
+	     engine finds the libraries beside it. The hardened runtime strips that variable
+	     unless the bundle asks to keep it. -->
+	<key>com.apple.security.cs.allow-dyld-environment-variables</key>
+	<true/>
+</dict>
+</plist>

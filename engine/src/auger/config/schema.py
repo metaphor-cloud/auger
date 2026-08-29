@@ -285,6 +285,42 @@ class CodeGraph(BaseModel):
     limit: int = Field(default=20, ge=1, le=200)
 
 
+class CustomModel(BaseModel):
+    """A model the user added, by naming where it lives.
+
+    Anything the rig can fetch as a single GGUF works. The catalog is a starting list,
+    not a limit.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: A Hugging Face repository, as `owner/name`.
+    repo: str
+    #: The file inside it. A model split across several files is not supported.
+    filename: str
+    #: What it is for. `review`, `verify`, or `embed`.
+    job_class: Literal["review", "verify", "embed", "rerank"] = "review"
+    #: What it needs to run, in gigabytes. Used to say whether it fits this machine.
+    memory_gb: float = Field(default=8.0, gt=0)
+    description: str = ""
+
+
+class Models(BaseModel):
+    """Where the weights come from."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Name of the environment variable that holds a Hugging Face token. Never the
+    #: token itself, which is the same rule the forges follow.
+    #:
+    #: A token lets the rig fetch from the publisher rather than from somebody's
+    #: re-upload, which is the reason to set one: a checksum proves the bytes arrived
+    #: intact, and proves nothing about whose weights they are.
+    token_env: str = "HF_TOKEN"
+    #: Models you added yourself, keyed by the name you call them.
+    custom: dict[str, CustomModel] = Field(default_factory=dict)
+
+
 class Schedule(BaseModel):
     """How hard the rig works."""
 
@@ -352,6 +388,7 @@ class Config(BaseModel):
     egress: Egress = Field(default_factory=Egress)
     schedule: Schedule = Field(default_factory=Schedule)
     codegraph: CodeGraph = Field(default_factory=CodeGraph)
+    models: Models = Field(default_factory=Models)
     forge: dict[str, Forge] = Field(default_factory=lambda: _copy(DEFAULT_FORGES))
     mcp: dict[str, McpServer] = Field(default_factory=dict)
     defaults: Policy = Field(default_factory=Policy)

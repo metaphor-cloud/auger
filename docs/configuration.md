@@ -138,6 +138,21 @@ backend = "local-adversary"
 With `alternate` on, the two trade places between runs, so neither one's blind spots
 decide on their own.
 
+### Where the weights come from
+
+```toml
+[models]
+token_env = "HF_TOKEN"
+```
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `token_env` | `HF_TOKEN` | Name of the variable that holds a Hugging Face token. Never the token. |
+| `custom` | `{}` | Models you added by naming a repository and a file. |
+
+The window searches Hugging Face directly, so a repository and a filename are the
+advanced path rather than the usual one.
+
 ### The system prompt
 
 `system_prompt` is the whole thing the reviewer is told, and it is yours. Settings,

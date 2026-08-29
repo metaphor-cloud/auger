@@ -95,6 +95,9 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        // The rig runs all day and nobody visits its download page again. It asks
+        // GitHub for a new release, and the user decides whether to take it.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(EngineState::default())
         .invoke_handler(tauri::generate_handler![
             engine_info,

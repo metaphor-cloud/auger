@@ -1,7 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions for the main window. The UI only invokes our own commands and fetches the loopback engine, so it needs nothing beyond the core defaults.",
-  "windows": ["main"],
-  "permissions": ["core:default", "notification:default", "autostart:default"]
+  "description": "Permissions for the main window. The UI only invokes our own commands, fetches the loopback engine, and asks the updater about a new release, so it needs nothing beyond the core defaults.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "notification:default",
+    "autostart:default",
+    "updater:default"
+  ]
 }

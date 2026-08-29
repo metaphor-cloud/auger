@@ -59,25 +59,75 @@ auger stop
 It needs no running engine. It stops every model server that came out of `~/.auger`, and
 it leaves a `llama-server` you started yourself alone.
 
+## Updates
+
+Auger asks GitHub for a newer release. Open **System** in the window and press **Check
+for updates**. It downloads the release, checks it against a key that only this project
+holds, and installs it. The new version starts the next time you open Auger.
+
+A build from source has no matching key, so the check there reports a failure. That is
+expected.
+
 ## Building a release
 
 ```
 just package
 ```
 
-That produces `auger.app`. A `.dmg` that other people can open needs your own Apple
-Developer certificate:
+That produces `Auger.app`, which runs on the machine that built it. macOS refuses an
+unsigned application that arrived from elsewhere, so a `.dmg` that other people can open
+needs your own Apple Developer certificate and the updater key:
 
 ```
 export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"
 export APPLE_ID="you@example.com"
 export APPLE_PASSWORD="app-specific-password"
 export APPLE_TEAM_ID="TEAMID"
+export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/auger-updater.key)"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
 just release
+just verify
 ```
 
-Without a certificate the `.app` still runs on the machine that built it. macOS refuses
-an unsigned application that arrived from elsewhere.
+`just release` freezes the engine, signs every Mach-O file inside it, builds the bundle,
+notarises it, and writes the archive the updater takes. `just verify` reads the result
+back: it fails if one library is unsigned, or if Gatekeeper refuses the application.
+
+The Mac App Store is not a way to ship this. A store application must run in the App
+Sandbox, and the App Sandbox permits none of the three things the rig does: it starts a
+container runtime, it starts a model server, and it reads the git repositories you name.
+
+## Publishing a release
+
+CI does the whole thing. Push a tag:
+
+```
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+The workflow checks that the tag agrees with all four version fields, builds, notarises,
+writes `latest.json`, and opens a draft release. Read it, then publish it.
+
+Six repository secrets hold the keys:
+
+- `APPLE_CERTIFICATE`, the Developer ID certificate as a base64 `.p12`.
+- `APPLE_CERTIFICATE_PASSWORD`, the password of that `.p12`.
+- `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`.
+- `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, the updater key.
+
+A public repository is safe here. GitHub gives no secret to a workflow that a pull
+request from a fork starts, and this workflow runs on a tag, which only a person with
+write access can push.
+
+Make the updater key once, and keep it. A lost key means no copy already installed can
+take another update.
+
+```
+cd app && pnpm tauri signer generate -w ~/.tauri/auger-updater.key
+```
+
+The public half goes in `plugins.updater.pubkey` in `app/src-tauri/tauri.conf.json`. The
+private half goes in the secret, and nowhere else.
 
 ## Uninstall
 

@@ -410,6 +410,53 @@ class ToolList(BaseModel):
     allowed: list[str]
 
 
+class RepositoryFound(BaseModel):
+    """One model repository a search turned up."""
+
+    source: str
+    id: str
+    url: str
+    downloads: int
+    likes: int
+    #: Its publisher requires a licence acceptance before anything can be fetched.
+    gated: bool
+    updated: str
+
+
+class SearchOut(BaseModel):
+    results: list[RepositoryFound]
+    #: Whether a token is set. Without one, a gated repository cannot be read.
+    token: bool
+    #: The variable the config names, so the window can say which one to set.
+    token_env: str
+
+
+class FileFound(BaseModel):
+    name: str
+    size_bytes: int
+    gigabytes: float
+    #: Whether this machine has room for it.
+    fits: bool
+    downloaded: bool
+
+
+class FilesOut(BaseModel):
+    repo: str
+    files: list[FileFound]
+    usable_memory_gb: float
+
+
+class FetchRequest(BaseModel):
+    """Fetch one file from one repository, and point a job class at it."""
+
+    repo: str
+    filename: str
+    job_class: Literal["review", "verify", "embed", "rerank"] = "review"
+    source: str = "huggingface"
+    #: What to call it. Empty uses the repository's own name.
+    name: str = ""
+
+
 class ModelChoiceOut(BaseModel):
     name: str
     job_class: str
@@ -420,6 +467,8 @@ class ModelChoiceOut(BaseModel):
     fits: bool
     #: Already on disk. The UI shows this so nobody waits for a download twice.
     downloaded: bool = False
+    #: Its publisher requires a licence acceptance, so it needs a token.
+    gated: bool = False
 
 
 class CatalogOut(BaseModel):

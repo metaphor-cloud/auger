@@ -41,6 +41,8 @@ class Choice:
     #: Roughly what it needs in memory, weights plus a working context.
     memory_gb: float
     description: str
+    #: Its publisher requires a licence acceptance, so fetching it needs a token.
+    gated: bool = False
 
     @property
     def url(self) -> str:
@@ -59,7 +61,10 @@ class Resolved:
     size_bytes: int
 
 
-#: Review models, largest first. The rig picks the first one that fits.
+#: What the rig recommends, largest first, and it picks the first that fits.
+#:
+#: Three families, so a reviewer and an adversary can always come from different ones.
+#: A second opinion from the same family is barely a second opinion.
 REVIEW_MODELS: tuple[Choice, ...] = (
     Choice(
         name="gpt-oss-120b",
@@ -70,6 +75,14 @@ REVIEW_MODELS: tuple[Choice, ...] = (
         description="The strongest reviewer. 63 GB of weights.",
     ),
     Choice(
+        name="Muse-Glimmer-30B",
+        job_class=JobClass.REVIEW,
+        repo="meta-models/Muse-Glimmer-30B-GGUF",
+        filename="Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf",
+        memory_gb=22.0,
+        description="Meta's, and Apache licensed. 17 GB.",
+    ),
+    Choice(
         name="gpt-oss-20b",
         job_class=JobClass.REVIEW,
         repo="ggml-org/gpt-oss-20b-GGUF",
@@ -77,38 +90,30 @@ REVIEW_MODELS: tuple[Choice, ...] = (
         memory_gb=18.0,
         description="Fits a laptop. 12 GB of weights.",
     ),
-)
-
-#: Models that argue with the reviewer. A second opinion is only worth having when it
-#: comes from somewhere else, so these are chosen to be from other families than the
-#: reviewer above, not to be the strongest thing that fits.
-ADVERSARY_MODELS: tuple[Choice, ...] = (
-    Choice(
-        name="Qwen3-Coder-30B",
-        job_class=JobClass.VERIFY,
-        repo="unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
-        filename="Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
-        memory_gb=24.0,
-        description="Trained on code, from a different family than the reviewer. 18 GB.",
-    ),
     Choice(
         name="gemma-3-12b-qat",
-        job_class=JobClass.VERIFY,
-        # Google's own repository is gated behind a licence acceptance, and the rig
-        # carries no Hugging Face token, so it fetches the same weights from a mirror.
-        repo="lmstudio-community/gemma-3-12B-it-qat-GGUF",
-        filename="gemma-3-12B-it-QAT-Q4_0.gguf",
+        job_class=JobClass.REVIEW,
+        repo="google/gemma-3-12b-it-qat-q4_0-gguf",
+        filename="gemma-3-12b-it-q4_0.gguf",
         memory_gb=11.0,
         description="Quantisation aware trained, so it holds up at four bits. 8 GB.",
+        gated=True,
     ),
+)
+
+#: Models that argue with the reviewer. The same three families: what matters is that
+#: the one judging is not the one that wrote the finding.
+ADVERSARY_MODELS: tuple[Choice, ...] = tuple(
     Choice(
-        name="Qwen3-8B",
+        name=one.name,
         job_class=JobClass.VERIFY,
-        repo="Qwen/Qwen3-8B-GGUF",
-        filename="Qwen3-8B-Q4_K_M.gguf",
-        memory_gb=8.0,
-        description="The small one. Fits beside a large reviewer. 5 GB.",
-    ),
+        repo=one.repo,
+        filename=one.filename,
+        memory_gb=one.memory_gb,
+        description=one.description,
+        gated=one.gated,
+    )
+    for one in REVIEW_MODELS
 )
 
 #: Embedding models, most capable first. The rig picks the first one that fits, and the
@@ -169,12 +174,23 @@ def usable_memory_gb() -> float:
     return total_memory_bytes() / 1e9 * USABLE_FRACTION
 
 
+def _open(choices: tuple[Choice, ...]) -> tuple[Choice, ...]:
+    """The ones anybody can fetch.
+
+    A gated model needs a licence acceptance and a token, so recommending one to a
+    machine that has neither is a first run that ends in a 401. It stays in the list
+    for a user to choose on purpose.
+    """
+    return tuple(choice for choice in choices if not choice.gated) or choices
+
+
 def _largest_that_fits(choices: tuple[Choice, ...], available: float) -> Choice:
     """Never returns nothing. A machine with no fitting model still needs a way forward."""
-    for choice in choices:
+    open_ones = _open(choices)
+    for choice in open_ones:
         if choice.memory_gb <= available:
             return choice
-    return choices[-1]
+    return open_ones[-1]
 
 
 def downloaded(choice: Choice, models_dir: Path | None) -> bool:
@@ -185,7 +201,7 @@ def _already_here(
     choices: tuple[Choice, ...], available: float, models_dir: Path | None
 ) -> Choice | None:
     """The best model that fits and is already on disk."""
-    for choice in choices:
+    for choice in _open(choices):
         if choice.memory_gb <= available and downloaded(choice, models_dir):
             return choice
     return None
@@ -227,17 +243,34 @@ def by_name(name: str) -> Choice:
     raise CatalogError(f"no model named {name!r}")
 
 
-async def resolve(http: httpx.AsyncClient, choice: Choice, log: Logger | None = None) -> Resolved:
+async def resolve(
+    http: httpx.AsyncClient,
+    choice: Choice,
+    log: Logger | None = None,
+    token: str | None = None,
+) -> Resolved:
     """Ask the repository for the file's checksum and size.
 
     The checksum comes from the API host, which the download path matches exactly. That
     is what makes it safe for a delivery host to be matched by suffix.
     """
     log = (log or create_logger("llm")).bind(component="catalog")
+    from auger.net.download import auth_for
+
     try:
-        response = await http.get(choice.tree_url)
+        response = await http.get(choice.tree_url, headers=auth_for(choice.tree_url, token))
         response.raise_for_status()
         entries = response.json()
+    except httpx.HTTPStatusError as error:
+        if error.response.status_code in (401, 403):
+            # A gate is not a network fault, and the way past it is a licence and a
+            # token, so the message says that rather than the status code.
+            raise CatalogError(
+                f"{choice.repo} is gated. Accept its licence at "
+                f"https://huggingface.co/{choice.repo}, then set a Hugging Face token "
+                f"in the variable your config names."
+            ) from error
+        raise CatalogError(f"could not read {choice.repo}: {error}") from error
     except (httpx.HTTPError, ValueError) as error:
         raise CatalogError(f"could not read {choice.repo}: {error}") from error
 

@@ -27,6 +27,7 @@ import {
   stopModels,
 } from "../engine";
 import type { BackendList, Catalog, ModelChoice, SetupProgress } from "../types";
+import ModelSearch from "../parts/ModelSearch";
 import { Fact, Facts, Mono, PageTitle, Section } from "../ui";
 
 const JOB_CLASSES = ["review", "verify", "triage", "embed", "rerank"];
@@ -35,6 +36,7 @@ function label(model: ModelChoice) {
   const notes = [`${model.memory_gb.toFixed(0)} GB`];
   if (model.downloaded) notes.push("downloaded");
   if (!model.fits) notes.push("too large for this machine");
+  if (model.gated) notes.push("needs a licence and a token");
   return `${model.name} · ${notes.join(" · ")}`;
 }
 
@@ -255,6 +257,18 @@ export default function Models({
             </div>
           )}
         </div>
+      </Section>
+
+      <Section
+        title="Find a model"
+        description="The list above is what Auger recommends. This is everything else Hugging Face publishes as one loadable file."
+      >
+        <ModelSearch
+          onFetched={() => {
+            void load(getModels);
+            void loadCatalog();
+          }}
+        />
       </Section>
 
       <Section

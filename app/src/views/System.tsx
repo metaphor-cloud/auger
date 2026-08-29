@@ -1,9 +1,36 @@
-import { Alert, AlertDescription, Badge, Switch } from "@metaphor-cloud/ui";
+import { Alert, AlertDescription, Badge, Button, Switch } from "@metaphor-cloud/ui";
+import { getVersion } from "@tauri-apps/api/app";
 import { useEffect, useState } from "react";
 
-import { getAutostart, setAutostart } from "../host";
+import {
+  checkForUpdate,
+  getAutostart,
+  installUpdate,
+  setAutostart,
+  type UpdateState,
+} from "../host";
 import type { System } from "../types";
 import { Fact, Facts, Mono, PageTitle, Section } from "../ui";
+
+/** What the update line says for each state the updater can be in. */
+function updateMessage(state: UpdateState): string {
+  switch (state.kind) {
+    case "checking":
+      return "Asking GitHub.";
+    case "current":
+      return "This is the newest release.";
+    case "available":
+      return `Version ${state.version} is ready to install.`;
+    case "installing":
+      return "Downloading. This takes a moment.";
+    case "ready":
+      return "Installed. Quit and open Auger again to run it.";
+    case "failed":
+      return state.reason;
+    default:
+      return "";
+  }
+}
 
 export default function SystemView({
   system,
@@ -13,9 +40,12 @@ export default function SystemView({
   nested?: boolean;
 }) {
   const [startsAtLogin, setStartsAtLogin] = useState(false);
+  const [appVersion, setAppVersion] = useState("");
+  const [update, setUpdate] = useState<UpdateState>({ kind: "idle" });
 
   useEffect(() => {
     void getAutostart().then(setStartsAtLogin);
+    void getVersion().then(setAppVersion, () => undefined);
   }, []);
 
   if (system === null) return <p className="text-xs text-text-secondary">Loading</p>;
@@ -40,6 +70,36 @@ export default function SystemView({
                 onCheckedChange={(next) => void setAutostart(next).then(setStartsAtLogin)}
               />
               <span className="text-text-secondary">The rig is useful only while it runs.</span>
+            </div>
+          </Fact>
+          <Fact label="Version">
+            <div className="flex items-center gap-2">
+              <Mono>{appVersion || "unknown"}</Mono>
+              {update.kind === "available" ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    setUpdate({ kind: "installing" });
+                    void installUpdate().then(setUpdate);
+                  }}
+                >
+                  Install {update.version}
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={update.kind === "checking" || update.kind === "installing"}
+                  onClick={() => {
+                    setUpdate({ kind: "checking" });
+                    void checkForUpdate().then(setUpdate);
+                  }}
+                >
+                  Check for updates
+                </Button>
+              )}
+              <span className="text-text-secondary">{updateMessage(update)}</span>
             </div>
           </Fact>
         </Facts>

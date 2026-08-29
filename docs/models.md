@@ -19,6 +19,37 @@ match its checksum is deleted.
 
 The runtime goes in `~/.auger/runtime`, the weights in `~/.auger/models`.
 
+
+## Where the weights come from
+
+Auger recommends four models from three families, so a reviewer and a second opinion can
+always come from different ones: `gpt-oss-120b` and `gpt-oss-20b`, Meta's
+`Muse-Glimmer-30B`, and Google's `gemma-3-12b-qat`.
+
+Anything else is a search away. Models, Find a model takes a few words and lists what
+Hugging Face has as a single GGUF file, with what each would cost to run on this
+machine. Pick a file and it is fetched and wired to a job class.
+
+### A token
+
+```toml
+[models]
+token_env = "HF_TOKEN"
+```
+
+The config names the variable. It never holds the token, which is the rule the forges
+follow, and the value is read at the moment of the request and sent only to Hugging Face
+and its delivery hosts.
+
+Two reasons to set one. Some publishers gate their weights behind a licence acceptance,
+Google among them, and without a token the rig can only reach somebody's re-upload of
+them. A checksum proves the bytes arrived intact; it says nothing about whose weights
+they are. And an anonymous download of sixty gigabytes is rate limited.
+
+A gated model is never the recommendation, because a first run that ends in a 401 helps
+nobody. It stays in the list to choose on purpose.
+
+
 ## Or use a server you already run
 
 A job asks for a job class. The profile picks the backend. No job names a model, so

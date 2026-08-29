@@ -28,6 +28,7 @@ from auger.events import Event, EventBus
 from auger.forge import Registry
 from auger.jobs.adversary import Argument, argue
 from auger.llm import Gateway, Health, Supervisor, probe_all
+from auger.llm.setup import SetupResult
 from auger.log import Logger, create_logger
 from auger.mcp import Access as McpAccess
 from auger.mcp import McpRegistry, OAuthError, sign_in
@@ -348,6 +349,84 @@ class Rig:
         await self.tools.refresh()
         ready = sum(1 for state in self.tools.servers.values() if state.reachable)
         self.publish("tools.checked", ready=ready, total=len(self.tools.servers))
+
+    async def fetch_model(
+        self,
+        repo: str,
+        filename: str,
+        job_class: str = "review",
+        name: str | None = None,
+    ) -> SetupResult:
+        """Fetch one file and point a job class at it.
+
+        This is the path behind the search: a repository and a file, from wherever the
+        user found them, rather than from the list the rig ships with.
+        """
+        from auger.llm.catalog import CatalogError, Choice, resolve
+        from auger.llm.setup import backend_for, models_dir
+        from auger.net.download import DownloadError, Progress, client, fetch
+
+        if not repo or not filename:
+            raise ValueError("a model needs a repository and a file")
+        wanted = JobClass(job_class)
+        choice = Choice(
+            name=name or filename.removesuffix(".gguf"),
+            job_class=wanted,
+            repo=repo,
+            filename=filename,
+            memory_gb=0.0,
+            description=f"added from {repo}",
+        )
+        result = SetupResult()
+        token = self.model_token()
+        try:
+            async with client() as http:
+                resolved = await resolve(http, choice, self.log, token)
+
+                def report(progress: Progress) -> None:
+                    self.publish(
+                        "setup.progress",
+                        stage="model",
+                        name=progress.name,
+                        received=progress.received_bytes,
+                        total=progress.total_bytes,
+                        fraction=round(progress.fraction, 4),
+                        message="",
+                    )
+
+                await fetch(
+                    http,
+                    resolved.url,
+                    models_dir(self.settings.home) / choice.filename,
+                    resolved.sha256,
+                    report,
+                    self.log,
+                    token,
+                )
+        except (CatalogError, DownloadError) as error:
+            self.log.error("model fetch failed", reason="fetch_failed", repo=repo, error=error)
+            result.error = str(error)
+            self.publish("setup.finished", ok=False, error=str(error))
+            return result
+
+        backend_for(self.config, choice, wanted)
+        save(self.config_path, self.config)
+        self.reload_config()
+        result.review_model = choice.name
+        self.publish("setup.finished", ok=True, model=choice.name)
+        self.log.info("model added", repo=repo, file=filename, job_class=wanted.value)
+        return result
+
+    def model_token(self) -> str | None:
+        """The Hugging Face token, read from the environment at the moment of use.
+
+        The config names the variable, never the value, which is the rule the forges
+        follow. Nothing writes it to disk and nothing logs it.
+        """
+        import os
+
+        name = self.config.models.token_env
+        return os.environ.get(name) if name else None
 
     def review_model_state(self) -> tuple[bool, str | None]:
         """Whether a review could run now, and why not.

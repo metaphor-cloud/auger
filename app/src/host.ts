@@ -55,3 +55,46 @@ export async function getAutostart(): Promise<boolean> {
 export async function setAutostart(enabled: boolean): Promise<boolean> {
   return invoke<boolean>("set_autostart", { enabled });
 }
+
+/** What the updater found, and what the window should say about it. */
+export type UpdateState =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "current" }
+  | { kind: "available"; version: string; notes: string }
+  | { kind: "installing" }
+  | { kind: "ready" }
+  | { kind: "failed"; reason: string };
+
+/** The release the check found. Install uses it, so the check does not run twice. */
+let pending: Awaited<ReturnType<typeof import("@tauri-apps/plugin-updater").check>> = null;
+
+/**
+ * Ask GitHub whether a newer release exists.
+ *
+ * A development build has no updater endpoint it can satisfy, and an unsigned build has
+ * no public key to check against. Both report the failure rather than hiding it, because
+ * a rig that silently never updates is worse than one that says why.
+ */
+export async function checkForUpdate(): Promise<UpdateState> {
+  try {
+    const { check } = await import("@tauri-apps/plugin-updater");
+    pending = await check();
+    if (pending === null) return { kind: "current" };
+    return { kind: "available", version: pending.version, notes: pending.body ?? "" };
+  } catch (error) {
+    return { kind: "failed", reason: String(error) };
+  }
+}
+
+/** Download the update and install it. The new version starts at the next launch. */
+export async function installUpdate(): Promise<UpdateState> {
+  if (pending === null) return { kind: "current" };
+  try {
+    await pending.downloadAndInstall();
+    pending = null;
+    return { kind: "ready" };
+  } catch (error) {
+    return { kind: "failed", reason: String(error) };
+  }
+}

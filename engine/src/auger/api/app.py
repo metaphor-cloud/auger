@@ -31,6 +31,9 @@ from auger.api.models import (
     DashboardOut,
     EgressOut,
     ExcludeChange,
+    FetchRequest,
+    FileFound,
+    FilesOut,
     FindingList,
     FindingOut,
     ForgeList,
@@ -52,6 +55,7 @@ from auger.api.models import (
     QueueOut,
     RecordedOut,
     RecordRequest,
+    RepositoryFound,
     RepositoryList,
     RepositorySummaryOut,
     ReviewRequest,
@@ -59,6 +63,7 @@ from auger.api.models import (
     RunList,
     RunOut,
     SandboxOut,
+    SearchOut,
     SettingChange,
     SettingsOut,
     SetupOut,
@@ -74,6 +79,7 @@ from auger.config.schema import JobClass
 from auger.events import Event
 from auger.jobs.presets import PRESETS, matching
 from auger.jobs.prompt import SYSTEM, missing_from, system_prompt
+from auger.llm.sources import SourceError, source_for
 from auger.log import Logger
 from auger.mcp import OAuthError
 from auger.rig import Rig
@@ -404,6 +410,7 @@ def create_app(rig: Rig) -> FastAPI:
                     description=choice.description,
                     fits=choice.memory_gb <= usable,
                     downloaded=catalog.downloaded(choice, here),
+                    gated=choice.gated,
                 )
                 for choice in catalog.CATALOG
             ],
@@ -444,6 +451,82 @@ def create_app(rig: Rig) -> FastAPI:
         """Start any managed backend that does not answer. A large model takes a minute."""
         await rig.ensure_models()
         return backend_list()
+
+    @router.get("/models/search")
+    async def search_models(q: str, source: str = "huggingface") -> SearchOut:
+        """Look for a model to run.
+
+        The recommended list is the expectation. This is for everything else, and it
+        offers only what `llama-server` can load as one file.
+        """
+        token = rig.model_token()
+        try:
+            found = await source_for(source, token, log).search(rig.gateway.client, q)
+        except SourceError as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+        return SearchOut(
+            results=[
+                RepositoryFound(
+                    source=one.source,
+                    id=one.id,
+                    url=one.url,
+                    downloads=one.downloads,
+                    likes=one.likes,
+                    gated=one.gated,
+                    updated=one.updated,
+                )
+                for one in found
+            ],
+            token=bool(token),
+            token_env=rig.config.models.token_env,
+        )
+
+    @router.get("/models/files")
+    async def model_files(repo: str, source: str = "huggingface") -> FilesOut:
+        """The weights inside one repository, with what each would cost to run."""
+        from auger.llm import catalog
+        from auger.llm.setup import models_dir
+
+        token = rig.model_token()
+        try:
+            found = await source_for(source, token, log).files(rig.gateway.client, repo)
+        except SourceError as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+        usable = catalog.usable_memory_gb()
+        here = models_dir(rig.settings.home)
+        return FilesOut(
+            repo=repo,
+            files=[
+                FileFound(
+                    name=one.name,
+                    size_bytes=one.size_bytes,
+                    gigabytes=round(one.gigabytes, 1),
+                    # Weights plus room to work in. The same rule the catalog uses.
+                    fits=one.gigabytes * 1.3 <= usable,
+                    downloaded=(here / one.name).exists(),
+                )
+                for one in found
+            ],
+            usable_memory_gb=usable,
+        )
+
+    @router.post("/models/fetch")
+    async def fetch_model(request: FetchRequest) -> SetupOut:
+        """Fetch one file and point a job class at it."""
+        try:
+            result = await rig.fetch_model(
+                request.repo, request.filename, request.job_class, request.name or None
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return SetupOut(
+            ok=result.ok,
+            review_model=result.review_model,
+            embed_model=result.embed_model,
+            rerank_model=result.rerank_model,
+            runtime_path=result.runtime_path,
+            error=result.error,
+        )
 
     @router.post("/models/stop")
     async def stop_models(name: str | None = None) -> BackendList:

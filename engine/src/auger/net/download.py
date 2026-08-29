@@ -25,6 +25,10 @@ from auger.log import Logger, create_logger
 API_HOSTS: frozenset[str] = frozenset({"api.github.com", "github.com", "huggingface.co", "hf.co"})
 #: Matched by suffix. These deliver bytes, and a checksum decides whether to keep them.
 DELIVERY_SUFFIXES: tuple[str, ...] = (".hf.co", ".huggingface.co", ".githubusercontent.com")
+#: Where a Hugging Face token may be sent, and nowhere else. A token is a credential
+#: for one service, and a redirect must not be able to carry it to another.
+TOKEN_HOSTS: frozenset[str] = frozenset({"huggingface.co", "hf.co"})
+TOKEN_SUFFIXES: tuple[str, ...] = (".hf.co", ".huggingface.co")
 MAX_REDIRECTS = 6
 REDIRECTS = frozenset({301, 302, 303, 307, 308})
 PARTIAL_CONTENT = 206
@@ -47,6 +51,19 @@ class Progress:
         return self.received_bytes / self.total_bytes if self.total_bytes else 0.0
 
 
+def carries_token(url: str) -> bool:
+    """Whether this host is one the token belongs to."""
+    host = (urlsplit(url).hostname or "").lower()
+    return host in TOKEN_HOSTS or host.endswith(TOKEN_SUFFIXES)
+
+
+def auth_for(url: str, token: str | None) -> dict[str, str]:
+    """The authorization header for this host, if it is one the token belongs to."""
+    if not token or not carries_token(url):
+        return {}
+    return {"Authorization": f"Bearer {token}"}
+
+
 def allowed(url: str) -> bool:
     host = (urlsplit(url).hostname or "").lower()
     if not host:
@@ -66,6 +83,7 @@ async def fetch(
     sha256: str,
     on_progress: Callable[[Progress], None] | None = None,
     log: Logger | None = None,
+    token: str | None = None,
 ) -> Path:
     """Download `url` to `destination` and verify it. A file already there is kept.
 
@@ -86,7 +104,7 @@ async def fetch(
     log.info("download started", name=destination.name, url=safe_url(url), resume_from=already)
     try:
         received, digest = await _stream(
-            http, url, partial, digest, destination.name, already, on_progress, log
+            http, url, partial, digest, destination.name, already, on_progress, log, token
         )
     except DownloadError:
         partial.unlink(missing_ok=True)
@@ -135,6 +153,7 @@ async def _stream(
     already: int,
     on_progress: Callable[[Progress], None] | None,
     log: Logger,
+    token: str | None = None,
 ) -> tuple[int, hashlib._Hash]:
     """Follow the redirects on the GET itself, checking every hop.
 
@@ -151,6 +170,9 @@ async def _stream(
             log.warn("download refused", reason="not_allowlisted", url=safe_url(current))
             raise DownloadError(f"{urlsplit(current).hostname} is not a download host")
         headers = {"Range": f"bytes={already}-"} if already else {}
+        # The token goes to the host it belongs to and to no other, so a redirect
+        # cannot carry a credential somewhere it was never meant for.
+        headers.update(auth_for(current, token))
         async with http.stream("GET", current, headers=headers) as response:
             if response.status_code in REDIRECTS:
                 location = response.headers.get("location", "")

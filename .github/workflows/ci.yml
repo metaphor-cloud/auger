@@ -68,4 +68,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: auger-app
-          path: app/src-tauri/target/release/bundle/macos/auger.app
+          path: app/src-tauri/target/release/bundle/macos/Auger.app

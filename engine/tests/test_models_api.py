@@ -239,3 +239,70 @@ async def test_a_run_left_in_flight_is_closed_on_the_next_start(home: Path, toke
 
     assert [one.status for one in closed] == ["failed"]
     assert [one.reason for one in closed] == ["interrupted"]
+
+
+async def test_it_searches_for_a_model_to_run(
+    http: httpx.AsyncClient, token: str, monkeypatch: Any
+) -> None:
+    """The recommended list is the expectation. This is everything else."""
+    from auger.llm import sources
+
+    class Fake:
+        name = "huggingface"
+
+        async def search(self, http: Any, query: str) -> list[sources.Repository]:
+            assert query == "qwen coder"
+            return [
+                sources.Repository(
+                    source="huggingface",
+                    id="acme/thing-GGUF",
+                    downloads=9,
+                    likes=1,
+                    gated=True,
+                    updated="2026-08-01",
+                )
+            ]
+
+        async def files(self, http: Any, repo: str) -> list[sources.File]:
+            return [sources.File(name="thing-Q4_K_M.gguf", size_bytes=4_000_000_000)]
+
+    monkeypatch.setattr("auger.api.app.source_for", lambda *a, **k: Fake())
+
+    async with http:
+        found = await get(http, token, "/models/search?q=qwen%20coder")
+        files = await get(http, token, "/models/files?repo=acme/thing-GGUF")
+
+    assert found["results"][0]["id"] == "acme/thing-GGUF"
+    assert found["results"][0]["gated"] is True
+    assert found["token_env"] == "HF_TOKEN"
+    assert files["files"][0]["gigabytes"] == 4.0
+
+
+async def test_a_source_that_will_not_answer_says_so(
+    http: httpx.AsyncClient, token: str, monkeypatch: Any
+) -> None:
+    from auger.llm.sources import SourceError
+
+    class Refuses:
+        name = "huggingface"
+
+        async def search(self, http: Any, query: str) -> Any:
+            raise SourceError("acme/thing is gated. Accept its licence, then set a token.")
+
+    monkeypatch.setattr("auger.api.app.source_for", lambda *a, **k: Refuses())
+
+    async with http:
+        response = await http.get(
+            "/models/search?q=x", headers={"Authorization": f"Bearer {token}"}
+        )
+    assert response.status_code == 502
+    assert "gated" in response.json()["detail"]
+
+
+def test_the_token_is_read_from_the_environment_not_the_config(rig: Rig, monkeypatch: Any) -> None:
+    """The config names the variable. It never holds the value."""
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    assert rig.model_token() is None
+    monkeypatch.setenv("HF_TOKEN", "hf_secret")
+    assert rig.model_token() == "hf_secret"
+    assert "hf_secret" not in rig.config_path.read_text(encoding="utf-8")

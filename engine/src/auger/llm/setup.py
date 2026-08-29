@@ -14,7 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from auger.config.schema import Backend, Config
+from auger.config.schema import Backend, Config, JobClass
 from auger.llm import catalog, runtime
 from auger.llm.catalog import CatalogError, Choice
 from auger.llm.runtime import RuntimeInstallError
@@ -70,6 +70,37 @@ def plan(memory_gb: float | None = None, models_dir: Path | None = None) -> list
         catalog.recommended_review_model(memory_gb, models_dir),
         catalog.recommended_embed_model(memory_gb, models_dir),
     ]
+
+
+#: The port each job class gets when the rig starts a server for it. They are next to
+#: each other so a machine running all three is easy to read in `lsof`.
+PORTS: dict[str, int] = {"review": 1337, "embed": 1338, "rerank": 1339, "verify": 1340}
+
+
+def backend_for(config: Config, choice: Choice, job_class: JobClass) -> str:
+    """Point one job class at a model, and give it a server of its own.
+
+    This is what a fetch does after the bytes land: the file is on disk, and something
+    has to say which job it answers.
+    """
+    name = f"local-{job_class.value}"
+    port = PORTS.get(job_class.value, 1341)
+    existing = config.backend.get(name) or Backend(url=f"http://127.0.0.1:{port}/v1")
+    extra = ["--embedding", "--pooling", "last"] if job_class is JobClass.EMBED else []
+    config.backend[name] = existing.model_copy(
+        update={
+            "managed": True,
+            "model": choice.name,
+            "model_file": choice.filename,
+            "model_url": choice.url,
+            "args": extra or list(existing.args),
+        }
+    )
+    for profile in config.profile.values():
+        entry = profile.entry(job_class)
+        profile_field = job_class.value
+        setattr(profile, profile_field, entry.model_copy(update={"backend": name}))
+    return name
 
 
 def apply_to_verify(config: Config, adversary: Choice) -> Config:
