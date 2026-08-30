@@ -27,16 +27,35 @@ if [ ! -x "${engine}/auger" ]; then
     exit 1
 fi
 
-# Deepest path first. A signature over a directory seals what it holds, so a file signed
-# after its parent breaks the parent's seal.
+sign() {
+    codesign --force --timestamp --options runtime \
+        --sign "${APPLE_SIGNING_IDENTITY}" "$@"
+}
+
+# Loose Mach-O files first, and nothing inside a framework. Deepest path first, because a
+# signature over a directory seals what it holds, and a file signed after its parent
+# breaks the parent's seal.
+#
+# A file here may be a hard link to the binary inside a framework, which is why the
+# frameworks are sealed after this pass and not before it.
 signed=0
 while IFS= read -r -d '' file; do
     if file --brief "${file}" | grep --quiet "Mach-O"; then
-        codesign --force --timestamp --options runtime \
-            --sign "${APPLE_SIGNING_IDENTITY}" "${file}"
+        sign "${file}"
         signed=$((signed + 1))
     fi
-done < <(find "${engine}" -depth -type f -print0)
+done < <(find "${engine}" -depth -type f -not -path '*.framework/*' -print0)
+
+# A framework is a bundle, not a file. codesign has to be given the directory so that it
+# writes the _CodeSignature the loader reads; a signature on the bare Mach-O inside is a
+# different thing, and Apple's notary service rejects it with "the signature of the binary
+# is invalid". Which Python a build gets decides whether this matters: a framework build
+# ships Python.framework here, and a plain one ships libpython as an ordinary dylib.
+frameworks=0
+while IFS= read -r -d '' framework; do
+    sign "${framework}"
+    frameworks=$((frameworks + 1))
+done < <(find "${engine}" -depth -type d -name '*.framework' -print0)
 
 # The engine process loads those libraries, so it is the process that needs the
 # entitlement. Sign it last, over the libraries it holds.
@@ -44,4 +63,4 @@ codesign --force --timestamp --options runtime \
     --entitlements "${entitlements}" \
     --sign "${APPLE_SIGNING_IDENTITY}" "${engine}/auger"
 
-echo "signed ${signed} Mach-O files under ${engine}"
+echo "signed ${signed} Mach-O files and ${frameworks} frameworks under ${engine}"
