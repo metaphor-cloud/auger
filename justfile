@@ -45,6 +45,7 @@ bench-review *flags:
     cd {{root}}/engine && uv run python -m bench.review {{flags}}
 
 lint:
+    {{root}}/scripts/check-version.sh
     cd {{root}}/engine && uv run ruff check .
     cd {{root}}/engine && uv run ruff format --check .
     cd {{root}}/app && pnpm lint
@@ -83,6 +84,10 @@ build-sidecar:
         --distpath {{root}}/app/src-tauri/binaries \
         --workpath {{root}}/engine/build/pyinstaller \
         auger.spec
+
+# Set the version everywhere it is written, and refresh the lock files.
+version want:
+    {{root}}/scripts/set-version.sh {{want}}
 
 # Build the .app. It runs where it was built.
 package: build-sidecar
