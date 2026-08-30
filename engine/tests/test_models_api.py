@@ -81,7 +81,12 @@ async def test_the_catalogue_says_what_this_machine_can_hold(
     assert body["recommended"] in {model["name"] for model in body["models"]}
     review = [model for model in body["models"] if model["job_class"] == "review"]
     assert len(review) >= 2
-    assert any(model["fits"] for model in review)
+    # Whether anything fits is a fact about the machine, and a CI runner holds less
+    # memory than any laptop this runs on. What has to hold everywhere is that the
+    # claim agrees with the memory the same answer reports, and that a machine where
+    # nothing fits is still told what to run.
+    usable = body["usable_memory_gb"]
+    assert all(model["fits"] == (model["memory_gb"] <= usable) for model in review)
 
 
 async def test_the_catalogue_says_which_model_each_job_class_runs_now(
