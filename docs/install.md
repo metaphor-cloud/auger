@@ -80,9 +80,10 @@ needs your own Apple Developer certificate and the updater key:
 
 ```
 export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"
-export APPLE_ID="you@example.com"
-export APPLE_PASSWORD="app-specific-password"
 export APPLE_TEAM_ID="TEAMID"
+export APPLE_API_KEY="2X9R4HXF34"
+export APPLE_API_ISSUER="57246542-96fe-1a63-e053-0824d011072a"
+export APPLE_API_KEY_PATH="$HOME/private_keys/AuthKey_2X9R4HXF34.p8"
 export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/auger-updater.key)"
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
 just release
@@ -108,12 +109,36 @@ git tag v0.2.0 && git push origin v0.2.0
 The workflow checks that the tag agrees with all four version fields, builds, notarises,
 writes `latest.json`, and opens a draft release. Read it, then publish it.
 
-Six repository secrets hold the keys:
+Repository secrets hold the keys. Signing and notarisation use different ones, because
+they are different acts: the certificate says who built the application, and the notary
+ticket says Apple scanned it.
 
 - `APPLE_CERTIFICATE`, the Developer ID certificate as a base64 `.p12`.
 - `APPLE_CERTIFICATE_PASSWORD`, the password of that `.p12`.
-- `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`.
+- `APPLE_SIGNING_IDENTITY` and `APPLE_TEAM_ID`.
+- `APPLE_API_KEY`, the ten-character App Store Connect key ID.
+- `APPLE_API_ISSUER`, the issuer UUID on the same page.
+- `APPLE_API_KEY_BASE64`, the `.p8` file itself, base64 encoded. CI writes it to a file,
+  because `notarytool` reads a path and not a variable.
 - `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, the updater key.
+
+Export the certificate from Keychain Access, not from the command line. Open the login
+keychain, choose **My Certificates**, right-click **Developer ID Application**, and
+export it as a `.p12`. The password you give it is `APPLE_CERTIFICATE_PASSWORD`, and
+`base64 -i auger-signing.p12` is `APPLE_CERTIFICATE`. Delete the file afterwards.
+
+`security export -t identities` cannot do this. It exports every identity at once, and it
+fails on the first private key whose keychain access it cannot satisfy without asking a
+person, with `SecKeychainItemExport: The contents of this item cannot be retrieved.`
+
+Make the API key in App Store Connect, under Users and Access, Integrations, App Store
+Connect API, with the **Developer** role. Apple lets you download the `.p8` once, so keep
+it. A key belongs to the team and not to a person, which is why CI uses one: nobody
+leaving revokes it, and you can revoke it on its own.
+
+```
+base64 -i AuthKey_2X9R4HXF34.p8 | pbcopy
+```
 
 A public repository is safe here. GitHub gives no secret to a workflow that a pull
 request from a fork starts, and this workflow runs on a tag, which only a person with

@@ -95,14 +95,17 @@ package: build-sidecar
 
 # Build a signed and notarised .dmg, and the artefacts the updater needs.
 #
-# Needs an Apple Developer certificate:
-#   APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
+# Needs a Developer ID certificate to sign with:
+#   APPLE_SIGNING_IDENTITY, APPLE_TEAM_ID
+# an App Store Connect API key to notarise with:
+#   APPLE_API_KEY (the key ID), APPLE_API_ISSUER, APPLE_API_KEY_PATH (the .p8)
 # and the updater key:
 #   TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 release: build-sidecar
     #!/usr/bin/env bash
     set -euo pipefail
-    for name in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID \
+    for name in APPLE_SIGNING_IDENTITY APPLE_TEAM_ID \
+                APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_PATH \
                 TAURI_SIGNING_PRIVATE_KEY; do
         if [ -z "${!name:-}" ]; then
             echo "${name} is not set. See docs/install.md." >&2
