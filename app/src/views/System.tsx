@@ -12,6 +12,24 @@ import {
 import type { System } from "../types";
 import { Fact, Facts, Mono, PageTitle, Section } from "../ui";
 
+/** The image is a download, so it says what it is doing and not only whether it works. */
+const IMAGE_LABEL: Record<string, string> = {
+  present: "downloaded",
+  pulling: "downloading",
+  failed: "download failed",
+  unknown: "not checked yet",
+  unused: "not needed",
+};
+
+const IMAGE_TONE: Record<string, "success" | "warning" | "danger"> = {
+  present: "success",
+  pulling: "warning",
+  failed: "danger",
+  unknown: "warning",
+  // Seatbelt is already warned about above. A second warning here says nothing new.
+  unused: "success",
+};
+
 /** What the update line says for each state the updater can be in. */
 function updateMessage(state: UpdateState): string {
   switch (state.kind) {
@@ -111,7 +129,15 @@ export default function SystemView({
             <Badge variant={sandbox.degraded ? "warning" : "success"}>{sandbox.backend}</Badge>
           </Fact>
           <Fact label="Analysis image">
-            <Mono>{system.image}</Mono>
+            <div className="flex items-center gap-2">
+              <Mono>{system.image}</Mono>
+              <Badge variant={IMAGE_TONE[system.image_state] ?? "warning"}>
+                {IMAGE_LABEL[system.image_state] ?? system.image_state}
+              </Badge>
+            </div>
+            {system.image_error && (
+              <span className="text-text-secondary">{system.image_error}</span>
+            )}
           </Fact>
           <Fact label="Network">None. A review step cannot reach anything.</Fact>
         </Facts>

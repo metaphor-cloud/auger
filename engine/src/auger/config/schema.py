@@ -400,7 +400,7 @@ class Config(BaseModel):
     mcp: dict[str, McpServer] = Field(default_factory=dict)
     defaults: Policy = Field(default_factory=Policy)
     #: The image that every sandboxed step runs in.
-    image: str = "auger/analysis:0.1"
+    image: str = "ghcr.io/metaphor-cloud/auger:analysis-0.1"
     backend: dict[str, Backend] = Field(default_factory=lambda: _copy(DEFAULT_BACKENDS))
     profile: dict[str, Profile] = Field(default_factory=lambda: {"balanced": Profile()})
     #: Keyed by `host/namespace`, for example `github.com/acme`. A shorter key matches

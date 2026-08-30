@@ -22,11 +22,18 @@ lists what it found.
 git clone https://github.com/metaphor-cloud/auger
 cd auger
 just setup
-just build-image      # the analysis image. Needs network.
 just dev
 ```
 
 `just setup` needs `uv`, `cargo`, and `pnpm`.
+
+Auger downloads the analysis image on its first run, from
+`ghcr.io/metaphor-cloud/auger`. It is a few hundred megabytes, and **System** shows
+the progress. A run that starts before the download finished waits for it. If you
+were offline at the time, the next run tries again, so nothing needs restarting.
+
+`just build-image` builds it locally instead, which you want only when you are
+changing `sandbox/Dockerfile`.
 
 ## First run
 

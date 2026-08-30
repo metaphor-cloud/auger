@@ -95,6 +95,9 @@ export default function App() {
           if (event.kind === "setup.progress") setSetup(event.data as SetupProgress);
           if (event.kind === "setup.finished") setSetup(null);
           if (event.kind === "config.reloaded") setVersion((value) => value + 1);
+          // The first download takes minutes, so System follows it rather than
+          // showing whatever the state was when the window opened.
+          if (event.kind === "image.state") void getSystem().then(setSystem);
           if (event.kind === "run.finished" || event.kind === "run.skipped") {
             void refreshQueue();
             setVersion((value) => value + 1);

@@ -13,7 +13,7 @@ from auger.jobs.semgrep import command, parse, scan
 from auger.llm import Gateway
 from auger.models import Remote, Repository
 from auger.net import Allowlist
-from auger.sandbox import Network, RunResult, RunSpec, SandboxError
+from auger.sandbox import ImageState, Network, RunResult, RunSpec, SandboxError
 from auger.store import Store
 from tests.helpers import FakeModelServer
 
@@ -60,8 +60,14 @@ class StubSandbox:
         self.result = result or RunResult("stub", 1, OUTPUT, "", 0.5)
         self.error = error
         self.spec: RunSpec | None = None
+        self.image_state = ImageState.PRESENT
+        self.image_error: str | None = None
+        self.on_image_state: Callable[[ImageState, str | None], None] | None = None
 
     def available(self) -> bool:
+        return True
+
+    def ensure_image(self, reference: str) -> bool:
         return True
 
     def run(self, spec: RunSpec) -> RunResult:

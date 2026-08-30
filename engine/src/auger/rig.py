@@ -34,7 +34,7 @@ from auger.mcp import Access as McpAccess
 from auger.mcp import McpRegistry, OAuthError, sign_in
 from auger.models import Repository, RepositoryView
 from auger.net import Allowlist, Destination, EgressProxy
-from auger.sandbox import Selection, select
+from auger.sandbox import ImageState, Selection, select
 from auger.schedule import (
     Scheduler,
     Task,
@@ -69,6 +69,9 @@ class Rig:
         self.config_error: str | None = loaded.error
         self.store = Store.open(settings.home)
         self.selection: Selection = select(self.log)
+        # A long download is the only thing standing between a fresh install and a
+        # first review, so the window follows it rather than waiting in silence.
+        self.selection.sandbox.on_image_state = self._publish_image_state
         self.allowlist = Allowlist()
         self._refresh_allowlist()
         self.proxy = EgressProxy(self.allowlist, self.log)
@@ -181,6 +184,13 @@ class Rig:
         self.tools.reload(self.config)
         self.publish("config.reloaded", roots=len(self.config.roots))
         return self.config
+
+    def _publish_image_state(self, state: ImageState, error: str | None) -> None:
+        self.publish("image.state", state=str(state), error=error)
+
+    async def ensure_image(self) -> bool:
+        """Get the analysis image if this backend needs one and does not have it."""
+        return await asyncio.to_thread(self.selection.sandbox.ensure_image, self.config.image)
 
     def publish(self, event: str, **data: object) -> None:
         self.bus.publish(Event(event, dict(data)))

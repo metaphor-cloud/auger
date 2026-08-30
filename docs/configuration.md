@@ -182,7 +182,7 @@ change the rules or the output format.
 A job asks for a job class, never for a model. The profile decides which backend answers.
 
 ```toml
-image = "auger/analysis:0.1"
+image = "ghcr.io/metaphor-cloud/auger:analysis-0.1"
 
 [backend.local-review]
 url = "http://127.0.0.1:1337/v1"

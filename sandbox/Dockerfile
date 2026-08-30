@@ -5,6 +5,11 @@
 
 FROM debian:bookworm-slim
 
+# GHCR shows a package with no origin until this label names one.
+LABEL org.opencontainers.image.source="https://github.com/metaphor-cloud/auger"
+LABEL org.opencontainers.image.description="The sandbox every auger review step runs in."
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PYTHONDONTWRITEBYTECODE=1 \

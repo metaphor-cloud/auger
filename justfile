@@ -5,7 +5,7 @@ root := justfile_directory()
 # PyInstaller build from the resource directory.
 engine_cmd := "uv run --project " + root + "/engine auger"
 runtime := `command -v container || command -v podman || command -v docker || echo docker`
-image := "auger/analysis:0.1"
+image := "ghcr.io/metaphor-cloud/auger:analysis-0.1"
 
 default:
     @just --list

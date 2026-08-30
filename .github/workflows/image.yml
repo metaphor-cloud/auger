@@ -1,0 +1,45 @@
+name: image
+
+# The analysis image is what every review step runs in, and an installed copy pulls it
+# rather than building it. It changes far less often than the application, so it is
+# published on its own and tagged with the version the engine asks for.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "sandbox/**"
+      - ".github/workflows/image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Apple silicon is what the application runs on, and Apple `container` refuses an
+      # image with no matching architecture. amd64 is here for Podman and Docker on an
+      # Intel Mac, which the engine still supports.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The tag must match `sandbox.image` in the engine's config schema. Nothing else
+      # ties them together, so a change here is a change there.
+      - uses: docker/build-push-action@v6
+        with:
+          context: sandbox
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/metaphor-cloud/auger:analysis-0.1
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

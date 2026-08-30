@@ -77,6 +77,11 @@ class SystemOut(BaseModel):
     egress: EgressOut
     index: IndexOut
     image: str
+    #: `unknown`, `pulling`, `present`, `failed`, or `unused`. A container backend
+    #: cannot review anything until the image is `present`.
+    image_state: str = "unknown"
+    #: Why the download failed, when it did.
+    image_error: str | None = None
     #: Why the config file was refused, if it was.
     config_error: str | None = None
 

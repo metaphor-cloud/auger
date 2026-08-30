@@ -8,6 +8,7 @@ and skip when no runtime is installed.
 from __future__ import annotations
 
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,7 @@ from auger.sandbox import (
     SEATBELT_WARNING,
     AppleContainer,
     Docker,
+    ImageState,
     Network,
     OciSandbox,
     Podman,
@@ -181,3 +183,106 @@ def test_the_command_uses_the_full_path(tmp_path: Path) -> None:
     """A narrow PATH would otherwise make the runtime unreachable at run time too."""
     line = AppleContainer().arguments(spec(tmp_path, ["true"]), "auger-test")
     assert line[0].endswith("container")
+
+
+# --- the analysis image ---------------------------------------------------------------
+
+
+class FakeRuntime:
+    """Stands in for `container`, `podman`, or `docker` at the subprocess boundary."""
+
+    def __init__(self, present: bool, pull_code: int = 0, stderr: str = "") -> None:
+        self.present = present
+        self.pull_code = pull_code
+        self.stderr = stderr
+        self.calls: list[list[str]] = []
+
+    def __call__(self, arguments: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        self.calls.append(arguments)
+        verb = arguments[2]
+        if verb == "inspect":
+            return subprocess.CompletedProcess(arguments, 0 if self.present else 1, "", "")
+        # A pull that works leaves the image where the next look will find it.
+        self.present = self.pull_code == 0
+        return subprocess.CompletedProcess(arguments, self.pull_code, "", self.stderr)
+
+    def verbs(self) -> list[str]:
+        return [call[2] for call in self.calls]
+
+
+def fake_runtime(
+    monkeypatch: pytest.MonkeyPatch, backend: OciSandbox, runtime: FakeRuntime
+) -> FakeRuntime:
+    monkeypatch.setattr(backend, "program", lambda: "/usr/bin/fake")
+    monkeypatch.setattr("auger.sandbox.oci.subprocess.run", runtime)
+    return runtime
+
+
+def test_an_image_already_here_is_not_downloaded_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    backend = AppleContainer()
+    runtime = fake_runtime(monkeypatch, backend, FakeRuntime(present=True))
+    assert backend.ensure_image(IMAGE) is True
+    assert backend.image_state is ImageState.PRESENT
+    assert runtime.verbs() == ["inspect"]
+
+
+def test_a_missing_image_is_downloaded(monkeypatch: pytest.MonkeyPatch) -> None:
+    backend = AppleContainer()
+    runtime = fake_runtime(monkeypatch, backend, FakeRuntime(present=False))
+    assert backend.ensure_image(IMAGE) is True
+    assert backend.image_state is ImageState.PRESENT
+    assert runtime.verbs() == ["inspect", "pull"]
+
+
+def test_a_download_that_fails_says_what_the_runtime_said(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 401 on a private package and a name that does not resolve look identical
+    without the runtime's own last line."""
+    backend = AppleContainer()
+    fake_runtime(
+        monkeypatch,
+        backend,
+        FakeRuntime(present=False, pull_code=1, stderr="denied\nunauthorized: access token"),
+    )
+    assert backend.ensure_image(IMAGE) is False
+    assert backend.image_state is ImageState.FAILED
+    assert backend.image_error == "unauthorized: access token"
+
+
+def test_the_window_is_told_each_time_the_state_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend = AppleContainer()
+    fake_runtime(monkeypatch, backend, FakeRuntime(present=False))
+    seen: list[str] = []
+    backend.on_image_state = lambda state, error: seen.append(str(state))
+    backend.ensure_image(IMAGE)
+    assert seen == ["pulling", "present"]
+
+
+def test_a_run_downloads_the_image_it_needs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The download at start-up can fail on a machine that was offline. The run that
+    needs the image is the last chance to get it."""
+    backend = AppleContainer()
+    runtime = fake_runtime(monkeypatch, backend, FakeRuntime(present=False))
+    backend.run(spec(tmp_path, ["true"]))
+    assert runtime.verbs()[:2] == ["inspect", "pull"]
+
+
+def test_a_run_is_refused_when_the_image_cannot_be_had(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    backend = AppleContainer()
+    fake_runtime(monkeypatch, backend, FakeRuntime(present=False, pull_code=1, stderr="no space"))
+    with pytest.raises(SandboxError, match="no space"):
+        backend.run(spec(tmp_path, ["true"]))
+
+
+def test_seatbelt_needs_no_image() -> None:
+    """It runs on the host with the host's own tools, so there is nothing to fetch."""
+    backend = Seatbelt()
+    assert backend.image_state is ImageState.UNUSED
+    assert backend.ensure_image(IMAGE) is True

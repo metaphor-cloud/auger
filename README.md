@@ -164,7 +164,6 @@ Requirements: `uv`, `cargo`, `pnpm`, and a container runtime.
 ```
 just setup        # install dependencies
 just dev          # run the application against the engine in this checkout
-just build-image  # build the analysis image. Needs network.
 just typecheck    # mypy, tsc, cargo clippy
 just test         # pytest, vitest, cargo test
 just lint         # ruff, eslint, cargo fmt

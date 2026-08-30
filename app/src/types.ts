@@ -62,6 +62,9 @@ export type System = {
   egress: Egress;
   index: Index;
   image: string;
+  /** `unknown`, `pulling`, `present`, `failed`, or `unused` (Seatbelt needs none). */
+  image_state: string;
+  image_error: string | null;
   config_error: string | null;
 };
 

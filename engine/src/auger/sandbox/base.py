@@ -12,7 +12,7 @@ Every analysis step runs through one of these. The rules are the same for every 
 from __future__ import annotations
 
 import shlex
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -40,6 +40,26 @@ class Network(StrEnum):
 
     NONE = "none"
     NAT = "nat"
+
+
+class ImageState(StrEnum):
+    """Whether the analysis image is on this machine.
+
+    A container backend cannot run a step without it, and the image is large enough that
+    the first download takes minutes. The state is therefore something the window shows
+    rather than something a failed run reveals.
+    """
+
+    #: Nothing has looked yet.
+    UNKNOWN = "unknown"
+    #: The download is running now.
+    PULLING = "pulling"
+    #: Here, and a run can start.
+    PRESENT = "present"
+    #: The download failed. `image_error` says why.
+    FAILED = "failed"
+    #: Seatbelt runs on the host and uses no image at all.
+    UNUSED = "unused"
 
 
 class SandboxError(RuntimeError):
@@ -81,8 +101,21 @@ class RunResult:
 @runtime_checkable
 class Sandbox(Protocol):
     name: str
+    #: What the last look found. The UI reads it; nothing else should write it.
+    image_state: ImageState
+    #: Why the last download failed, when it did.
+    image_error: str | None
+    #: Called whenever `image_state` changes, so the window can follow a long download.
+    on_image_state: Callable[[ImageState, str | None], None] | None
 
     def available(self) -> bool:
         """True when this backend can run on this machine right now."""
+
+    def ensure_image(self, reference: str) -> bool:
+        """Get the image if it is missing. True when a run can now start.
+
+        Safe to call from any thread and from every run: the work happens once, and
+        later callers wait for the same download rather than starting a second one.
+        """
 
     def run(self, spec: RunSpec) -> RunResult: ...

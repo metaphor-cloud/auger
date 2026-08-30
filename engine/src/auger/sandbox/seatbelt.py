@@ -11,10 +11,11 @@ from __future__ import annotations
 import subprocess
 import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from auger.log import Logger, create_logger
-from auger.sandbox.base import Network, RunResult, RunSpec, SandboxError
+from auger.sandbox.base import ImageState, Network, RunResult, RunSpec, SandboxError
 from auger.sandbox.isolation import assert_no_credentials
 
 SANDBOX_EXEC = "/usr/bin/sandbox-exec"
@@ -45,9 +46,18 @@ class Seatbelt:
 
     def __init__(self, log: Logger | None = None) -> None:
         self.log = (log or create_logger("sandbox")).bind(backend=self.name)
+        # Seatbelt runs the command on the host with the host's own tools, so no
+        # image exists to fetch and none can be missing.
+        self.image_state = ImageState.UNUSED
+        self.image_error: str | None = None
+        self.on_image_state: Callable[[ImageState, str | None], None] | None = None
 
     def available(self) -> bool:
         return Path(SANDBOX_EXEC).exists()
+
+    def ensure_image(self, reference: str) -> bool:
+        """Always ready. There is no image to get."""
+        return True
 
     def profile(self, scratch: Path) -> str:
         return PROFILE.format(scratch=scratch)

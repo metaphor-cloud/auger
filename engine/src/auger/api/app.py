@@ -162,10 +162,15 @@ async def _boot(rig: Rig) -> None:
     is up fails and is recorded as a failure, so the models come up first.
     """
     await asyncio.to_thread(rig.scan)
+    # The image is most of a gigabyte and the models are tens of them. Neither waits
+    # for the other, and a failed download is not fatal here: the run that needs the
+    # image tries again, so a machine that was offline at start-up recovers by itself.
+    image = asyncio.create_task(rig.ensure_image())
     # This starts a managed backend that does not answer. A large model takes a minute
     # to load, and the UI is already connected and watching.
     await rig.ensure_models()
     await rig.start_background()
+    await image
 
 
 def _first_problem(error: Exception) -> str:
@@ -394,6 +399,8 @@ def create_app(rig: Rig) -> FastAPI:
             ),
             index=await asyncio.to_thread(_index_out, rig),
             image=rig.config.image,
+            image_state=str(rig.selection.sandbox.image_state),
+            image_error=rig.selection.sandbox.image_error,
             config_error=rig.config_error,
         )
 
