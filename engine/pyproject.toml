@@ -44,6 +44,18 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/auger"]
 
+[tool.uv]
+# Always uv's own build, never whatever Python the machine happens to have.
+#
+# A CI runner ships the python.org 3.12, which is a framework build. PyInstaller then
+# copies a `Python.framework` into the bundle instead of a plain `libpython3.12.dylib`,
+# and the one it writes has no `Versions/Current`, so Apple refuses to notarise it. A
+# developer machine has the uv build and never sees any of this.
+#
+# The interpreter the release is frozen from should not be decided by the machine that
+# happens to run the build.
+python-preference = "only-managed"
+
 [tool.ruff]
 extend-exclude = ["bench/cases"]
 line-length = 100

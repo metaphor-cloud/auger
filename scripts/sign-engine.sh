@@ -53,6 +53,15 @@ done < <(find "${engine}" -depth -type f -not -path '*.framework/*' -print0)
 # ships Python.framework here, and a plain one ships libpython as an ordinary dylib.
 frameworks=0
 while IFS= read -r -d '' framework; do
+    # PyInstaller writes a framework that has no `Versions/Current`, and codesign signs
+    # it anyway. Apple then refuses the whole archive with "the signature of the binary
+    # is invalid", seven minutes into a release. Say so here instead.
+    if [ ! -e "${framework}/Versions/Current" ]; then
+        echo "${framework} has no Versions/Current, so it is not a framework macOS will" >&2
+        echo "accept. It comes from freezing against a framework build of Python; see" >&2
+        echo "python-preference in engine/pyproject.toml." >&2
+        exit 1
+    fi
     sign "${framework}"
     frameworks=$((frameworks + 1))
 done < <(find "${engine}" -depth -type d -name '*.framework' -print0)
