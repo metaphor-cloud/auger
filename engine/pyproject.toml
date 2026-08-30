@@ -20,8 +20,6 @@ dependencies = [
     "tree-sitter-language-pack>=0.4",
     "sqlite-vec>=0.1.6",
     "mcp>=1.2",
-    # Compose documents are YAML, and they are read with `safe_load` only.
-    "pyyaml>=6.0",
 ]
 
 [project.scripts]
@@ -37,7 +35,6 @@ dev = [
     "ruff>=0.8",
     "pyinstaller>=6.11",
     "types-psutil>=6.1",
-    "types-pyyaml>=6.0",
 ]
 
 [build-system]

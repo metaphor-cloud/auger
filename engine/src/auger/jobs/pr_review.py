@@ -20,6 +20,7 @@ from auger.forge import Comment, Entry, ForgeError, PostedReview, PullRequest, R
 from auger.jobs.diff_review import ANSWER_FORMAT
 from auger.jobs.parse import parse_findings
 from auger.jobs.prompt import review_messages
+from auger.jobs.shell import Shell
 from auger.jobs.tools import complete_with_tools
 from auger.llm import Gateway, ModelError
 from auger.log import Logger, create_logger
@@ -96,6 +97,7 @@ async def review_pull(
     policy: Policy,
     tools: McpRegistry | None = None,
     log: Logger | None = None,
+    shell: Shell | None = None,
 ) -> PullOutcome:
     """Review one pull request and post the result. Never raises."""
     log = (log or create_logger("jobs")).bind(repo=repository.slug, kind=KIND, pull=pull.number)
@@ -125,7 +127,14 @@ async def review_pull(
     )
     try:
         completion, _ = await complete_with_tools(
-            gateway, tools, JobClass.REVIEW, messages, policy, log, answer=ANSWER_FORMAT
+            gateway,
+            tools,
+            JobClass.REVIEW,
+            messages,
+            policy,
+            log,
+            answer=ANSWER_FORMAT,
+            shell=shell,
         )
     except ModelError as error:
         return _stop(store, run, log, "model_failed", str(error), started, failed=True)

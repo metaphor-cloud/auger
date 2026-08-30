@@ -15,6 +15,8 @@ from typing import Any
 
 from auger.config import Policy
 from auger.config.schema import JobClass
+from auger.jobs.shell import NAME as SHELL_NAME
+from auger.jobs.shell import Shell
 from auger.llm import Completion, Gateway, Message
 from auger.log import Logger, create_logger
 from auger.mcp import McpError, McpRegistry, Tool, ToolAllowlist
@@ -67,12 +69,17 @@ async def complete_with_tools(
     policy: Policy,
     log: Logger | None = None,
     answer: dict[str, Any] | None = None,
+    shell: Shell | None = None,
 ) -> tuple[Completion, ToolRun]:
     """Ask the model, and answer its tool calls until it stops or the budget runs out.
 
     `answer` is a schema the reply must fit. It is applied only when no tool is in
     play: a model that has tools has to stay free to ask for one, and a schema for the
     findings would forbid the shape a tool call takes.
+
+    `shell` is the sandbox as a tool. Unlike the MCP tools it needs no allowlist,
+    because it reaches nothing the review was not already given: the repository, read
+    only, with no network.
     """
     log = (log or create_logger("jobs")).bind(component="tools")
     allowlist = ToolAllowlist(policy.tools)
@@ -81,7 +88,7 @@ async def complete_with_tools(
     if registry is not None and not allowlist.empty:
         available = registry.tools_for(allowlist)
 
-    if not available:
+    if not available and shell is None:
         return (
             await gateway.complete(
                 job_class, messages, profile=policy.model_profile, response_format=answer
@@ -90,8 +97,13 @@ async def complete_with_tools(
         )
 
     turn = list(messages)
-    turn[0] = Message(role=turn[0].role, content=turn[0].content + TOOL_RULES)
+    preamble = TOOL_RULES if available else ""
+    if shell is not None:
+        preamble += shell.notes()
+    turn[0] = Message(role=turn[0].role, content=turn[0].content + preamble)
     schema = as_openai_tools(available)
+    if shell is not None:
+        schema.append(shell.schema())
 
     completion = await gateway.complete(job_class, turn, profile=policy.model_profile, tools=schema)
     limit = policy.max_tool_calls or None
@@ -109,7 +121,7 @@ async def complete_with_tools(
                     role="tool",
                     tool_call_id=call.id,
                     content=await _result_text(
-                        registry, allowlist, call.name, call.arguments, run, log
+                        registry, allowlist, shell, call.name, call.arguments, run, log
                     ),
                 )
             )
@@ -139,11 +151,21 @@ async def complete_with_tools(
 async def _result_text(
     registry: McpRegistry | None,
     allowlist: ToolAllowlist,
+    shell: Shell | None,
     name: str,
     arguments: dict[str, Any],
     run: ToolRun,
     log: Logger,
 ) -> str:
+    if name == SHELL_NAME:
+        if shell is None:
+            run.refused += 1
+            return "There is no sandbox to run a command in."
+        command = arguments.get("command")
+        if not isinstance(command, str) or not command.strip():
+            run.failed += 1
+            return "Give the command as a string."
+        return await shell.run(command, log)
     if registry is None:
         run.failed += 1
         return "No tool server is attached."

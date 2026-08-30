@@ -24,6 +24,7 @@ from auger.jobs.parse import (
     parse_findings,
 )
 from auger.jobs.prompt import review_messages
+from auger.jobs.shell import Shell
 from auger.jobs.tools import complete_with_tools
 from auger.llm import Gateway, Message, ModelError
 from auger.log import Logger, create_logger
@@ -121,6 +122,7 @@ async def review(
     tools: McpRegistry | None = None,
     graph: CodeGraphConfig | None = None,
     log: Logger | None = None,
+    shell: Shell | None = None,
 ) -> ReviewOutcome:
     """Review one change. Never raises: a failure is recorded on the run."""
     log = (log or create_logger("jobs")).bind(repo=repository.slug, kind=KIND)
@@ -171,7 +173,14 @@ async def review(
     )
     try:
         completion, tool_run = await complete_with_tools(
-            gateway, tools, JobClass.REVIEW, messages, policy, log, answer=ANSWER_FORMAT
+            gateway,
+            tools,
+            JobClass.REVIEW,
+            messages,
+            policy,
+            log,
+            answer=ANSWER_FORMAT,
+            shell=shell,
         )
     except ModelError as error:
         return _failed(store, run, log, "model_failed", str(error), started)

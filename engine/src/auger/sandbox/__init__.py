@@ -8,7 +8,6 @@ from auger.sandbox.base import (
     Sandbox,
     SandboxError,
 )
-from auger.sandbox.compose import ComposeError, Sanitised, sanitise
 from auger.sandbox.isolation import assert_contained, assert_no_credentials
 from auger.sandbox.oci import AppleContainer, Docker, OciSandbox, Podman
 from auger.sandbox.seatbelt import Seatbelt
@@ -21,7 +20,6 @@ __all__ = [
     "SEATBELT_WARNING",
     "WORK",
     "AppleContainer",
-    "ComposeError",
     "Docker",
     "Network",
     "OciSandbox",
@@ -30,13 +28,11 @@ __all__ = [
     "RunSpec",
     "Sandbox",
     "SandboxError",
-    "Sanitised",
     "Seatbelt",
     "Selection",
     "assert_contained",
     "assert_no_credentials",
     "backends",
     "find",
-    "sanitise",
     "select",
 ]

@@ -19,6 +19,7 @@ from auger.config import Policy
 from auger.config.schema import JobClass
 from auger.forge import PullRequest
 from auger.jobs import JobOutcome, audit, diff_review, pr_review
+from auger.jobs.shell import Shell
 from auger.log import Logger, create_logger
 from auger.models import Repository
 from auger.schedule.protocol import RigLike
@@ -235,6 +236,7 @@ class Scheduler:
                 policy=task.policy,
                 tools=rig.tools,
                 log=self.log,
+                shell=self._shell(task),
             )
         if task.kind == audit.KIND:
             return await audit.audit(
@@ -256,6 +258,23 @@ class Scheduler:
             tools=rig.tools,
             graph=rig.config.codegraph,
             log=self.log,
+            shell=self._shell(task),
+        )
+
+    def _shell(self, task: Task) -> Shell | None:
+        """The sandbox, as a tool the reviewer may call.
+
+        No image means no analysis image was built, and a command with nothing to run
+        in is worse than no command at all: the model would spend its budget on calls
+        that cannot work.
+        """
+        rig = self.rig
+        if not rig.config.image:
+            return None
+        return Shell(
+            sandbox=rig.selection.sandbox,
+            repository=task.repository.path,
+            image=rig.config.image,
         )
 
     async def _run(self, task: Task) -> None:
