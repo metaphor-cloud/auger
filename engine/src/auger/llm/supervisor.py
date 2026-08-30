@@ -226,6 +226,21 @@ class Supervisor:
             return int(process.pid)
         return None
 
+    def log_file(self, name: str) -> Path:
+        """Where one managed server's output goes. One file per backend, per start."""
+        directory = self.models_dir.parent / "logs"
+        directory.mkdir(parents=True, exist_ok=True)
+        return directory / f"{name}.log"
+
+    def last_output(self, name: str, lines: int = 20) -> str:
+        """The tail of what a server said. Empty when it said nothing, or wrote nothing."""
+        path = self.log_file(name)
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return ""
+        return "\n".join(text.strip().splitlines()[-lines:])
+
     def arguments(self, backend: Backend, server: str, model_path: Path) -> list[str]:
         return [
             server,
@@ -238,6 +253,11 @@ class Supervisor:
             # A continuous batch server needs a slot per concurrent request.
             "--parallel",
             str(backend.max_concurrent),
+            # `--ctx-size` is the total and is divided between the slots, so the size
+            # one request may reach has to be multiplied back up. Without it the server
+            # takes the model's whole training context per slot and fails to allocate.
+            "--ctx-size",
+            str(backend.context_tokens * backend.max_concurrent),
             *backend.args,
         ]
 
@@ -254,6 +274,7 @@ class Supervisor:
                 reason="server_died",
                 backend=name,
                 code=running.process.returncode,
+                output=self.last_output(name),
             )
             del self.running[name]
         server = self.server_command()
@@ -273,12 +294,18 @@ class Supervisor:
             return Health(name=name, url=backend.url, up=False, reason=reason, managed=True)
         arguments = self.arguments(backend, server, model_path)
         try:
+            # The server's own output is the only thing that says why it will not
+            # compute, why the weights would not load, or which flag it did not
+            # understand. Thrown away, a failure reaches the user as a 500 with nothing
+            # behind it.
+            stream = self.log_file(name).open("wb")
             process = subprocess.Popen(
                 arguments,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stdout=stream,
+                stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
+            stream.close()
         except OSError as error:
             self.log.error("managed start failed", reason="spawn_failed", backend=name, error=error)
             return Health(name=name, url=backend.url, up=False, reason=str(error), managed=True)

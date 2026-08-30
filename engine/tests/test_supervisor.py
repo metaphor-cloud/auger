@@ -111,6 +111,40 @@ def test_the_command_carries_the_port_and_the_batch_depth(tmp_path: Path) -> Non
     assert arguments[-1] == "--embedding"
 
 
+def test_the_context_is_always_asked_for(tmp_path: Path) -> None:
+    """Left alone the server takes the model's whole training context and cannot
+    allocate the cache for it, then answers every request with a compute error while
+    still reporting itself healthy."""
+    arguments = Supervisor(tmp_path).arguments(
+        Backend(model_file="m.gguf"), "llama-server", tmp_path / "m.gguf"
+    )
+    assert "--ctx-size" in arguments
+
+
+def test_the_context_is_multiplied_up_for_the_slots(tmp_path: Path) -> None:
+    """`--ctx-size` is the total and is shared out between the slots, so a per-request
+    size has to be multiplied by the number of them to survive the division."""
+    backend = Backend(model_file="m.gguf", max_concurrent=4, context_tokens=8192)
+    arguments = Supervisor(tmp_path).arguments(backend, "llama-server", tmp_path / "m.gguf")
+    assert arguments[arguments.index("--ctx-size") + 1] == str(8192 * 4)
+
+
+def test_a_server_that_dies_leaves_its_output_behind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The server's own words are the only thing that says why it would not run."""
+    _fake_server(tmp_path)
+    (tmp_path / "m.gguf").write_bytes(b"weights")
+    monkeypatch.setenv("PATH", str(tmp_path))
+    supervisor = Supervisor(tmp_path)
+    supervisor.log_file("review").write_text("error: could not allocate\n", encoding="utf-8")
+    assert "could not allocate" in supervisor.last_output("review")
+
+
+def test_no_output_yet_is_not_an_error(tmp_path: Path) -> None:
+    assert Supervisor(tmp_path).last_output("never-started") == ""
+
+
 def test_it_starts_and_stops_a_managed_server(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

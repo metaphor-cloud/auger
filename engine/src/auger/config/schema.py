@@ -140,6 +140,17 @@ class Backend(BaseModel):
     api_key_env: str | None = None
     #: A continuous batch server stays full at this depth and is never over-committed.
     max_concurrent: int = Field(default=4, ge=1, le=64)
+    #: How large a prompt one request may hold, in tokens.
+    #:
+    #: Left alone, `llama-server` takes the model's whole training context, which on a
+    #: current model is 131072 per slot. The weights are the small part of that: the key
+    #: and value cache for a context that size, times a slot per concurrent request, is
+    #: larger than the model, and the server answers every request with a compute error
+    #: once it cannot allocate one. It reports itself healthy while doing so.
+    #:
+    #: This is per request. The server is given the total, because `--ctx-size` there is
+    #: shared out across the slots, which is the way round that surprises people.
+    context_tokens: int = Field(default=16384, ge=2048, le=1_048_576)
     #: True when the request leaves this machine. Off unless the user turns it on.
     hosted: bool = False
     #: Start this server if nothing answers at `url`.

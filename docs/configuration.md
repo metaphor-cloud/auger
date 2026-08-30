@@ -201,6 +201,7 @@ max_tokens = 8192
 | `model` | `""` | The model name to send. |
 | `api_key_env` | none | Name of the variable holding a key. Never the key. |
 | `max_concurrent` | `4` | Requests in flight. A batch server stays full at this depth. |
+| `context_tokens` | `16384` | How large a prompt one request may hold. Raise it for a model that has to read whole files; lower it on a machine short of memory. The cache for a context is larger than the weights, so this costs more memory than the model does. |
 | `hosted` | `false` | This backend sends your code off the machine. |
 | `managed` | `false` | Start this server when nothing answers at `url`. |
 | `model_file` | `""` | Weights under `~/.auger/models`. |
