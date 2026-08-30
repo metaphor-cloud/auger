@@ -94,7 +94,7 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.value }}
         run: |
-          ./scripts/write-latest-json.py "$VERSION" \
+          python3 ./scripts/write-latest-json.py "$VERSION" \
             app/src-tauri/target/release/bundle latest.json
 
       # The updater reads latest.json from the newest release, so it must be an asset of
