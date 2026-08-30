@@ -89,6 +89,11 @@ build-sidecar:
 version want:
     {{root}}/scripts/set-version.sh {{want}}
 
+# What the next release would be called. Releases are cut by the `cut` workflow in
+# the Actions tab; this only shows what it would choose.
+next-version bump='auto':
+    {{root}}/scripts/next-version.sh {{bump}}
+
 # Build the .app. It runs where it was built.
 package: build-sidecar
     cd {{root}}/app && pnpm tauri build

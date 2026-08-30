@@ -1,0 +1,73 @@
+name: cut
+
+# Ship a release. Press the button in the Actions tab; the number comes from the commit
+# messages since the last tag, so nobody has to remember whether the work was a feature
+# or a fix at the moment they want to release it.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: How far to move the version.
+        required: true
+        default: auto
+        type: choice
+        options: [auto, patch, minor, major]
+      version:
+        description: An exact version, if `bump` should not decide. No leading v.
+        required: false
+        type: string
+
+# One release at a time. Two runs would each compute a version from the same tag, and
+# the second would try to write one that already exists.
+concurrency:
+  group: cut
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.next.outputs.value }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # Every tag, because the next version is worked out from the last one.
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+
+      - name: Work out the version
+        id: next
+        env:
+          BUMP: ${{ inputs.bump }}
+          EXACT: ${{ inputs.version }}
+        run: |
+          value="$(./scripts/next-version.sh "${EXACT:-$BUMP}")"
+          echo "value=${value}" >> "$GITHUB_OUTPUT"
+          echo "releasing ${value}" >> "$GITHUB_STEP_SUMMARY"
+
+      # Refuses a version that already shipped, before anything is written.
+      - run: ./scripts/check-release-tag.sh "$VERSION"
+        env:
+          VERSION: ${{ steps.next.outputs.value }}
+
+      - run: ./scripts/set-version.sh "$VERSION"
+        env:
+          VERSION: ${{ steps.next.outputs.value }}
+
+      - name: Commit and tag
+        env:
+          VERSION: ${{ steps.next.outputs.value }}
+        run: ./scripts/tag-release.sh "$VERSION"
+
+  # The tag was pushed with GITHUB_TOKEN, which starts no workflow, so the release is
+  # called rather than left to the tag's own trigger.
+  release:
+    needs: tag
+    uses: ./.github/workflows/release.yml
+    secrets: inherit
+    with:
+      version: ${{ needs.tag.outputs.version }}

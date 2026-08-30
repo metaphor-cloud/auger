@@ -107,14 +107,25 @@ container runtime, it starts a model server, and it reads the git repositories y
 
 ## Publishing a release
 
-CI does the whole thing. Push a tag:
+Open the Actions tab, choose **cut**, and run it. That is the whole thing.
+
+It reads the commit subjects since the last tag and works out the version: a `feat:`
+moves the minor, anything else moves the patch, and a `!` or a `BREAKING CHANGE:` moves
+the minor too while the major is still 0. Then it writes all four version fields, commits,
+tags, builds, notarises, writes `latest.json`, and opens a draft release. Read the draft,
+then publish it.
+
+Set `bump` to `patch`, `minor`, or `major` to overrule the reading, or fill in `version`
+for an exact number. To see what it would pick without running it:
 
 ```
-git tag v0.2.0 && git push origin v0.2.0
+just next-version
 ```
 
-The workflow checks that the tag agrees with all four version fields, builds, notarises,
-writes `latest.json`, and opens a draft release. Read it, then publish it.
+Pushing a `v*` tag by hand still releases, for the case where CI cannot.
+
+The version is never edited by hand. `just lint` fails when the four fields disagree,
+because they drift one at a time and a tag is too late to find out.
 
 Repository secrets hold the keys. Signing and notarisation use different ones, because
 they are different acts: the certificate says who built the application, and the notary
