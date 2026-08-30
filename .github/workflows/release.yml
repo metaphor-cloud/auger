@@ -101,6 +101,10 @@ jobs:
       # this one. The .dmg is what a new user downloads.
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
+          # Named, not inferred. This action falls back to `github.ref`, and a workflow
+          # that `cut` calls carries the caller's ref, which is refs/heads/main. The
+          # release then goes looking for a tag by that name and never finds one.
+          tag_name: v${{ steps.version.outputs.value }}
           draft: true
           generate_release_notes: true
           files: |
