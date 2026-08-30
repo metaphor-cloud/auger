@@ -133,12 +133,19 @@ ticket says Apple scanned it.
 
 - `APPLE_CERTIFICATE`, the Developer ID certificate as a base64 `.p12`.
 - `APPLE_CERTIFICATE_PASSWORD`, the password of that `.p12`.
-- `APPLE_SIGNING_IDENTITY` and `APPLE_TEAM_ID`.
+- Not the signing identity or the team ID. CI reads both out of the certificate.
 - `APPLE_API_KEY`, the ten-character App Store Connect key ID.
 - `APPLE_API_ISSUER`, the issuer UUID on the same page.
 - `APPLE_API_KEY_BASE64`, the `.p8` file itself, base64 encoded. CI writes it to a file,
   because `notarytool` reads a path and not a variable.
 - `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, the updater key.
+
+The signing identity and the team ID are not among them. They are not secret, they are
+printed in every signature, and `import-certificate.sh` reads them out of the `.p12` it
+already holds. A second copy in a settings page is only somewhere to leave one unset.
+
+A release that fails after the tag is written can simply be run again. `cut` reuses the
+version already tagged on that commit rather than bumping past it.
 
 Export the certificate from Keychain Access, not from the command line. Open the login
 keychain, choose **My Certificates**, right-click **Developer ID Application**, and

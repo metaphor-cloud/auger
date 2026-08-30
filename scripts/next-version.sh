@@ -37,6 +37,15 @@ if [ -z "${current}" ]; then
     exit 0
 fi
 
+# A tag on HEAD is a release that was cut and did not finish: `cut` writes the tag
+# before the build, because the build needs a ref that does not move. Retrying must
+# reuse that version rather than bump past it, or a failed notarisation leaves a
+# version nobody ever gets and the next one skips a number for no reason.
+if [ "${latest}" = "$(git -C "${root}" tag --points-at HEAD --list 'v*' | head -1)" ]; then
+    echo "${current}"
+    exit 0
+fi
+
 if [ "${mode}" = "auto" ]; then
     subjects="$(git -C "${root}" log --format=%s "${latest}..HEAD")"
     bodies="$(git -C "${root}" log --format=%B "${latest}..HEAD")"

@@ -16,8 +16,17 @@ if ! [[ "${want}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
     exit 1
 fi
 
+# A retry after a build that failed arrives here with the version already written and
+# the tag already on this commit. There is nothing to do, and nothing wrong.
+if git rev-parse --verify --quiet "refs/tags/v${want}" > /dev/null \
+    && [ "$(git rev-parse "v${want}^{commit}")" = "$(git rev-parse HEAD)" ]; then
+    echo "v${want} is already on this commit"
+    exit 0
+fi
+
 if [ -z "$(git status --porcelain)" ]; then
-    echo "the version is already ${want}: nothing to commit." >&2
+    echo "the version is already ${want} and no tag names this commit." >&2
+    echo "Pass an explicit version, or tag this commit by hand." >&2
     exit 1
 fi
 

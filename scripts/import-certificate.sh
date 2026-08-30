@@ -6,7 +6,12 @@
 # given no idle timeout, because a signature that waits behind a locked keychain fails
 # with an error that names nothing.
 #
-# Reads APPLE_CERTIFICATE (a base64 .p12) and APPLE_CERTIFICATE_PASSWORD.
+# Reads APPLE_CERTIFICATE (a base64 .p12) and APPLE_CERTIFICATE_PASSWORD, and writes
+# APPLE_SIGNING_IDENTITY and APPLE_TEAM_ID to GITHUB_ENV.
+#
+# Those two are read out of the certificate rather than configured. They are not secret,
+# they are printed in every signature, and a second copy in a settings page is one more
+# thing to get wrong: the release that found this had the certificate and neither name.
 
 set -euo pipefail
 
@@ -34,3 +39,30 @@ security list-keychain -d user -s "${keychain}" login.keychain
 
 echo "imported the signing certificate into ${keychain}"
 security find-identity -v -p codesigning "${keychain}"
+
+# `find-identity` prints:  1) <hash> "Developer ID Application: Name (TEAMID)"
+# Only a Developer ID Application certificate can sign for distribution, so a .p12 that
+# holds a development one as well cannot pick the wrong half.
+identity="$(security find-identity -v -p codesigning "${keychain}" \
+    | sed -n 's/.*"\(Developer ID Application: .*\)".*/\1/p' | head -1)"
+
+if [ -z "${identity}" ]; then
+    echo "the certificate holds no Developer ID Application identity." >&2
+    echo "Export it from Keychain Access under My Certificates. See docs/install.md." >&2
+    exit 1
+fi
+
+# The team is the parenthesised code at the end of the identity, and nowhere else.
+team="$(printf '%s' "${identity}" | sed -n 's/.*(\([A-Z0-9]\{10\}\))$/\1/p')"
+if [ -z "${team}" ]; then
+    echo "no team ID in '${identity}'." >&2
+    exit 1
+fi
+
+echo "signing as ${identity}"
+if [ -n "${GITHUB_ENV:-}" ]; then
+    {
+        echo "APPLE_SIGNING_IDENTITY=${identity}"
+        echo "APPLE_TEAM_ID=${team}"
+    } >> "${GITHUB_ENV}"
+fi
