@@ -39,18 +39,18 @@ describe("matches", () => {
     expect(matches(finding(), all)).toBe(true);
   });
 
-  it("shows everything when no category pill is on", () => {
-    // Deselecting every pill empties the list if an empty set means "match nothing",
-    // and an empty list reads as a broken view rather than as a filter.
+  it("shows nothing when no category pill is on", () => {
+    // A pill that is off hides its kind. Turning the last one off cannot bring every
+    // kind back, or the pills would be saying the opposite of what they show.
     const none = { ...all, categories: new Set<string>() };
-    expect(matches(finding({ category: "security" }), none)).toBe(true);
-    expect(matches(finding({ category: "style" }), none)).toBe(true);
+    expect(matches(finding({ category: "correctness" }), none)).toBe(false);
+    expect(matches(finding({ category: "security" }), none)).toBe(false);
   });
 
-  it("shows every state when no state pill is on", () => {
+  it("shows nothing when no state pill is on", () => {
     const none = { ...all, states: new Set<string>() };
-    expect(matches(finding({ status: "resolved" }), none)).toBe(true);
-    expect(matches(finding({ status: "suppressed" }), none)).toBe(true);
+    expect(matches(finding({ status: "open" }), none)).toBe(false);
+    expect(matches(finding({ status: "resolved" }), none)).toBe(false);
   });
 
   it("still hides a category that is switched off while others are on", () => {
@@ -71,27 +71,25 @@ describe("matches", () => {
 });
 
 describe("clicked", () => {
-  const everyState = new Set(["open", "doing"]);
+  const everyState = new Set(["open", "doing", "resolved", "suppressed"]);
 
-  it("narrows to the pill that was clicked", () => {
-    // Every pill starts on, so a plain toggle would hide open findings on a click of
-    // the pill that says Open. That is the report this rule exists to answer.
-    expect([...clicked(everyState, "open", false)]).toEqual(["open"]);
+  it("turns off the pill that was clicked and leaves the rest alone", () => {
+    expect([...clicked(everyState, "open")]).toEqual(["doing", "resolved", "suppressed"]);
   });
 
-  it("widens back out when the clicked pill is already the only one", () => {
-    expect(clicked(new Set(["open"]), "open", false).size).toBe(0);
+  it("turns the pill back on when it is off", () => {
+    expect([...clicked(new Set(["open"]), "doing")]).toEqual(["open", "doing"]);
   });
 
-  it("adds and removes when a modifier is held", () => {
-    expect([...clicked(new Set(["open"]), "doing", true)].sort()).toEqual(["doing", "open"]);
-    expect([...clicked(everyState, "doing", true)]).toEqual(["open"]);
-  });
-
-  it("never empties by narrowing, so a click cannot hide everything", () => {
-    for (const name of ["open", "doing", "resolved", "suppressed"]) {
-      const next = clicked(everyState, name, false);
-      expect(next.size === 0 || next.has(name)).toBe(true);
+  it("never changes a pill other than the one clicked", () => {
+    // The report this rule exists to answer: clicking one pill made the others vanish.
+    for (const name of [...everyState]) {
+      const next = clicked(everyState, name);
+      for (const other of everyState) {
+        if (other !== name) expect(next.has(other)).toBe(true);
+      }
+      expect(next.has(name)).toBe(false);
+      expect(clicked(next, name)).toEqual(everyState);
     }
   });
 });

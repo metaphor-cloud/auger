@@ -196,23 +196,6 @@ class StatusRequest(BaseModel):
     status: Literal["open", "doing", "resolved", "suppressed"]
 
 
-class RecordRequest(BaseModel):
-    """One work item, written by a person rather than by a review."""
-
-    repo_path: str
-    title: str
-    detail: str = ""
-    file: str = ""
-    line: int | None = None
-    severity: Literal["critical", "high", "medium", "low", "info"] = "medium"
-
-
-class RecordedOut(BaseModel):
-    item: FindingOut
-    #: True when the same work was already recorded. The window says so.
-    existed: bool
-
-
 class NoteOut(BaseModel):
     id: int
     author: str

@@ -54,7 +54,8 @@ Refused = ToolError
 #: The source an item carries when an agent wrote it. It sits beside `model` and
 #: `semgrep`, so the window shows who said it.
 AGENT_SOURCE = "agent"
-#: The source an item carries when a person wrote it in the window.
+#: The author a journal note carries when a person wrote it in the window. No item is
+#: written by hand: items come from a review or from an agent through this server.
 PERSON_SOURCE = "person"
 
 INSTRUCTIONS = """\

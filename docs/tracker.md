@@ -23,14 +23,14 @@ team's tracker.
 
 ## One list
 
-A task and a review finding are the same row. The `source` says who wrote it:
+A task and a review finding are the same row. Every row is written by a review or by an
+agent: nothing is added by hand. The `source` says who wrote it:
 
 | Source | Who wrote it |
 | --- | --- |
 | `model` | A review by the model. |
 | `semgrep` | The security scan. |
 | `agent` | An agent, through the tracker. |
-| `person` | You, in the window. |
 
 A state is one of `open`, `doing`, `done`, or `dropped`. The window shows `open` and
 `doing` together, because both mean unfinished.
@@ -85,7 +85,8 @@ one, and `--home` to read another Auger home.
 already there, with its journal, rather than a second copy. That is the answer to "have I
 done this before", and the journal says what happened last time.
 
-A note is append only. A journal that can be rewritten is not a record of anything.
+A note is append only. A journal that can be rewritten is not a record of anything. A
+note written in the window carries the author `person`; the item it hangs off does not.
 
 ## What to know before you rely on it
 

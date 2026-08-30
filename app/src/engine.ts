@@ -15,7 +15,6 @@ import type {
   NoteList,
   Onboarding,
   Prompt,
-  Recorded,
   RunList,
   SearchResults,
   Settings,
@@ -168,20 +167,6 @@ export async function getFindings(
   if (includeDismissed) query.set("include_dismissed", "true");
   if (search.trim()) query.set("query", search.trim());
   return request(`/findings?${query}`);
-}
-
-export async function recordItem(item: {
-  repo_path: string;
-  title: string;
-  detail?: string;
-  file?: string;
-  severity?: string;
-}): Promise<Recorded> {
-  return request("/findings", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(item),
-  });
 }
 
 export async function getNotes(fingerprint: string): Promise<NoteList> {

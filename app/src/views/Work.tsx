@@ -7,21 +7,11 @@
 import {
   Badge,
   Button,
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
   Input,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
-  Textarea,
 } from "@metaphor-cloud/ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -33,7 +23,6 @@ import {
   getRepositories,
   getRuns,
   markOpened,
-  recordItem,
   requestReview,
   setFindingStatus,
 } from "../engine";
@@ -74,13 +63,14 @@ function Chip({
   on: boolean;
   colour?: string;
   children: React.ReactNode;
-  onClick: (add: boolean) => void;
+  onClick: () => void;
   title?: string;
 }) {
   return (
     <button
       title={title}
-      onClick={(event) => onClick(event.metaKey || event.shiftKey)}
+      aria-pressed={on}
+      onClick={onClick}
       className="rounded-full border px-2.5 py-0.5 text-[11px] transition-colors"
       style={{
         borderColor: on ? (colour ?? "var(--color-accent)") : "var(--color-border-subtle)",
@@ -136,72 +126,6 @@ function Journal({ fingerprint }: { fingerprint: string }) {
         </Button>
       </div>
     </div>
-  );
-}
-
-function RecordDialog({
-  repositories,
-  open,
-  onClose,
-}: {
-  repositories: Repository[];
-  open: boolean;
-  onClose: (recorded: boolean) => void;
-}) {
-  const [repo, setRepo] = useState("");
-  const [title, setTitle] = useState("");
-  const [detail, setDetail] = useState("");
-  const [existed, setExisted] = useState(false);
-
-  async function save() {
-    const body = await recordItem({ repo_path: repo, title, detail });
-    setExisted(body.existed);
-    setTitle("");
-    setDetail("");
-    onClose(true);
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(next) => !next && onClose(false)}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="text-sm">Record an item</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-2 px-4 pb-4">
-          {existed && (
-            <p className="text-xs text-warning">
-              That work was already recorded. Its item is in the list.
-            </p>
-          )}
-          <Select value={repo} onValueChange={setRepo}>
-            <SelectTrigger>
-              <SelectValue placeholder="Repository" />
-            </SelectTrigger>
-            <SelectContent>
-              {repositories.map((one) => (
-                <SelectItem key={one.path} value={one.path}>
-                  {repoName(one.path)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Input
-            value={title}
-            placeholder="What needs doing"
-            onChange={(event) => setTitle(event.target.value)}
-          />
-          <Textarea
-            rows={3}
-            value={detail}
-            placeholder="Detail, so a session that finds this later knows what you meant."
-            onChange={(event) => setDetail(event.target.value)}
-          />
-          <Button disabled={!repo || !title.trim()} onClick={() => void save()}>
-            Record
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -274,7 +198,6 @@ export default function Work({
   const [readAt, setReadAt] = useState(() => Date.now());
   const [search, setSearch] = useState("");
   const [chosen, setChosen] = useState<Finding | null>(null);
-  const [recording, setRecording] = useState(false);
   const [closed, setClosed] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
@@ -407,10 +330,10 @@ export default function Work({
         {CATEGORY_NAMES.map((name) => (
           <Chip
             key={name}
-            on={categories.size === 0 || categories.has(name)}
+            on={categories.has(name)}
             colour={CATEGORY[name].colour}
-            title={`Show ${CATEGORY[name].label} only. Hold shift to add it to what is shown.`}
-            onClick={(add) => setCategories((current) => clicked(current, name, add))}
+            title={`Show ${CATEGORY[name].label}`}
+            onClick={() => setCategories((current) => clicked(current, name))}
           >
             {CATEGORY[name].label}
           </Chip>
@@ -419,9 +342,9 @@ export default function Work({
         {STATE_NAMES.map((name) => (
           <Chip
             key={name}
-            on={states.size === 0 || states.has(name)}
-            title={`Show ${STATES[name]} only. Hold shift to add it to what is shown.`}
-            onClick={(add) => setStates((current) => clicked(current, name, add))}
+            on={states.has(name)}
+            title={`Show ${STATES[name]}`}
+            onClick={() => setStates((current) => clicked(current, name))}
           >
             {STATES[name]}
           </Chip>
@@ -436,9 +359,6 @@ export default function Work({
             placeholder="Filter"
             onChange={(event) => setSearch(event.target.value)}
           />
-          <Button size="sm" variant="secondary" onClick={() => setRecording(true)}>
-            Record
-          </Button>
         </div>
       </header>
 
@@ -447,7 +367,11 @@ export default function Work({
           <p className="px-4 py-8 text-center text-xs text-text-tertiary">
             {repositories.length === 0
               ? "No repository yet. Add a root in Settings."
-              : "Nothing under these filters."}
+              : categories.size === 0
+                ? "Every kind is switched off. Turn one on."
+                : states.size === 0
+                  ? "Every state is switched off. Turn one on."
+                  : "Nothing under these filters."}
           </p>
         )}
         {groups.map((group) => (
@@ -515,15 +439,6 @@ export default function Work({
         ))}
       </div>
 
-      <RecordDialog
-        repositories={repositories}
-        open={recording}
-        onClose={(recorded) => {
-          setRecording(false);
-          if (recorded) void load();
-        }}
-      />
-
       <Sheet open={chosen !== null} onOpenChange={(open) => !open && setChosen(null)}>
         <SheetContent className="w-[30rem] overflow-y-auto">
           {chosen && (
@@ -587,7 +502,7 @@ export default function Work({
                           </Button>
                         </>
                       ) : (
-                        "Recorded by hand, not by a run."
+                        "Recorded through the tracker, not by a run."
                       )}
                     </p>
                   )}

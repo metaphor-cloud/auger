@@ -56,8 +56,6 @@ from auger.api.models import (
     ProfileLimits,
     PromptOut,
     QueueOut,
-    RecordedOut,
-    RecordRequest,
     RepositoryFound,
     RepositoryList,
     RepositorySummaryOut,
@@ -91,11 +89,9 @@ from auger.mcp import OAuthError
 from auger.rig import Rig
 from auger.store.findings import (
     ACTIVE,
-    Finding,
     counts,
     list_findings,
     mark_opened,
-    record_one,
     search_findings,
     set_status,
 )
@@ -785,31 +781,6 @@ def create_app(rig: Rig) -> FastAPI:
             findings=[FindingOut.of(finding) for finding in rows],
             counts=await asyncio.to_thread(counts, rig.store, None),
         )
-
-    @router.post("/findings")
-    async def record_item(request: RecordRequest) -> RecordedOut:
-        """Record one work item by hand.
-
-        The same store the tracker writes to, so a person and an agent see one list.
-        """
-        if not request.title.strip():
-            raise HTTPException(status_code=400, detail="an item needs a title")
-        stored, existed = await asyncio.to_thread(
-            record_one,
-            rig.store,
-            Finding(
-                repo_path=request.repo_path,
-                source=PERSON_SOURCE,
-                severity=request.severity,
-                category="task",
-                title=request.title.strip(),
-                detail=request.detail.strip(),
-                file=request.file.strip(),
-                line=request.line,
-            ),
-        )
-        rig.publish("findings.changed", count=1, status=stored.status)
-        return RecordedOut(item=FindingOut.of(stored), existed=existed)
 
     @router.get("/findings/{item}/notes")
     async def item_notes(item: str) -> NoteList:

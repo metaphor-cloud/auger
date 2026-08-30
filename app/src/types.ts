@@ -164,8 +164,6 @@ export type Note = {
 
 export type NoteList = { notes: Note[] };
 
-export type Recorded = { item: Finding; existed: boolean };
-
 export type FindingList = {
   findings: Finding[];
   counts: Record<string, number>;

@@ -33,10 +33,12 @@ def store(tmp_path: Path) -> Any:
 
 
 def task(title: str, detail: str = "", **extra: Any) -> Finding:
+    """What the tracker writes when an agent records work."""
     return Finding(
         repo_path=REPO,
         source="agent",
         severity="medium",
+        category=extra.pop("category", "task"),
         title=title,
         detail=detail,
         file=extra.pop("file", ""),
@@ -286,6 +288,9 @@ async def test_a_state_the_tracker_does_not_know_is_refused(tmp_path: Path) -> N
 
 
 # --- the routes --------------------------------------------------------------------
+#
+# The window reads and annotates. It never writes an item: an item comes from a review
+# or from an agent through the tracker, so these seed the store the way those do.
 
 
 async def post(http: Any, token: str, path: str, body: dict[str, Any]) -> Any:
@@ -294,56 +299,52 @@ async def post(http: Any, token: str, path: str, body: dict[str, Any]) -> Any:
     return response.json()
 
 
-async def test_a_person_can_record_an_item_and_note_it(http: Any, token: str) -> None:
+async def test_the_window_cannot_record_an_item(http: Any, token: str) -> None:
+    """The tracker is written by agents, not by hand, so the route does not exist."""
     async with http:
-        first = await post(
-            http,
-            token,
+        response = await http.post(
             "/findings",
-            {"repo_path": REPO, "title": "drop the old walk", "detail": "it reads twice"},
+            headers={"Authorization": f"Bearer {token}"},
+            json={"repo_path": REPO, "title": "drop the old walk"},
         )
-        assert first["existed"] is False
-        assert first["item"]["source"] == "person"
-        item_id = first["item"]["fingerprint"]
+    assert response.status_code == 405
 
-        again = await post(
-            http, token, "/findings", {"repo_path": REPO, "title": "drop the old walk"}
-        )
-        assert again["existed"] is True
-        assert again["item"]["fingerprint"] == item_id
 
-        notes = await post(http, token, f"/findings/{item_id}/notes", {"text": "started it"})
+async def test_a_note_is_appended_to_an_item_an_agent_wrote(
+    rig: Any, http: Any, token: str
+) -> None:
+    stored, _ = record_one(rig.store, task("drop the old walk", "it reads twice"))
+    async with http:
+        path = f"/findings/{stored.fingerprint}/notes"
+        notes = await post(http, token, path, {"text": "started it"})
         assert [note["text"] for note in notes["notes"]] == ["started it"]
 
         read = await http.get(
-            f"/findings/{item_id}/notes", headers={"Authorization": f"Bearer {token}"}
+            f"/findings/{stored.fingerprint}/notes", headers={"Authorization": f"Bearer {token}"}
         )
-        assert read.json()["notes"][0]["author"] == "person"
+    assert read.json()["notes"][0]["author"] == "person"
 
 
-async def test_the_findings_route_searches(http: Any, token: str) -> None:
+async def test_the_findings_route_searches(rig: Any, http: Any, token: str) -> None:
+    record_one(rig.store, task("drop the old walk", "it reads twice"))
+    record_one(rig.store, task("write the notes"))
     async with http:
-        await post(
-            http,
-            token,
-            "/findings",
-            {"repo_path": REPO, "title": "drop the old walk", "detail": "it reads twice"},
-        )
-        await post(http, token, "/findings", {"repo_path": REPO, "title": "write the notes"})
         response = await http.get(
             "/findings?query=reads twice", headers={"Authorization": f"Bearer {token}"}
         )
     assert [one["title"] for one in response.json()["findings"]] == ["drop the old walk"]
 
 
-async def test_an_item_can_be_moved_to_doing_and_stays_in_the_list(http: Any, token: str) -> None:
+async def test_an_item_can_be_moved_to_doing_and_stays_in_the_list(
+    rig: Any, http: Any, token: str
+) -> None:
+    stored, _ = record_one(rig.store, task("drop the old walk"))
     async with http:
-        recorded = await post(
-            http, token, "/findings", {"repo_path": REPO, "title": "drop the old walk"}
-        )
-        item_id = recorded["item"]["fingerprint"]
         body = await post(
-            http, token, "/findings/status", {"fingerprints": [item_id], "status": "doing"}
+            http,
+            token,
+            "/findings/status",
+            {"fingerprints": [stored.fingerprint], "status": "doing"},
         )
     assert [one["status"] for one in body["findings"]] == ["doing"]
     assert body["counts"]["total"] == 1
@@ -359,16 +360,14 @@ async def test_a_note_on_an_unknown_item_is_refused(http: Any, token: str) -> No
     assert response.status_code == 400
 
 
-async def test_a_finding_is_new_until_it_is_opened(http: Any, token: str) -> None:
+async def test_a_finding_is_new_until_it_is_opened(rig: Any, http: Any, token: str) -> None:
     """The map flags what the user has not read. Reading it clears the flag."""
-    async with http:
-        recorded = await post(
-            http, token, "/findings", {"repo_path": REPO, "title": "drop the old walk"}
-        )
-        assert recorded["item"]["opened_at"] is None
-        assert recorded["item"]["category"] == "task"
+    stored, _ = record_one(rig.store, task("drop the old walk"))
+    assert stored.opened_at is None
+    assert stored.category == "task"
 
-        body = await post(http, token, f"/findings/{recorded['item']['fingerprint']}/opened", {})
+    async with http:
+        body = await post(http, token, f"/findings/{stored.fingerprint}/opened", {})
     assert body["findings"][0]["opened_at"] is not None
 
 
