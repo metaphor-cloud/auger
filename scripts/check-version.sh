@@ -20,17 +20,22 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 read_json() { python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['version'])" "$1"; }
 read_toml() { grep --max-count=1 '^version = ' "$1" | cut -d '"' -f 2; }
+read_python() { grep --max-count=1 '^__version__ = ' "$1" | cut -d '"' -f 2; }
 
 declare -a files=(
     "app/src-tauri/tauri.conf.json"
     "app/package.json"
     "app/src-tauri/Cargo.toml"
     "engine/pyproject.toml"
+    # What the running engine reports, and what the window shows. A literal, because a
+    # frozen sidecar has no package metadata to read it from.
+    "engine/src/auger/__init__.py"
 )
 
 read_version() {
     case "$1" in
         *.json) read_json "${root}/$1" ;;
+        *.py) read_python "${root}/$1" ;;
         *) read_toml "${root}/$1" ;;
     esac
 }
@@ -49,7 +54,7 @@ done
 if [ "${#bad[@]}" -ne 0 ]; then
     echo "the version should be ${want}, but:" >&2
     printf '  %s\n' "${bad[@]}" >&2
-    echo "run 'just version ${want}' to set all four." >&2
+    echo "run 'just version ${want}' to set every one." >&2
     exit 1
 fi
 

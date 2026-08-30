@@ -47,11 +47,16 @@ for name in ("app/src-tauri/tauri.conf.json", "app/package.json"):
         raise SystemExit(f"{name}: could not find a version to set")
     path.write_text(updated, encoding="utf-8")
 
-for name in ("app/src-tauri/Cargo.toml", "engine/pyproject.toml"):
+for name, pattern, template in (
+    ("app/src-tauri/Cargo.toml", r'^version = "[^"]*"', 'version = "{}"'),
+    ("engine/pyproject.toml", r'^version = "[^"]*"', 'version = "{}"'),
+    # The engine reports this one over the API, and the window shows it.
+    ("engine/src/auger/__init__.py", r'^__version__ = "[^"]*"', '__version__ = "{}"'),
+):
     path = root / name
     text = path.read_text(encoding="utf-8")
     updated, count = re.subn(
-        r'^version = "[^"]*"', f'version = "{want}"', text, count=1, flags=re.MULTILINE
+        pattern, template.format(want), text, count=1, flags=re.MULTILINE
     )
     if count != 1:
         raise SystemExit(f"{name}: could not find a version to set")

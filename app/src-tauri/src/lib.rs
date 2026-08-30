@@ -11,6 +11,14 @@ mod tray;
 use engine::{EngineInfo, EngineState};
 use tauri::{Manager, RunEvent, WindowEvent};
 
+/// What the login item passes, and nothing else does.
+const AUTOSTART_FLAG: &str = "--autostart";
+
+/// Whether macOS started this at login rather than the user opening it.
+fn launched_at_login() -> bool {
+    std::env::args().any(|argument| argument == AUTOSTART_FLAG)
+}
+
 /// The web UI needs the port and the token to reach the engine. IPC is the only channel
 /// that carries them, so they never appear in a URL or in a log.
 #[tauri::command]
@@ -91,9 +99,12 @@ fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        // The login item carries a flag, which is the only way to tell a launch the
+        // user asked for from one macOS did at login. One should open the window; the
+        // other must not, or every login is interrupted by a window nobody asked for.
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
+            Some(vec![AUTOSTART_FLAG]),
         ))
         // The rig runs all day and nobody visits its download page again. It asks
         // GitHub for a new release, and the user decides whether to take it.
@@ -138,10 +149,20 @@ pub fn run() {
                 }
             };
             tray::build(&handle, &status)?;
-            // A development run shows the window at once. A packaged run starts in the
-            // menu bar and waits for the user to ask for it.
-            #[cfg(debug_assertions)]
-            tray::show_window(&handle);
+            // Opening an application should show it something. Only a login launch
+            // starts quiet, because nobody opened anything.
+            if launched_at_login() {
+                // A login item registered before the flag existed does not carry it, so
+                // that user would get a window every login. Writing it again picks the
+                // flag up, and does nothing when it is already there.
+                use tauri_plugin_autostart::ManagerExt;
+                let manager = handle.autolaunch();
+                if manager.is_enabled().unwrap_or(false) {
+                    let _ = manager.enable();
+                }
+            } else {
+                tray::show_window(&handle);
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -166,6 +187,12 @@ pub fn run() {
                 for window in app.webview_windows().values() {
                     let _ = window.hide();
                 }
+            }
+            // Opening an application that is already running: the dock icon, Spotlight,
+            // or ⌘Tab. macOS sends this instead of starting a second copy, and without
+            // it the rig looks like it did not open at all.
+            RunEvent::Reopen { .. } => {
+                tray::show_window(app);
             }
             RunEvent::Exit => {
                 if let Some(running) = app.state::<EngineState>().0.lock().unwrap().take() {

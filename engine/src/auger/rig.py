@@ -76,7 +76,7 @@ class Rig:
         self._refresh_allowlist()
         self.proxy = EgressProxy(self.allowlist, self.log)
         self.models_dir = settings.home / "models"
-        self.supervisor = Supervisor(self.models_dir, self.log)
+        self.supervisor = Supervisor(self.models_dir, self.log, log_dir=self.settings.home / "logs")
         self.gateway = Gateway(self.config, self.allowlist, self.log)
         self.health: dict[str, Health] = {}
         self.setup_running = False

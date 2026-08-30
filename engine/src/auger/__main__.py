@@ -51,7 +51,11 @@ def stop_models() -> int:
     from auger.llm.supervisor import Supervisor
     from auger.log import create_logger
 
-    supervisor = Supervisor(home_dir() / "models", create_logger("auger", stream=sys.stderr))
+    supervisor = Supervisor(
+        home_dir() / "models",
+        create_logger("auger", stream=sys.stderr),
+        log_dir=home_dir() / "logs",
+    )
     found = supervisor.adopt_all()
     if not found:
         print("auger: no model server of ours is running.")

@@ -116,8 +116,14 @@ async def discover(client: httpx.AsyncClient, ports: Iterable[int] = COMMON_PORT
 class Supervisor:
     """Starts a `llama-server` for any managed backend that does not answer."""
 
-    def __init__(self, models_dir: Path, log: Logger | None = None) -> None:
+    def __init__(
+        self, models_dir: Path, log: Logger | None = None, log_dir: Path | None = None
+    ) -> None:
         self.models_dir = models_dir
+        # Where each server's output goes. Named rather than derived from `models_dir`,
+        # because deriving it puts two supervisors with different model directories in
+        # the same place, and the second truncates the first one's log.
+        self.log_dir = log_dir if log_dir is not None else models_dir / "logs"
         self.log = (log or create_logger("llm")).bind(component="supervisor")
         self.running: dict[str, Managed] = {}
 
@@ -228,9 +234,8 @@ class Supervisor:
 
     def log_file(self, name: str) -> Path:
         """Where one managed server's output goes. One file per backend, per start."""
-        directory = self.models_dir.parent / "logs"
-        directory.mkdir(parents=True, exist_ok=True)
-        return directory / f"{name}.log"
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        return self.log_dir / f"{name}.log"
 
     def last_output(self, name: str, lines: int = 20) -> str:
         """The tail of what a server said. Empty when it said nothing, or wrote nothing."""

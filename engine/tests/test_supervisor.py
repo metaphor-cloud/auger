@@ -136,13 +136,13 @@ def test_a_server_that_dies_leaves_its_output_behind(
     _fake_server(tmp_path)
     (tmp_path / "m.gguf").write_bytes(b"weights")
     monkeypatch.setenv("PATH", str(tmp_path))
-    supervisor = Supervisor(tmp_path)
+    supervisor = Supervisor(tmp_path / "models")
     supervisor.log_file("review").write_text("error: could not allocate\n", encoding="utf-8")
     assert "could not allocate" in supervisor.last_output("review")
 
 
 def test_no_output_yet_is_not_an_error(tmp_path: Path) -> None:
-    assert Supervisor(tmp_path).last_output("never-started") == ""
+    assert Supervisor(tmp_path / "models").last_output("never-started") == ""
 
 
 def test_it_starts_and_stops_a_managed_server(
