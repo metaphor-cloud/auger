@@ -13,7 +13,7 @@ import os
 import socket
 import threading
 import urllib.request
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
@@ -24,6 +24,7 @@ import pytest
 from auger.config.schema import McpServer
 from auger.mcp.client import Access
 from auger.mcp.oauth import (
+    LoopbackHTTPServer,
     OAuthError,
     background_provider,
     sign_in,
@@ -144,7 +145,9 @@ class FakeServer:
                 return
 
         self.callback_port = free_port()
-        self._server = HTTPServer(("127.0.0.1", self.port), Handler)
+        # The same reverse lookup that made the real callback server hang. Without
+        # this the fixture itself times out on a runner whose resolver is silent.
+        self._server = LoopbackHTTPServer(("127.0.0.1", self.port), Handler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
 
     def start(self) -> FakeServer:

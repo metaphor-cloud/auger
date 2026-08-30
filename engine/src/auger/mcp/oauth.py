@@ -18,6 +18,7 @@ import asyncio
 import json
 import os
 import socket
+import socketserver
 import threading
 import webbrowser
 from dataclasses import dataclass
@@ -158,6 +159,25 @@ def background_provider(name: str, config: McpServer, home: Path) -> OAuthClient
     )
 
 
+class LoopbackHTTPServer(HTTPServer):
+    """`HTTPServer` without the reverse lookup its constructor does.
+
+    `HTTPServer.server_bind` calls `socket.getfqdn` on the address it binds, and it
+    does so before the server is listening. On a machine whose resolver does not
+    answer for 127.0.0.1 that blocks for tens of seconds, and the sign in appears to
+    hang between the click and the browser opening.
+
+    The name is only ever used to build a Host header this server never sends, and
+    the address is a literal we chose, so there is nothing to look up.
+    """
+
+    def server_bind(self) -> None:
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[0], self.server_address[1]
+        self.server_name = host if isinstance(host, str) else host.decode()
+        self.server_port = int(port)
+
+
 @dataclass
 class Callback:
     """A one request web server on the loopback address, for the redirect."""
@@ -202,7 +222,7 @@ class Callback:
                 log.debug("oauth callback", path=self.path)
 
         try:
-            server = HTTPServer(("127.0.0.1", port), Handler)
+            server = LoopbackHTTPServer(("127.0.0.1", port), Handler)
         except OSError as error:
             raise OAuthError(f"port {port} is not free for the sign in: {error}") from error
         thread = threading.Thread(target=server.serve_forever, daemon=True)
