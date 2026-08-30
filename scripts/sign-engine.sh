@@ -20,8 +20,10 @@ if [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
     echo "APPLE_SIGNING_IDENTITY is not set. See docs/install.md." >&2
     exit 1
 fi
-if [ ! -d "${engine}" ]; then
-    echo "no engine at ${engine}. Run 'just build-sidecar' first." >&2
+# The directory is in git, so it exists even when nothing has been built into it. The
+# executable is the thing that proves a build happened.
+if [ ! -x "${engine}/auger" ]; then
+    echo "no engine at ${engine}/auger. Run 'just build-sidecar' first." >&2
     exit 1
 fi
 

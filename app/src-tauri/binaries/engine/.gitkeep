@@ -1,0 +1,9 @@
+The frozen engine goes here. `just build-sidecar` writes it.
+
+This file only keeps the directory. `bundle.resources` in tauri.conf.json names it, and
+tauri-build fails the whole build when a resource path is missing, so without it a fresh
+clone cannot even run `cargo clippy`.
+
+An empty directory is not a working bundle. `just package` and `just release` both run
+`build-sidecar` first, and `scripts/sign-engine.sh` refuses to sign a directory with no
+executable in it.

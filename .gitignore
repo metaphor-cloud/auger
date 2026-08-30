@@ -19,8 +19,13 @@ app/dist/
 # Rust
 target/
 
-# Tauri sidecar payload, produced by `just build-sidecar`
-app/src-tauri/binaries/
+# Tauri sidecar payload, produced by `just build-sidecar`. The directory itself is
+# kept, because tauri-build refuses to build at all when a path in `bundle.resources`
+# is missing, and that stopped `cargo clippy` on a fresh clone.
+app/src-tauri/binaries/*
+!app/src-tauri/binaries/engine/
+app/src-tauri/binaries/engine/*
+!app/src-tauri/binaries/engine/.gitkeep
 
 # Local state
 .DS_Store
