@@ -13,6 +13,7 @@ import uuid
 
 from auger.log import Logger, create_logger
 from auger.sandbox.base import SCRATCH, WORK, Network, RunResult, RunSpec, SandboxError
+from auger.sandbox.isolation import assert_contained, assert_no_credentials
 from auger.sandbox.which import find
 
 
@@ -87,6 +88,10 @@ class OciSandbox:
             raise SandboxError(f"repository not found: {spec.repository}")
         container_name = f"auger-{uuid.uuid4().hex[:12]}"
         arguments = self.arguments(spec, container_name)
+        # Audited here rather than where the line is built, so no path to a container
+        # skips it: a future caller that adds a flag of its own is checked too.
+        assert_no_credentials(spec.env)
+        assert_contained(arguments, [spec.repository])
         log = self.log.bind(container=container_name)
         log.debug("sandbox run", command=spec.shell_command(), network=str(spec.network))
         started = time.monotonic()

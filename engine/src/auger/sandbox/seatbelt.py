@@ -15,6 +15,7 @@ from pathlib import Path
 
 from auger.log import Logger, create_logger
 from auger.sandbox.base import Network, RunResult, RunSpec, SandboxError
+from auger.sandbox.isolation import assert_no_credentials
 
 SANDBOX_EXEC = "/usr/bin/sandbox-exec"
 
@@ -56,6 +57,7 @@ class Seatbelt:
             raise SandboxError("seatbelt runs offline only. Install a container runtime.")
         if not spec.repository.is_dir():
             raise SandboxError(f"repository not found: {spec.repository}")
+        assert_no_credentials(spec.env)
         started = time.monotonic()
         with tempfile.TemporaryDirectory(prefix="auger-scratch-") as scratch:
             scratch_path = Path(scratch).resolve()
