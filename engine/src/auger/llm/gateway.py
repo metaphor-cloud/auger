@@ -31,9 +31,15 @@ RERANK_DOCUMENT_CHARS = 1200
 #: and loading one for every backend would be a model each; a low estimate costs a little
 #: unused context, and a high one costs the whole review.
 CHARS_PER_TOKEN = 3
-#: Held back from the prompt for the parts that are not measured here: the answer, the
-#: system rules, the tool descriptions, and whatever a tool returns mid-review.
-RESERVED_TOKENS = 4096
+#: Held back from the prompt for everything that is not the prompt: the system rules,
+#: the tool descriptions, whatever a tool returns mid-review, and the answer itself.
+#:
+#: The answer is the large part, because a reasoning model thinks in the same budget it
+#: writes in. One of the models the rig ships spends about five thousand tokens reasoning
+#: before it writes the first character of its findings. Reserve too little and the
+#: thinking uses the context up: the request succeeds, the server reports `stop`, and the
+#: content comes back empty, which reads as the model having nothing to say.
+RESERVED_TOKENS = 8192
 #: When no backend answers for this job class there is nothing to ask, so fall back to a
 #: budget that suits the smallest context worth configuring.
 DEFAULT_PROMPT_CHARS = 24_000
@@ -420,6 +426,17 @@ def _completion(body: Any, resolved: Resolved, usage: Usage) -> Completion:
         text = message.get("content") or ""
     except (KeyError, IndexError, TypeError) as error:
         raise ModelError(f"{resolved.name} returned no message") from error
+    # A reasoning model thinks in the budget it writes in, so a request that leaves it
+    # too little context stops mid-thought: the call succeeds, nothing is wrong with the
+    # request, and the answer is empty. Name it, or it reads as a model with nothing to
+    # say and the fix is invisible.
+    thinking = message.get("reasoning_content") or ""
+    if not text.strip() and thinking.strip():
+        raise ModelError(
+            f"{resolved.name} spent its whole answer thinking and never wrote one: "
+            f"{len(thinking)} characters of reasoning and no content. Raise "
+            f"`context_tokens` for this backend, or give it a model that thinks less."
+        )
     calls, raw_calls = _tool_calls(message)
     try:
         finish = str(body["choices"][0].get("finish_reason") or "")

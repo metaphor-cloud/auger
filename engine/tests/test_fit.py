@@ -130,3 +130,60 @@ def test_the_default_backend_can_hold_a_real_review() -> None:
 
 def test_a_policy_and_a_backend_agree_by_default() -> None:
     assert Policy().model_profile == "balanced"
+
+
+# --- an answer that is all thinking ----------------------------------------------------
+
+
+def test_thinking_with_no_answer_says_what_to_change() -> None:
+    """A reasoning model thinks in the budget it writes in. Run out and the call
+    succeeds, the server reports `stop`, and the content is empty."""
+    from auger.llm.gateway import Resolved, Usage, _completion
+
+    resolved = Resolved(
+        name="local-review",
+        backend=Backend(),
+        entry=ProfileEntry(backend="local-review"),
+        profile="balanced",
+    )
+    body = {
+        "choices": [
+            {
+                "message": {"role": "assistant", "content": "", "reasoning_content": "Okay, so"},
+                "finish_reason": "stop",
+            }
+        ]
+    }
+    with pytest.raises(Exception) as caught:
+        _completion(body, resolved, Usage())
+    assert "context_tokens" in str(caught.value)
+
+
+def test_an_answer_alongside_thinking_is_kept() -> None:
+    from auger.llm.gateway import Resolved, Usage, _completion
+
+    resolved = Resolved(
+        name="local-review",
+        backend=Backend(),
+        entry=ProfileEntry(backend="local-review"),
+        profile="balanced",
+    )
+    body = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": '{"findings": []}',
+                    "reasoning_content": "Okay, so",
+                },
+                "finish_reason": "stop",
+            }
+        ]
+    }
+    assert _completion(body, resolved, Usage()).text == '{"findings": []}'
+
+
+def test_the_reserve_covers_a_model_that_thinks_before_it_writes() -> None:
+    """Measured: one shipped model spends about 5000 tokens reasoning before the first
+    character of its answer."""
+    assert RESERVED_TOKENS >= 8192
