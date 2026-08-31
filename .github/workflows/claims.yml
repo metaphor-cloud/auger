@@ -29,9 +29,11 @@ jobs:
             core.setSecret(token);
             core.exportVariable('IDENTITY_TOKEN', token);
 
+      # Both the log and the summary. A summary is easy to miss and impossible to read
+      # with `gh run view --log`, which is where anyone debugging this looks first.
       - name: Print what it claims
         run: |
-          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
           import base64, json, os
 
           payload = os.environ["IDENTITY_TOKEN"].split(".")[1]
