@@ -23,8 +23,11 @@ concurrency:
   group: cut
   cancel-in-progress: false
 
+# A called workflow cannot hold more than its caller, so the release's `id-token`
+# has to be granted here too or the notes step gets no token.
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   tag:

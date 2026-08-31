@@ -12,9 +12,11 @@ on:
         required: true
         type: string
 
-# The release job writes the GitHub release and nothing else.
+# The release job writes the GitHub release. `id-token` is what lets it prove to
+# Anthropic which workflow is asking, so the release notes need no stored key.
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
@@ -90,6 +92,30 @@ jobs:
 
       - run: just verify
 
+      # Identity federation, so nothing here holds an Anthropic key. GitHub mints a
+      # token that says which repository and workflow is asking; the SDK exchanges it
+      # for a short-lived one at request time and refreshes it itself.
+      - name: Fetch the identity token
+        if: vars.ANTHROPIC_FEDERATION_RULE_ID != ''
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const token = await core.getIDToken('https://api.anthropic.com');
+            core.setSecret(token);
+            core.exportVariable('ANTHROPIC_IDENTITY_TOKEN', token);
+
+      # Notes a reader can act on, from the commit bodies rather than the subjects.
+      # It never fails the release: no federation configured, or a model that will not
+      # answer, both fall back to the commit subjects.
+      - name: Write the release notes
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+          ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+        run: uv run ./scripts/release-notes.py "$VERSION" | tee notes.md
+
       - name: Write the updater manifest
         env:
           VERSION: ${{ steps.version.outputs.value }}
@@ -105,8 +131,13 @@ jobs:
           # that `cut` calls carries the caller's ref, which is refs/heads/main. The
           # release then goes looking for a tag by that name and never finds one.
           tag_name: v${{ steps.version.outputs.value }}
-          draft: true
-          generate_release_notes: true
+          # Published, and named as the newest. The updater reads
+          # `/releases/latest/download/latest.json`, which resolves to whichever
+          # release carries that flag, so a release that is not the latest reaches
+          # nobody.
+          draft: false
+          make_latest: true
+          body_path: notes.md
           files: |
             latest.json
             app/src-tauri/target/release/bundle/dmg/*.dmg
