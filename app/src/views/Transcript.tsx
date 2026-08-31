@@ -56,6 +56,10 @@ function asked(turn: Turn): string {
   );
 }
 
+/** How close to the bottom still counts as the bottom. A line of the list, near
+ * enough, so a pixel of drift does not read as the reader scrolling away. */
+const NEAR_BOTTOM = 40;
+
 function clock(at: number) {
   return new Date(at * 1000).toLocaleTimeString([], {
     hour: "2-digit",
@@ -123,6 +127,7 @@ export default function TranscriptView({ version }: { version: number }) {
   const [follow, setFollow] = useState(true);
   const [depth, setDepth] = useState(0);
   const foot = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     const body = await getTranscript(0, 120);
@@ -135,16 +140,27 @@ export default function TranscriptView({ version }: { version: number }) {
   }, [load, version]);
 
   // The transcript moves while a review runs, and no run event marks a single
-  // exchange, so this view asks for itself.
+  // exchange, so this view asks for itself. It keeps asking whether or not the view is
+  // following: reading an older exchange is not a reason to stop collecting new ones.
   useEffect(() => {
-    if (!follow) return;
     const timer = setInterval(() => void load(), 2000);
     return () => clearInterval(timer);
-  }, [follow, load]);
+  }, [load]);
 
   useEffect(() => {
     if (follow) foot.current?.scrollIntoView({ block: "end" });
   }, [turns, follow]);
+
+  // Scrolling away from the bottom stops the view following, and scrolling back
+  // resumes it. Reading one exchange while a review writes the next should not be a
+  // fight with the scrollbar, and having to reach for a button first is the same
+  // fight with an extra step.
+  const onScroll = useCallback(() => {
+    const element = list.current;
+    if (!element) return;
+    const room = element.scrollHeight - element.scrollTop - element.clientHeight;
+    setFollow((was) => (was === room < NEAR_BOTTOM ? was : room < NEAR_BOTTOM));
+  }, []);
 
   return (
     <div className="flex h-full flex-col">
@@ -161,15 +177,19 @@ export default function TranscriptView({ version }: { version: number }) {
           </Button>
           <Button
             size="sm"
-            variant={follow ? "secondary" : "ghost"}
-            onClick={() => setFollow((value) => !value)}
+            variant={follow ? "ghost" : "secondary"}
+            onClick={() => {
+              setFollow(true);
+              foot.current?.scrollIntoView({ block: "end" });
+            }}
+            disabled={follow}
           >
-            {follow ? "Following" : "Follow"}
+            {follow ? "Following" : "Jump to latest"}
           </Button>
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overscroll-none overflow-auto">
+      <div ref={list} onScroll={onScroll} className="min-h-0 flex-1 overscroll-none overflow-auto">
         {turns.length === 0 && (
           <p className="px-4 py-8 text-center text-xs text-text-tertiary">
             Nothing has been asked yet. Press Start, and every exchange appears here as
