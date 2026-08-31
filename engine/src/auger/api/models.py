@@ -259,6 +259,9 @@ class TurnOut(BaseModel):
     duration_ms: int
     error: str | None
     clipped: bool
+    #: The tools this turn asked for. A tool call carries no text, so a turn with
+    #: none of one and some of the other is working, not silent.
+    tools: list[str] = []
 
 
 class TranscriptOut(BaseModel):

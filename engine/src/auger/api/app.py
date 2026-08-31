@@ -870,6 +870,7 @@ def create_app(rig: Rig) -> FastAPI:
                     duration_ms=turn.duration_ms,
                     error=turn.error,
                     clipped=turn.clipped,
+                    tools=list(turn.tools),
                 )
                 for turn in turns
             ],

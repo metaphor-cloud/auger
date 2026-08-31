@@ -319,6 +319,7 @@ class Gateway:
             raise
         completion = _completion(body, resolved, self.usage[resolved.name])
         self.transcript.add(
+            tools=tuple(call.name for call in completion.tool_calls),
             backend=resolved.name,
             model=resolved.backend.model,
             job_class=job_class.value,

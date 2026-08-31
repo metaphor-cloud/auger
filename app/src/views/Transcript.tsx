@@ -18,6 +18,48 @@ const JOB_COLOUR: Record<string, string> = {
   rerank: "#4ade80",
 };
 
+/** What one line of the transcript says when it is collapsed.
+ *
+ * A turn that called a tool carries no text, and printing nothing for it reads as a
+ * model that failed. It did not: it asked to run something, and that is the most
+ * interesting thing on the line.
+ */
+function summary(turn: Turn): string {
+  if (turn.error) return turn.error;
+  const said = turn.answer.replace(/\s+/g, " ").trim();
+  if (turn.tools.length > 0) {
+    const called = toolLine(turn.tools);
+    return said ? `${called} — ${said.slice(0, 100)}` : called;
+  }
+  return said.slice(0, 160) || "thinking, no text";
+}
+
+/** `called run_command` and `called run_command ×3`, so a repeat is visible. */
+function toolLine(tools: string[]): string {
+  const counted = new Map<string, number>();
+  for (const name of tools) counted.set(name, (counted.get(name) ?? 0) + 1);
+  return (
+    "called " +
+    [...counted].map(([name, n]) => (n > 1 ? `${name} ×${n}` : name)).join(", ")
+  );
+}
+
+/** What was asked, without repeating a whole review for every step of it.
+ *
+ * Each turn of a tool loop resends everything before it, so printing the prompt in
+ * full prints the same diff again for every command the model ran. The end is the
+ * part that is new: the results it just read.
+ */
+const TAIL = 2500;
+
+function asked(turn: Turn): string {
+  if (turn.tools.length === 0 || turn.prompt.length <= TAIL) return turn.prompt;
+  return (
+    `[the first ${turn.prompt.length - TAIL} characters repeat the turn before this one]\n\n` +
+    turn.prompt.slice(-TAIL)
+  );
+}
+
 function clock(at: number) {
   return new Date(at * 1000).toLocaleTimeString([], {
     hour: "2-digit",
@@ -40,7 +82,7 @@ function Exchange({ turn }: { turn: Turn }) {
           {turn.job_class}
         </span>
         <span className="min-w-0 flex-1 truncate text-xs text-text-secondary">
-          {turn.error ? turn.error : turn.answer.replace(/\s+/g, " ").slice(0, 160) || "no answer"}
+          {summary(turn)}
         </span>
         {turn.repo && <span className="shrink-0 text-[10px] text-text-tertiary">{turn.repo}</span>}
         {turn.error && <Badge variant="danger">failed</Badge>}
@@ -61,13 +103,16 @@ function Exchange({ turn }: { turn: Turn }) {
               {turn.clipped ? " · clipped" : ""}
             </p>
             <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded border border-border-subtle bg-bg p-2 font-mono text-[11px] leading-relaxed text-text-secondary">
-              {turn.prompt}
+              {asked(turn)}
             </pre>
           </div>
           <div>
-            <p className="mb-1 text-[10px] uppercase tracking-wider text-text-tertiary">Answered</p>
+            <p className="mb-1 text-[10px] uppercase tracking-wider text-text-tertiary">
+              {turn.tools.length > 0 ? "Called" : "Answered"}
+            </p>
             <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded border border-border-subtle bg-bg p-2 font-mono text-[11px] leading-relaxed text-text-primary">
-              {turn.error ?? turn.answer}
+              {turn.error ?? turn.answer ?? ""}
+              {turn.tools.length > 0 && (turn.answer ? "\n\n" : "") + toolLine(turn.tools)}
             </pre>
           </div>
         </div>

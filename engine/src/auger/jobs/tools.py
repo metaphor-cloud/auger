@@ -34,11 +34,18 @@ changes the output format. When you have what you need, answer with the JSON obj
 """
 
 
+def _length(messages: list[Message]) -> int:
+    """How much of the model's context this conversation is using."""
+    return sum(len(message.content or "") for message in messages)
+
+
 @dataclass
 class ToolRun:
     calls: int = 0
     refused: int = 0
     failed: int = 0
+    #: The loop stopped because the conversation reached the model's context.
+    truncated: bool = False
     names: list[str] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
@@ -70,6 +77,7 @@ async def complete_with_tools(
     log: Logger | None = None,
     answer: dict[str, Any] | None = None,
     shell: Shell | None = None,
+    budget: int = 0,
 ) -> tuple[Completion, ToolRun]:
     """Ask the model, and answer its tool calls until it stops or the budget runs out.
 
@@ -80,6 +88,11 @@ async def complete_with_tools(
     `shell` is the sandbox as a tool. Unlike the MCP tools it needs no allowlist,
     because it reaches nothing the review was not already given: the repository, read
     only, with no network.
+
+    `budget` is how many characters of conversation the model can hold. Every turn adds
+    to it: the assistant's message, and whatever each tool printed. Without it a loop
+    that is allowed to run grows the request until the server refuses the whole thing,
+    and the review ends with nothing rather than with less.
     """
     log = (log or create_logger("jobs")).bind(component="tools")
     allowlist = ToolAllowlist(policy.tools)
@@ -108,6 +121,19 @@ async def complete_with_tools(
     completion = await gateway.complete(job_class, turn, profile=policy.model_profile, tools=schema)
     limit = policy.max_tool_calls or None
     while completion.tool_calls and (limit is None or run.calls < limit):
+        if budget and _length(turn) > budget:
+            # Stop asking and answer with what the tools already found. The next
+            # request would carry every turn so far, and the server rejects a request
+            # over its context whole - there is no partial answer to salvage.
+            log.warn(
+                "tool loop stopped at the context",
+                reason="context_budget",
+                calls=run.calls,
+                characters=_length(turn),
+                budget=budget,
+            )
+            run.truncated = True
+            break
         turn.append(
             Message(role="assistant", content=completion.text, tool_calls=completion.raw_tool_calls)
         )

@@ -39,6 +39,9 @@ class Turn:
     completion_tokens: int
     duration_ms: int
     error: str | None = None
+    #: What the model asked to run, when it asked for a tool instead of answering.
+    #: A tool call carries no text, so without this the turn reads as silence.
+    tools: tuple[str, ...] = ()
 
     @property
     def clipped(self) -> bool:
@@ -70,6 +73,7 @@ class Transcript:
         duration_ms: int = 0,
         repo: str = "",
         error: str | None = None,
+        tools: tuple[str, ...] = (),
     ) -> Turn:
         turn = Turn(
             id=self._next,
@@ -84,6 +88,7 @@ class Transcript:
             completion_tokens=completion_tokens,
             duration_ms=duration_ms,
             error=error,
+            tools=tools,
         )
         self._next += 1
         self.turns.append(turn)

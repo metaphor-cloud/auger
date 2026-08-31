@@ -145,6 +145,7 @@ export type Turn = {
   duration_ms: number;
   error: string | null;
   clipped: boolean;
+  tools: string[];
 };
 
 export type TranscriptList = { turns: Turn[]; latest: number; depth: number };

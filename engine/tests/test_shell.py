@@ -268,3 +268,82 @@ async def test_the_budget_bounds_the_commands(
     )
     assert run.calls == 3
     assert len(sandbox.specs) == 3
+
+
+async def test_the_loop_stops_at_the_context_instead_of_overflowing(
+    gateway: Gateway, model: FakeModelServer, tmp_path: Path
+) -> None:
+    """A loop with no ceiling grows the request every turn. The server rejects one over
+    its context whole, so the review ends with nothing rather than with less."""
+    sandbox = FakeSandbox(result(stdout="x" * 4000))
+    model.reply = FINDINGS
+    model.tool_calls = [
+        {
+            "id": "call-1",
+            "type": "function",
+            "function": {"name": NAME, "arguments": json.dumps({"command": "ls"})},
+        }
+    ]
+    _, run = await complete_with_tools(
+        gateway,
+        None,
+        JobClass.REVIEW,
+        messages(),
+        Policy(max_tool_calls=0),
+        None,
+        shell=shell(sandbox, tmp_path),
+        budget=5000,
+    )
+    assert run.truncated
+    assert run.calls < 10
+
+
+async def test_no_budget_leaves_the_ceiling_to_the_policy(
+    gateway: Gateway, model: FakeModelServer, tmp_path: Path
+) -> None:
+    sandbox = FakeSandbox()
+    model.reply = FINDINGS
+    model.tool_calls = [
+        {
+            "id": "call-1",
+            "type": "function",
+            "function": {"name": NAME, "arguments": json.dumps({"command": "ls"})},
+        }
+    ]
+    _, run = await complete_with_tools(
+        gateway,
+        None,
+        JobClass.REVIEW,
+        messages(),
+        Policy(max_tool_calls=2),
+        None,
+        shell=shell(sandbox, tmp_path),
+    )
+    assert run.calls == 2
+    assert not run.truncated
+
+
+async def test_a_turn_records_what_it_called(
+    gateway: Gateway, model: FakeModelServer, tmp_path: Path
+) -> None:
+    """A tool call carries no text, so without this the transcript shows silence."""
+    model.reply = FINDINGS
+    model.tool_calls = [
+        {
+            "id": "call-1",
+            "type": "function",
+            "function": {"name": NAME, "arguments": json.dumps({"command": "ls"})},
+        }
+    ]
+    model.tool_call_rounds = 1
+    await complete_with_tools(
+        gateway,
+        None,
+        JobClass.REVIEW,
+        messages(),
+        Policy(max_tool_calls=1),
+        None,
+        shell=shell(FakeSandbox(), tmp_path),
+    )
+    called = [turn for turn in gateway.transcript if turn.tools]
+    assert called and called[0].tools == (NAME,)

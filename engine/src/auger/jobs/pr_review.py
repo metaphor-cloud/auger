@@ -115,6 +115,7 @@ async def review_pull(
     if not diff.strip():
         return _stop(store, run, log, "empty_diff", "", started)
 
+    budget = gateway.prompt_budget(JobClass.REVIEW, policy.model_profile)
     messages = review_messages(
         slug=repository.slug,
         branch=pull.base_ref,
@@ -124,7 +125,7 @@ async def review_pull(
         hints=policy.hints,
         instructions=policy.instructions,
         rules=policy.system_prompt,
-        budget=gateway.prompt_budget(JobClass.REVIEW, policy.model_profile),
+        budget=budget,
     )
     try:
         completion, _ = await complete_with_tools(
@@ -136,6 +137,7 @@ async def review_pull(
             log,
             answer=ANSWER_FORMAT,
             shell=shell,
+            budget=budget,
         )
     except ModelError as error:
         return _stop(store, run, log, "model_failed", str(error), started, failed=True)

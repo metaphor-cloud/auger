@@ -188,6 +188,7 @@ async def review(
             log,
             answer=ANSWER_FORMAT,
             shell=shell,
+            budget=budget,
         )
     except ModelError as error:
         return _failed(store, run, log, "model_failed", str(error), started)
