@@ -187,3 +187,39 @@ def test_the_reserve_covers_a_model_that_thinks_before_it_writes() -> None:
     """Measured: one shipped model spends about 5000 tokens reasoning before the first
     character of its answer."""
     assert RESERVED_TOKENS >= 8192
+
+
+def test_a_tool_call_is_an_answer_not_a_silence() -> None:
+    """A tool call has empty content by design: the model reasons, decides to run
+    something, and says so instead of writing. Treating that as no answer kills the
+    tool loop before it runs a single command."""
+    from auger.llm.gateway import Resolved, Usage, _completion
+
+    resolved = Resolved(
+        name="local-review",
+        backend=Backend(),
+        entry=ProfileEntry(backend="local-review"),
+        profile="balanced",
+    )
+    body = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "reasoning_content": "I should look at the file first.",
+                    "tool_calls": [
+                        {
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {"name": "run_command", "arguments": '{"command": "ls"}'},
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ]
+    }
+    completion = _completion(body, resolved, Usage())
+    assert completion.text == ""
+    assert [call.name for call in completion.tool_calls] == ["run_command"]

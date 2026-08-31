@@ -426,18 +426,22 @@ def _completion(body: Any, resolved: Resolved, usage: Usage) -> Completion:
         text = message.get("content") or ""
     except (KeyError, IndexError, TypeError) as error:
         raise ModelError(f"{resolved.name} returned no message") from error
+    calls, raw_calls = _tool_calls(message)
     # A reasoning model thinks in the budget it writes in, so a request that leaves it
     # too little context stops mid-thought: the call succeeds, nothing is wrong with the
     # request, and the answer is empty. Name it, or it reads as a model with nothing to
     # say and the fix is invisible.
+    #
+    # A tool call is the other way to answer with no content, and the ordinary one: the
+    # model reasons, decides to run something, and says so instead of writing. Only an
+    # empty answer with nothing to call is a failure.
     thinking = message.get("reasoning_content") or ""
-    if not text.strip() and thinking.strip():
+    if not text.strip() and thinking.strip() and not calls:
         raise ModelError(
             f"{resolved.name} spent its whole answer thinking and never wrote one: "
             f"{len(thinking)} characters of reasoning and no content. Raise "
             f"`context_tokens` for this backend, or give it a model that thinks less."
         )
-    calls, raw_calls = _tool_calls(message)
     try:
         finish = str(body["choices"][0].get("finish_reason") or "")
     except (KeyError, IndexError, TypeError):
