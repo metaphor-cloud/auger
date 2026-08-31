@@ -143,6 +143,9 @@ class Gateway:
         self._client = client or guarded_client(allowlist, self.log)
         self._limits: dict[str, asyncio.Semaphore] = {}
         self.usage: dict[str, Usage] = {}
+        #: What each managed server was actually started with, filled in by the
+        #: supervisor. A backend that works its context out has no number in the config.
+        self.contexts: dict[str, int] = {}
         #: Every exchange, so the window can show the work as it happens.
         self.transcript = Transcript()
         #: What the current job is about, for the transcript to label a turn with.
@@ -206,10 +209,16 @@ class Gateway:
         that into less context, which is a review rather than a failure.
         """
         try:
-            backend = self.resolve(self._routed(job_class), profile_name).backend
+            resolved = self.resolve(self._routed(job_class), profile_name)
         except (MissingBackendError, HostedRefusedError):
             return DEFAULT_PROMPT_CHARS
-        return max(0, backend.context_tokens - RESERVED_TOKENS) * CHARS_PER_TOKEN
+        # What the server was actually given first, then what the config asked for, then
+        # a size that suits the smallest context worth configuring. Guessing high here
+        # is the failure that costs the whole request.
+        tokens = self.contexts.get(resolved.name) or resolved.backend.context_tokens
+        if not tokens:
+            return DEFAULT_PROMPT_CHARS
+        return max(0, tokens - RESERVED_TOKENS) * CHARS_PER_TOKEN
 
     def _limit(self, name: str, backend: Backend) -> asyncio.Semaphore:
         if name not in self._limits:

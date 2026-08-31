@@ -20,6 +20,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from auger.config.schema import Backend
+from auger.llm import sizing
 from auger.log import Logger, create_logger
 from auger.sandbox.which import find
 
@@ -126,6 +127,10 @@ class Supervisor:
         self.log_dir = log_dir if log_dir is not None else models_dir / "logs"
         self.log = (log or create_logger("llm")).bind(component="supervisor")
         self.running: dict[str, Managed] = {}
+        #: The context each managed server was actually started with. A backend that
+        #: works its context out has no number in the config, so this is the only place
+        #: that knows how much room a prompt really has.
+        self.contexts: dict[str, int] = {}
 
     def server_command(self) -> str | None:
         """The server to run: one the user has, or the one the rig installed itself.
@@ -246,7 +251,76 @@ class Supervisor:
             return ""
         return "\n".join(text.strip().splitlines()[-lines:])
 
-    def arguments(self, backend: Backend, server: str, model_path: Path) -> list[str]:
+    def context_for(self, name: str, backend: Backend, model_path: Path, others: list[Path]) -> int:
+        """How large a context this backend gets, and why, said once in the log.
+
+        A number in the config is honoured but still held to what the model was trained
+        for and what the machine can hold. Zero means work it out.
+        """
+        model = sizing.read(model_path, self.log)
+        if model is None:
+            # Nothing to reason from. Fall back to a size that fits any machine rather
+            # than letting the server take the model's whole training context.
+            chosen = backend.context_tokens or sizing.MINIMUM_CONTEXT * 4
+            self.log.warn(
+                "context not worked out",
+                reason="no_model_header",
+                context=chosen,
+                path=str(model_path),
+            )
+            self.contexts[name] = chosen
+            return chosen
+
+        allowance = sizing.budget([model, *(m for m in map(self._read, others) if m)])
+        if backend.context_tokens:
+            chosen, moved = sizing.clamp(
+                backend.context_tokens, model, backend.max_concurrent, allowance
+            )
+            if moved:
+                self.log.warn(
+                    "configured context reduced",
+                    reason="context_clamped",
+                    asked=backend.context_tokens,
+                    context=chosen,
+                    detail=moved,
+                )
+            self.contexts[name] = chosen
+            return chosen
+
+        # An embedding server says so in its own arguments, and one chunk is all it
+        # ever reads.
+        ceiling = sizing.EMBEDDING_CONTEXT if "--embedding" in backend.args else 0
+        chosen = (
+            sizing.choose(model, backend.max_concurrent, allowance, ceiling)
+            or sizing.MINIMUM_CONTEXT
+        )
+        self.log.info(
+            "context worked out",
+            context=chosen,
+            trained=model.context_length,
+            slots=backend.max_concurrent,
+            cache_gb=round(model.cache_bytes(chosen, backend.max_concurrent) / 2**30, 1),
+        )
+        self.contexts[name] = chosen
+        return chosen
+
+    def _read(self, path: Path) -> sizing.Model | None:
+        return sizing.read(path, self.log) if path.exists() else None
+
+    def other_models(self, name: str, config: dict[str, Backend]) -> list[Path]:
+        """Every other managed model's weights. They are resident too, or will be."""
+        found = []
+        for other, backend in config.items():
+            if other == name or not backend.managed:
+                continue
+            path = self.model_path(backend)
+            if path is not None and path.exists():
+                found.append(path)
+        return found
+
+    def arguments(
+        self, backend: Backend, server: str, model_path: Path, context: int = 0
+    ) -> list[str]:
         return [
             server,
             "--model",
@@ -262,12 +336,22 @@ class Supervisor:
             # one request may reach has to be multiplied back up. Without it the server
             # takes the model's whole training context per slot and fails to allocate.
             "--ctx-size",
-            str(backend.context_tokens * backend.max_concurrent),
+            str(
+                (context or backend.context_tokens or sizing.MINIMUM_CONTEXT * 4)
+                * backend.max_concurrent
+            ),
             *backend.args,
         ]
 
-    def start(self, name: str, backend: Backend) -> Health:
-        """Start one managed backend. Returns why it could not, without raising."""
+    def start(
+        self, name: str, backend: Backend, siblings: dict[str, Backend] | None = None
+    ) -> Health:
+        """Start one managed backend. Returns why it could not, without raising.
+
+        `siblings` are the other backends, so the context this one is given accounts for
+        the memory theirs will hold. Without them each server is sized as though it were
+        the only one and the same memory is promised several times over.
+        """
         running = self.running.get(name)
         if running is not None:
             if running.process.poll() is None:
@@ -297,7 +381,10 @@ class Supervisor:
                 "managed start skipped", reason="no_weights", backend=name, path=str(model_path)
             )
             return Health(name=name, url=backend.url, up=False, reason=reason, managed=True)
-        arguments = self.arguments(backend, server, model_path)
+        context = self.context_for(
+            name, backend, model_path, self.other_models(name, siblings or {})
+        )
+        arguments = self.arguments(backend, server, model_path, context)
         try:
             # The server's own output is the only thing that says why it will not
             # compute, why the weights would not load, or which flag it did not
@@ -346,7 +433,7 @@ class Supervisor:
         for name, backend in backends.items():
             if health[name].up or not backend.managed:
                 continue
-            started = self.start(name, backend)
+            started = self.start(name, backend, backends)
             health[name] = (
                 await self.wait_until_up(client, name, backend)
                 if started.reason == "starting"

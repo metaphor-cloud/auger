@@ -122,10 +122,24 @@ def test_the_budget_leaves_room_for_the_answer() -> None:
     assert budget < tokens * CHARS_PER_TOKEN
 
 
-def test_the_default_backend_can_hold_a_real_review() -> None:
-    """Guards the number that broke the rig: a review runs to about 17000 tokens, and a
-    context of 16384 rejected every one of them."""
-    assert Backend().context_tokens >= 32768
+def test_a_backend_works_its_context_out_by_default() -> None:
+    """Zero is not a small context, it is no answer yet: the supervisor reads the model
+    and the machine and fills it in. A number here would be a guess about hardware
+    nobody has seen."""
+    assert Backend().context_tokens == 0
+
+
+def test_the_budget_prefers_what_the_server_was_actually_given() -> None:
+    """The config holds no number when the context is worked out, so the supervisor's
+    record is the only thing that knows how much room a prompt really has."""
+    gateway = gateway_for(0)
+    gateway.contexts["review"] = 65536
+    assert gateway.prompt_budget(JobClass.REVIEW) == (65536 - RESERVED_TOKENS) * CHARS_PER_TOKEN
+
+
+def test_an_unstarted_backend_falls_back_rather_than_promising_nothing() -> None:
+    """Budget zero would leave the prompt unfitted, which is the failure this guards."""
+    assert gateway_for(0).prompt_budget(JobClass.REVIEW) == DEFAULT_PROMPT_CHARS
 
 
 def test_a_policy_and_a_backend_agree_by_default() -> None:

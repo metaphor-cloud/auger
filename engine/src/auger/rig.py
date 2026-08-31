@@ -78,6 +78,10 @@ class Rig:
         self.models_dir = settings.home / "models"
         self.supervisor = Supervisor(self.models_dir, self.log, log_dir=self.settings.home / "logs")
         self.gateway = Gateway(self.config, self.allowlist, self.log)
+        # One dictionary, written by the supervisor when it starts a server and read by
+        # the gateway when it sizes a prompt, so the two cannot disagree about how much
+        # room there is.
+        self.gateway.contexts = self.supervisor.contexts
         self.health: dict[str, Health] = {}
         self.setup_running = False
         #: True while the second model holds the memory. The watchdog leaves the
