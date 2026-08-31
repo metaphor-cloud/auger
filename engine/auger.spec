@@ -4,12 +4,25 @@
 # start, and the unpacked files are unsigned, which fails notarisation under the hardened
 # runtime on macOS.
 
+from PyInstaller.utils.hooks import collect_dynamic_libs
+
+# `sqlite-vec` is a loadable SQLite extension, so the package is a shim around a dylib
+# that nothing imports and PyInstaller therefore never sees. Left out, the frozen engine
+# starts and indexes and only says "search by meaning unavailable" once it is too late
+# to notice. `sign-engine.sh` signs every Mach-O file under the engine, so this one is
+# covered by the release as it stands.
+
 a = Analysis(
     ["src/auger/__main__.py"],
     pathex=["src"],
-    binaries=[],
+    binaries=collect_dynamic_libs("sqlite_vec"),
     datas=[],
-    hiddenimports=["uvicorn.protocols.http.h11_impl", "uvicorn.lifespan.on"],
+    hiddenimports=[
+        "uvicorn.protocols.http.h11_impl",
+        "uvicorn.lifespan.on",
+        # Imported where it is used, which is inside a function.
+        "sqlite_vec",
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

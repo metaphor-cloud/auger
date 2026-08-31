@@ -14,6 +14,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from auger.log import create_logger
+
 DB_NAME = "auger.db"
 
 #: Applied in order. `PRAGMA user_version` records how many have run. Never edit a
@@ -238,6 +240,10 @@ def _load_vector_extension(connection: sqlite3.Connection) -> bool:
 
     Retrieval by meaning needs it. Everything else works without it, so a machine where
     the extension refuses to load still reviews code, with keyword search only.
+
+    Why it would not load is worth saying. The window reports the loss and not the
+    reason, and the reasons are all fixable: the extension missing from a frozen build,
+    a Python built without extension loading, an architecture that does not match.
     """
     try:
         import sqlite_vec
@@ -245,6 +251,11 @@ def _load_vector_extension(connection: sqlite3.Connection) -> bool:
         connection.enable_load_extension(True)
         sqlite_vec.load(connection)
         connection.enable_load_extension(False)
-    except Exception:
+    except Exception as error:
+        create_logger("store").warn(
+            "search by meaning unavailable",
+            reason="no_vector_extension",
+            error=error,
+        )
         return False
     return True
