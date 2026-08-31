@@ -346,4 +346,6 @@ async def test_a_turn_records_what_it_called(
         shell=shell(FakeSandbox(), tmp_path),
     )
     called = [turn for turn in gateway.transcript if turn.tools]
-    assert called and called[0].tools == (NAME,)
+    # The name alone says nothing: every command is `run_command`, and which command
+    # it ran is the only part worth showing.
+    assert called and called[0].tools == (f"{NAME}: ls",)

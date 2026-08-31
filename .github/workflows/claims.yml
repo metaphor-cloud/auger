@@ -1,0 +1,47 @@
+name: claims
+
+# What identity this repository presents to Anthropic, so a federation rule can be
+# written against the real thing rather than a guess at it.
+#
+# The token itself is a credential and never leaves the runner: only its payload is
+# decoded, which is metadata about the workflow asking. Run it from the Actions tab.
+#
+# Delete this once the rule matches. It exists to answer one question.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  claims:
+    runs-on: ubuntu-latest
+    steps:
+      # Called the same way the release does, so the claims are the ones that matter.
+      # A `workflow_call` from `cut.yml` changes several of them, which is the most
+      # likely reason a rule written against a plain `on: push` does not match.
+      - name: Fetch the identity token
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const token = await core.getIDToken('https://api.anthropic.com');
+            core.setSecret(token);
+            core.exportVariable('IDENTITY_TOKEN', token);
+
+      - name: Print what it claims
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import base64, json, os
+
+          payload = os.environ["IDENTITY_TOKEN"].split(".")[1]
+          claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+
+          print("A federation rule has to match these.\n")
+          print("```")
+          for key in sorted(claims):
+              if key in ("iat", "exp", "nbf", "jti"):
+                  continue          # when it was issued says nothing about who asked
+              print(f"{key} = {claims[key]}")
+          print("```")
+          PY

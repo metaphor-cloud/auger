@@ -7,7 +7,7 @@ import pytest
 
 from auger.config.schema import Backend, Config, JobClass, Profile, ProfileEntry
 from auger.llm import EgressBlockedError, Gateway, Message, ModelError
-from auger.llm.gateway import MissingBackendError
+from auger.llm.gateway import MINIMUM_ANSWER_TOKENS, MissingBackendError
 from auger.net import Allowlist
 from tests.helpers import FakeModelServer
 
@@ -56,9 +56,41 @@ async def test_a_job_class_chooses_the_backend(gateway: Gateway, fake: FakeModel
 
 
 async def test_the_profile_sets_the_limits(gateway: Gateway, fake: FakeModelServer) -> None:
+    """900 is below what an answer needs, so it is raised to the floor rather than
+    quietly cutting the findings in half. The temperature is passed as written."""
     await gateway.complete(JobClass.REVIEW, HELLO)
-    assert fake.requests[0]["max_tokens"] == 900
+    assert fake.requests[0]["max_tokens"] == MINIMUM_ANSWER_TOKENS
     assert fake.requests[0]["temperature"] == 0.3
+
+
+async def test_a_workable_ceiling_is_passed_as_written(
+    gateway: Gateway, fake: FakeModelServer
+) -> None:
+    gateway.config.profile["balanced"].review = ProfileEntry(backend="review", max_tokens=9000)
+    gateway.contexts["review"] = 32768
+    await gateway.complete(JobClass.REVIEW, HELLO)
+    assert fake.requests[0]["max_tokens"] == 9000
+
+
+async def test_a_ceiling_above_the_context_is_dropped(
+    gateway: Gateway, fake: FakeModelServer
+) -> None:
+    """Past the context it is not a ceiling, it is a number nothing reads. Sending it
+    would report a limit that is not the one being enforced."""
+    gateway.config.profile["balanced"].review = ProfileEntry(backend="review", max_tokens=200_000)
+    gateway.contexts["review"] = 32768
+    await gateway.complete(JobClass.REVIEW, HELLO)
+    assert "max_tokens" not in fake.requests[0]
+
+
+async def test_a_bad_ceiling_is_complained_about_once(
+    gateway: Gateway, fake: FakeModelServer
+) -> None:
+    """A setting is wrong once, not once per review."""
+    gateway.config.profile["balanced"].review = ProfileEntry(backend="review", max_tokens=100)
+    await gateway.complete(JobClass.REVIEW, HELLO)
+    await gateway.complete(JobClass.REVIEW, HELLO)
+    assert len(gateway._said) == 1
 
 
 async def test_no_ceiling_is_sent_when_the_profile_sets_none(

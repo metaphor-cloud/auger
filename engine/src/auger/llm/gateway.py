@@ -44,6 +44,13 @@ RESERVED_TOKENS = 8192
 #: budget that suits the smallest context worth configuring.
 DEFAULT_PROMPT_CHARS = 24_000
 
+#: The smallest ceiling a review can answer under. A reasoning model spends most of its
+#: output thinking before it writes anything - one of the models the rig ships uses
+#: about five thousand tokens of it - and a ceiling below that cuts the findings off
+#: before the first one is written. There is no useful setting under this, only a
+#: quieter way to lose the answer.
+MINIMUM_ANSWER_TOKENS = 4096
+
 
 class ModelError(RuntimeError):
     """The model could not answer."""
@@ -146,6 +153,8 @@ class Gateway:
         #: What each managed server was actually started with, filled in by the
         #: supervisor. A backend that works its context out has no number in the config.
         self.contexts: dict[str, int] = {}
+        #: Settings already complained about, so a bad one is said once and not per run.
+        self._said: set[str] = set()
         #: Every exchange, so the window can show the work as it happens.
         self.transcript = Transcript()
         #: What the current job is about, for the transcript to label a turn with.
@@ -199,6 +208,51 @@ class Gateway:
                 "`allow_hosted = true` under [egress] to permit that."
             )
         return Resolved(name=entry.backend, backend=backend, entry=entry, profile=profile_name)
+
+    def answer_limit(self, resolved: Resolved) -> int:
+        """The ceiling actually applied to a reply, held inside what is reachable.
+
+        A ceiling is one of the few settings where both directions are wrong, and
+        quietly so. Too low and the model stops mid-answer: the request succeeds, the
+        findings after the cut are gone, and nothing about the result says why. Too
+        high and the number is fiction, because the server stops at its context however
+        large the ceiling says, so it reads as a limit that is not being enforced.
+
+        Zero, the default, is neither: it lets the model finish and the context decides.
+        """
+        asked = resolved.entry.max_tokens
+        if not asked:
+            return 0
+        context = self.contexts.get(resolved.name) or resolved.backend.context_tokens
+        if context and asked >= context:
+            # Past the context it is not a ceiling, it is a number nothing reads.
+            self._say_once(
+                f"{resolved.name}:above",
+                "answer ceiling is above the context",
+                reason="answer_unreachable",
+                backend=resolved.name,
+                asked=asked,
+                context=context,
+            )
+            return 0
+        if asked < MINIMUM_ANSWER_TOKENS:
+            self._say_once(
+                f"{resolved.name}:below",
+                "answer ceiling raised to what an answer needs",
+                reason="answer_too_small",
+                backend=resolved.name,
+                asked=asked,
+                using=MINIMUM_ANSWER_TOKENS,
+            )
+            return MINIMUM_ANSWER_TOKENS
+        return asked
+
+    def _say_once(self, key: str, message: str, **data: object) -> None:
+        """A setting is wrong once, not once per request."""
+        if key in self._said:
+            return
+        self._said.add(key)
+        self.log.warn(message, **data)
 
     def prompt_budget(self, job_class: JobClass, profile_name: str = "balanced") -> int:
         """How many characters of prompt the model that answers this can actually hold.
@@ -304,8 +358,9 @@ class Gateway:
             "temperature": resolved.entry.temperature,
             "stream": False,
         }
-        if resolved.entry.max_tokens:
-            payload["max_tokens"] = resolved.entry.max_tokens
+        ceiling = self.answer_limit(resolved)
+        if ceiling:
+            payload["max_tokens"] = ceiling
         if response_format:
             payload["response_format"] = response_format
         if tools:
@@ -328,7 +383,7 @@ class Gateway:
             raise
         completion = _completion(body, resolved, self.usage[resolved.name])
         self.transcript.add(
-            tools=tuple(call.name for call in completion.tool_calls),
+            tools=tuple(_called(call) for call in completion.tool_calls),
             backend=resolved.name,
             model=resolved.backend.model,
             job_class=job_class.value,
@@ -348,7 +403,7 @@ class Gateway:
                 reason="max_tokens",
                 backend=resolved.name,
                 job_class=job_class.value,
-                max_tokens=resolved.entry.max_tokens,
+                max_tokens=self.answer_limit(resolved),
             )
         return completion
 
@@ -428,6 +483,32 @@ def _tool_calls(message: dict[str, Any]) -> tuple[tuple[ToolCall, ...], tuple[di
                 )
             )
     return tuple(calls), tuple(raw)
+
+
+#: How much of a tool's arguments the transcript keeps. Enough to see which file or
+#: which command, not enough for a pasted diff to fill the window.
+CALL_CHARS = 200
+
+
+def _called(call: ToolCall) -> str:
+    """One tool call, as a line somebody can read.
+
+    The name alone answers nothing: every command the reviewer runs is `run_command`,
+    and what it ran is the only part worth showing.
+    """
+    if not call.arguments:
+        return call.name
+    values = list(call.arguments.values())
+    # One argument is the common shape - a command, a path, a query - and it reads
+    # better bare than wrapped in the JSON it arrived as.
+    if len(values) == 1 and isinstance(values[0], str):
+        detail = values[0]
+    else:
+        detail = json.dumps(call.arguments, sort_keys=True)
+    detail = " ".join(detail.split())
+    if len(detail) > CALL_CHARS:
+        detail = detail[:CALL_CHARS] + "..."
+    return f"{call.name}: {detail}"
 
 
 def _completion(body: Any, resolved: Resolved, usage: Usage) -> Completion:

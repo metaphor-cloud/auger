@@ -248,7 +248,7 @@ export default function SettingsView({
           >
             <Row
               label="Response limit"
-              help="The longest answer the model may write, in tokens. 0 lets it finish; a small number cuts the findings off mid-answer."
+              help="The longest answer the model may write, in tokens. 0 lets it finish, and the model's context decides — which is what you want unless an answer is running away. A number below 4096 is raised to it: a reasoning model spends most of its output thinking, and a ceiling under that cuts the findings off before the first one is written. A number above the context is ignored, because the context stops it first either way."
               keywords="max_tokens"
             >
               <NumberSetting

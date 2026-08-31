@@ -29,19 +29,15 @@ function summary(turn: Turn): string {
   const said = turn.answer.replace(/\s+/g, " ").trim();
   if (turn.tools.length > 0) {
     const called = toolLine(turn.tools);
-    return said ? `${called} — ${said.slice(0, 100)}` : called;
+    return said ? `${called} — ${said.slice(0, 80)}` : called;
   }
   return said.slice(0, 160) || "thinking, no text";
 }
 
-/** `called run_command` and `called run_command ×3`, so a repeat is visible. */
+/** What the model asked to run, with what. Every command is `run_command`, so the
+ * arguments are the part that says anything. */
 function toolLine(tools: string[]): string {
-  const counted = new Map<string, number>();
-  for (const name of tools) counted.set(name, (counted.get(name) ?? 0) + 1);
-  return (
-    "called " +
-    [...counted].map(([name, n]) => (n > 1 ? `${name} ×${n}` : name)).join(", ")
-  );
+  return "called " + tools.join(" · ");
 }
 
 /** What was asked, without repeating a whole review for every step of it.
@@ -112,7 +108,8 @@ function Exchange({ turn }: { turn: Turn }) {
             </p>
             <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded border border-border-subtle bg-bg p-2 font-mono text-[11px] leading-relaxed text-text-primary">
               {turn.error ?? turn.answer ?? ""}
-              {turn.tools.length > 0 && (turn.answer ? "\n\n" : "") + toolLine(turn.tools)}
+              {turn.tools.length > 0 &&
+                (turn.answer ? "\n\n" : "") + turn.tools.map((one) => `called ${one}`).join("\n")}
             </pre>
           </div>
         </div>
