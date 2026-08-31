@@ -124,6 +124,7 @@ async def review_pull(
         hints=policy.hints,
         instructions=policy.instructions,
         rules=policy.system_prompt,
+        budget=gateway.prompt_budget(JobClass.REVIEW, policy.model_profile),
     )
     try:
         completion, _ = await complete_with_tools(

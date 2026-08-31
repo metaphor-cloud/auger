@@ -27,6 +27,17 @@ RERANK_BATCH = 8
 #: A reranker judges relevance from the head of a chunk. The rest is cost.
 RERANK_DOCUMENT_CHARS = 1200
 
+#: Code runs about three characters to the token, near enough. The rig has no tokenizer
+#: and loading one for every backend would be a model each; a low estimate costs a little
+#: unused context, and a high one costs the whole review.
+CHARS_PER_TOKEN = 3
+#: Held back from the prompt for the parts that are not measured here: the answer, the
+#: system rules, the tool descriptions, and whatever a tool returns mid-review.
+RESERVED_TOKENS = 4096
+#: When no backend answers for this job class there is nothing to ask, so fall back to a
+#: budget that suits the smallest context worth configuring.
+DEFAULT_PROMPT_CHARS = 24_000
+
 
 class ModelError(RuntimeError):
     """The model could not answer."""
@@ -179,6 +190,20 @@ class Gateway:
                 "`allow_hosted = true` under [egress] to permit that."
             )
         return Resolved(name=entry.backend, backend=backend, entry=entry, profile=profile_name)
+
+    def prompt_budget(self, job_class: JobClass, profile_name: str = "balanced") -> int:
+        """How many characters of prompt the model that answers this can actually hold.
+
+        A prompt built without asking is a prompt the server rejects whole: llama.cpp
+        answers "request exceeds the available context size" and the review fails with
+        nothing to show for the work. Fitting the prompt to the model beforehand turns
+        that into less context, which is a review rather than a failure.
+        """
+        try:
+            backend = self.resolve(self._routed(job_class), profile_name).backend
+        except (MissingBackendError, HostedRefusedError):
+            return DEFAULT_PROMPT_CHARS
+        return max(0, backend.context_tokens - RESERVED_TOKENS) * CHARS_PER_TOKEN
 
     def _limit(self, name: str, backend: Backend) -> asyncio.Semaphore:
         if name not in self._limits:

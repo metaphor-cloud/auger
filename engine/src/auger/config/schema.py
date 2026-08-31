@@ -150,7 +150,7 @@ class Backend(BaseModel):
     #:
     #: This is per request. The server is given the total, because `--ctx-size` there is
     #: shared out across the slots, which is the way round that surprises people.
-    context_tokens: int = Field(default=16384, ge=2048, le=1_048_576)
+    context_tokens: int = Field(default=32768, ge=2048, le=1_048_576)
     #: True when the request leaves this machine. Off unless the user turns it on.
     hosted: bool = False
     #: Start this server if nothing answers at `url`.

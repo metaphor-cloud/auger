@@ -89,6 +89,34 @@ def missing_from(rules: str) -> list[str]:
     return [word for word in REQUIRED if word not in text]
 
 
+#: What a truncated block says, so the model knows it is reasoning about a part rather
+#: than the whole. A model that thinks it saw everything reports what is missing as
+#: absent, which is a false finding of exactly the kind this rig exists to avoid.
+CUT = "\n[... cut to fit the model's context. This is not the whole of it. ...]"
+
+#: The smallest share of the prompt the diff keeps. The diff is the thing under review,
+#: so related code gives way to it rather than the other way round.
+DIFF_SHARE = 0.7
+
+
+def fit(diff: str, context: str, budget: int) -> tuple[str, str]:
+    """Cut the prompt down to what the model can hold.
+
+    Related code goes first, because it is an aid. The diff goes only when it alone is
+    over budget, and then it keeps its head: the start of a diff holds the file names
+    and the first hunks, which is what makes the rest of it readable.
+    """
+    if budget <= 0 or len(diff) + len(context) <= budget:
+        return diff, context
+    for_diff = max(int(budget * DIFF_SHARE), budget - len(context))
+    if len(diff) > for_diff:
+        diff = diff[: max(0, for_diff - len(CUT))] + CUT
+    remaining = budget - len(diff)
+    if len(context) > remaining:
+        context = context[: max(0, remaining - len(CUT))] + CUT if remaining > len(CUT) else ""
+    return diff, context
+
+
 def review_messages(
     slug: str,
     branch: str,
@@ -99,7 +127,10 @@ def review_messages(
     context: str = "",
     instructions: str = "",
     rules: str = "",
+    budget: int = 0,
 ) -> list[Message]:
+    if budget:
+        diff, context = fit(diff, context, budget)
     parts = [
         f"Repository: {slug}",
         f"Branch: {branch}",

@@ -160,6 +160,10 @@ async def review(
     except ModelError as error:
         return _failed(store, run, log, "model_failed", str(error), started)
 
+    # What this model can actually hold. The related code is drawn to fill it, and the
+    # whole prompt is cut to fit it, so a large diff loses context rather than the
+    # review losing the server.
+    budget = gateway.prompt_budget(JobClass.REVIEW, policy.model_profile)
     messages = review_messages(
         slug=repository.slug,
         branch=branch,
@@ -167,9 +171,12 @@ async def review(
         subject=subject,
         diff=diff_text,
         hints=policy.hints,
-        context=context.as_text(),
+        # Related code takes whatever the diff leaves, so a small change is reviewed
+        # with a lot of it and a large one with less.
+        context=context.as_text(budget=max(0, budget - len(diff_text))),
         instructions=policy.instructions,
         rules=policy.system_prompt,
+        budget=budget,
     )
     try:
         completion, tool_run = await complete_with_tools(
