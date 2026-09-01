@@ -1,3 +1,3 @@
 """auger engine: background code review for local git repositories."""
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"

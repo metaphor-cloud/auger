@@ -97,7 +97,7 @@ wheels = [
 
 [[package]]
 name = "auger"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
