@@ -1,6 +1,6 @@
 [package]
 name = "auger"
-version = "0.4.1"
+version = "0.5.0"
 description = "A background code reviewer that keeps your code on your machine"
 authors = ["auger contributors"]
 license = "Apache-2.0"
