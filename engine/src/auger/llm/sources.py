@@ -25,6 +25,11 @@ LIMIT = 20
 #: does not have, so it is not offered.
 SUFFIX = ".gguf"
 SHARDED = "-00001-of-"
+#: What a conversion for the second engine is called, near enough. There is no tag for
+#: the format, and the people who publish one put the engine's name in the repository
+#: name, so this is the only filter there is. Whether a repository really holds weights
+#: that engine can read is decided when it is fetched, by reading the tree.
+SHARD_HINT = "colibri"
 
 
 class SourceError(RuntimeError):
@@ -67,6 +72,8 @@ class Source(Protocol):
 
     async def search(self, http: httpx.AsyncClient, query: str) -> list[Repository]: ...
 
+    async def search_shards(self, http: httpx.AsyncClient, query: str) -> list[Repository]: ...
+
     async def files(self, http: httpx.AsyncClient, repo: str) -> list[File]: ...
 
 
@@ -92,10 +99,28 @@ class HuggingFace:
         wanted = query.strip()
         if not wanted:
             return []
-        url = (
+        return await self._found(
+            http,
             f"{HUGGINGFACE}/api/models?search={quote(wanted)}&filter=gguf"
-            f"&sort=downloads&direction=-1&limit={LIMIT}"
+            f"&sort=downloads&direction=-1&limit={LIMIT}",
         )
+
+    async def search_shards(self, http: httpx.AsyncClient, query: str) -> list[Repository]:
+        """Repositories that look like a conversion for the second engine.
+
+        The `gguf` filter is exactly wrong here: these are safetensors, which is why the
+        other engine cannot read them. There is no tag for the format, so the search is
+        by name and the real check happens when the tree is read at fetch time.
+        """
+        wanted = query.strip()
+        term = wanted if SHARD_HINT in wanted.lower() else f"{wanted} {SHARD_HINT}".strip()
+        return await self._found(
+            http,
+            f"{HUGGINGFACE}/api/models?search={quote(term)}"
+            f"&sort=downloads&direction=-1&limit={LIMIT}",
+        )
+
+    async def _found(self, http: httpx.AsyncClient, url: str) -> list[Repository]:
         try:
             response = await http.get(url, headers=self._headers(url))
             response.raise_for_status()

@@ -207,6 +207,63 @@ export type Queue = {
   models_reason: string | null;
 };
 
+export type DownloadItem = {
+  name: string;
+  size_bytes: number;
+  received: number;
+  done: boolean;
+};
+
+/** One thing being fetched, and the controls that apply to it. */
+export type Download = {
+  id: string;
+  label: string;
+  /** "runtime" or "weights". */
+  kind: string;
+  destination: string;
+  /** queued | running | paused | done | failed | cancelled */
+  state: string;
+  error: string;
+  started: number;
+  updated: number;
+  total_bytes: number;
+  received_bytes: number;
+  /** Bytes since this job last started or continued, and when that was, for a rate. */
+  moved: number;
+  moving_since: number;
+  files: number;
+  files_done: number;
+  current: string;
+  items: DownloadItem[];
+};
+
+export type DownloadList = {
+  downloads: Download[];
+  /** False. The queue is in memory; the partial files on disk are what survives. */
+  durable: boolean;
+};
+
+export type ColiModel = {
+  name: string;
+  repo: string;
+  family: string;
+  disk_gb: number;
+  /** Who published this conversion. Not a vendor release. */
+  uploader: string;
+  description: string;
+  downloaded: boolean;
+};
+
+export type Coli = {
+  name: string;
+  supported: boolean;
+  python: string;
+  installed: string;
+  problems: string[];
+  cannot_serve: string[];
+  models: ColiModel[];
+};
+
 /** One run in flight, and where it has got to. */
 export type Step = {
   id: number;

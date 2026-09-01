@@ -181,7 +181,13 @@ class Backend(BaseModel):
     hosted: bool = False
     #: Start this server if nothing answers at `url`.
     managed: bool = False
-    #: Where the weights come from, for a managed server.
+    #: Which engine serves this backend, for a managed server. `llama` holds the whole
+    #: model in memory and reads one weights file. `coli` streams a sparse model's
+    #: experts from disk and reads a directory of them, which is how a machine runs a
+    #: model it could not hold; it answers chat only, and needs Python 3 on the machine.
+    engine: Literal["llama", "coli"] = "llama"
+    #: Where the weights come from, for a managed server. For an engine that reads a
+    #: directory, `model_file` names that directory and `model_url` names its repository.
     model_file: str = ""
     model_url: str = ""
     #: Extra arguments for the managed server process.

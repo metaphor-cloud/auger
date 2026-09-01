@@ -26,6 +26,10 @@ an allowlist that logs every request.
   nobody is at the keyboard.
 - Brings its own models, and finds others. Four recommended, from three families, and
   a search over everything else Hugging Face publishes as one loadable file.
+- Runs a model it could not hold. A second engine, optional and off until you ask, that
+  streams a sparse model's experts from disk instead of loading them.
+- Lets you stop a download. Every transfer is one queue with pause, continue and drop,
+  and pausing keeps the bytes.
 - Argues with itself. A second model from another family judges what the first one
   found, and the two trade places between runs.
 - Gives the memory back. `auger stop` releases the model servers even with nothing

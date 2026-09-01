@@ -18,8 +18,9 @@ from pathlib import Path
 
 import httpx
 
+from auger.downloads import Item, Job, Manager
 from auger.log import Logger, create_logger
-from auger.net.download import DownloadError, Progress, fetch
+from auger.net.download import Digest
 from auger.sandbox.which import find
 
 RELEASES = "https://api.github.com/repos/ggml-org/llama.cpp/releases"
@@ -120,10 +121,16 @@ def _extract(archive: Path, into: Path) -> None:
 async def install(
     http: httpx.AsyncClient,
     home: Path,
-    on_progress: Callable[[Progress], None] | None = None,
+    downloads: Manager,
+    on_progress: Callable[[Job], None] | None = None,
     log: Logger | None = None,
 ) -> Path:
-    """Fetch and unpack a runtime. Returns the path to `llama-server`."""
+    """Fetch and unpack a runtime. Returns the path to `llama-server`.
+
+    The transfer goes on the download queue like any other, so it is visible and can be
+    stopped. A queued job that the user pauses leaves this waiting, which is what they
+    asked for; cancelling it is how they get out.
+    """
     log = (log or create_logger("llm")).bind(component="runtime")
     release = await latest_release(http, log)
     root = runtime_dir(home) / release.tag
@@ -132,10 +139,20 @@ async def install(
         return server
 
     archive = runtime_dir(home) / release.asset
+    job = downloads.submit(
+        f"llama.cpp {release.tag}",
+        "runtime",
+        runtime_dir(home),
+        [Item(release.asset, release.url, Digest.sha256(release.sha256), release.size_bytes)],
+        watcher=on_progress,
+    )
+    finished = await downloads.wait(job.id)
+    if finished is None or finished.state != "done":
+        reason = (finished.error if finished else "") or f"the download was {job.state}"
+        raise RuntimeInstallError(f"could not install the model runtime: {reason}")
     try:
-        await fetch(http, release.url, archive, release.sha256, on_progress, log)
         _extract(archive, root)
-    except (DownloadError, tarfile.TarError, OSError) as error:
+    except (tarfile.TarError, OSError) as error:
         raise RuntimeInstallError(f"could not install the model runtime: {error}") from error
     finally:
         archive.unlink(missing_ok=True)

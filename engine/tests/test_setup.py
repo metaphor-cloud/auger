@@ -18,6 +18,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
 from auger.config.schema import Config
+from auger.downloads import Manager
 from auger.llm import catalog, runtime, setup
 from auger.llm.catalog import CatalogError
 from auger.net import download
@@ -223,8 +224,12 @@ async def test_it_installs_and_finds_the_server(
         )
 
     monkeypatch.setattr(runtime, "latest_release", patched)
-    async with download.client() as http:
-        server = await runtime.install(http, tmp_path)
+    downloads = Manager(tmp_path)
+    try:
+        async with download.client() as http:
+            server = await runtime.install(http, tmp_path, downloads)
+    finally:
+        await downloads.aclose()
     assert server.name == "llama-server"
     assert server.is_file()
     assert runtime.resolve(tmp_path) is not None

@@ -207,8 +207,9 @@ max_tokens = 8192
 | `context_tokens` | `0` | How large a prompt one request may hold. Zero works it out: the largest size the model was trained for that this machine can also hold, read from the model's own header and its own memory. A number set here is still held to both, because asking for more than either fails the whole server rather than one request. |
 | `hosted` | `false` | This backend sends your code off the machine. |
 | `managed` | `false` | Start this server when nothing answers at `url`. |
-| `model_file` | `""` | Weights under `~/.auger/models`. |
-| `model_url` | `""` | Where to fetch the weights. |
+| `engine` | `llama` | Which engine serves a managed backend. `llama` holds the whole model in memory and reads one weights file. `coli` streams a sparse model's experts from disk and reads a directory of them, so a machine can run a model it could not hold; it answers chat only, and needs Python 3. |
+| `model_file` | `""` | Weights under `~/.auger/models`. A directory of them, for an engine that reads a directory. |
+| `model_url` | `""` | Where to fetch the weights. The repository, for an engine that reads a directory. |
 | `args` | `[]` | Extra arguments for a managed server. |
 
 | Profile key | Default | Meaning |

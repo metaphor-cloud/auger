@@ -24,6 +24,7 @@ from auger.config import (
 from auger.config.loader import parse
 from auger.config.schema import JobClass
 from auger.discovery import scan
+from auger.downloads import Manager as Downloads
 from auger.events import Event, EventBus
 from auger.forge import Registry
 from auger.jobs.adversary import Argument, argue
@@ -80,6 +81,14 @@ class Rig:
         self._refresh_allowlist()
         self.proxy = EgressProxy(self.allowlist, self.log)
         self.models_dir = settings.home / "models"
+        # Every transfer the rig starts, and the controls on them. A model is tens of
+        # gigabytes: it needs a stop button, and one place that knows what is in flight.
+        self.downloads = Downloads(
+            settings.home,
+            publish=lambda event, data: self.bus.publish(Event(event, data)),
+            token=self.model_token,
+            log=self.log,
+        )
         self.supervisor = Supervisor(self.models_dir, self.log, log_dir=self.settings.home / "logs")
         self.gateway = Gateway(self.config, self.allowlist, self.log)
         # One dictionary, written by the supervisor when it starts a server and read by
@@ -147,6 +156,7 @@ class Rig:
         return None
 
     async def aclose(self) -> None:
+        await self.downloads.aclose()
         await self.stop_background()
         self.supervisor.stop_all()
         await self.gateway.aclose()
@@ -333,6 +343,7 @@ class Rig:
                 report,
                 self.log,
                 self.model_token(),
+                self.downloads,
             )
         finally:
             self.setup_running = False
@@ -378,9 +389,10 @@ class Rig:
         This is the path behind the search: a repository and a file, from wherever the
         user found them, rather than from the list the rig ships with.
         """
+        from auger.downloads import Item, Job
         from auger.llm.catalog import CatalogError, Choice, resolve
         from auger.llm.setup import backend_for, models_dir
-        from auger.net.download import DownloadError, Progress, client, fetch
+        from auger.net.download import Digest, DownloadError, client
 
         if not repo or not filename:
             raise ValueError("a model needs a repository and a file")
@@ -399,26 +411,38 @@ class Rig:
             async with client() as http:
                 resolved = await resolve(http, choice, self.log, token)
 
-                def report(progress: Progress) -> None:
+                def report(job: Job) -> None:
                     self.publish(
                         "setup.progress",
                         stage="model",
-                        name=progress.name,
-                        received=progress.received_bytes,
-                        total=progress.total_bytes,
-                        fraction=round(progress.fraction, 4),
+                        name=job.label,
+                        received=job.received_bytes,
+                        total=job.total_bytes,
+                        fraction=round(
+                            job.received_bytes / job.total_bytes if job.total_bytes else 0.0, 4
+                        ),
                         message="",
                     )
 
-                await fetch(
-                    http,
-                    resolved.url,
-                    models_dir(self.settings.home) / choice.filename,
-                    resolved.sha256,
-                    report,
-                    self.log,
-                    token,
+                queued = self.downloads.submit(
+                    choice.name,
+                    "weights",
+                    models_dir(self.settings.home),
+                    [
+                        Item(
+                            choice.filename,
+                            resolved.url,
+                            Digest.sha256(resolved.sha256),
+                            resolved.size_bytes,
+                        )
+                    ],
+                    watcher=report,
                 )
+                done = await self.downloads.wait(queued.id)
+                if done is None or done.state != "done":
+                    raise DownloadError(
+                        (done.error if done else "") or f"{choice.name} was {queued.state}"
+                    )
         except (CatalogError, DownloadError) as error:
             self.log.error("model fetch failed", reason="fetch_failed", repo=repo, error=error)
             result.error = str(error)
@@ -431,6 +455,111 @@ class Rig:
         result.review_model = choice.name
         self.publish("setup.finished", ok=True, model=choice.name)
         self.log.info("model added", repo=repo, file=filename, job_class=wanted.value)
+        return result
+
+    async def install_coli(self) -> SetupResult:
+        """Install the second engine. Nothing else changes until a model is fetched.
+
+        It is an engine, not a model: on its own it reviews nothing. This puts the
+        launcher on disk and leaves the config alone.
+        """
+        from auger.downloads import Job
+        from auger.llm import coli
+        from auger.net.download import client
+
+        result = SetupResult()
+
+        def report(job: Job) -> None:
+            self.publish(
+                "setup.progress",
+                stage="runtime",
+                name=job.label,
+                received=job.received_bytes,
+                total=job.total_bytes,
+                fraction=round(job.received_bytes / job.total_bytes if job.total_bytes else 0.0, 4),
+                message="",
+            )
+
+        try:
+            async with client() as http:
+                launcher = await coli.install(http, self.settings.home, self.downloads, report)
+        except coli.ColiError as error:
+            self.log.error("engine install failed", reason="coli_failed", error=error)
+            result.error = str(error)
+            self.publish("setup.finished", ok=False, error=str(error))
+            return result
+        result.runtime_path = str(launcher)
+        self.log.info("engine installed", path=str(launcher))
+        self.publish("setup.finished", ok=True, model="")
+        return result
+
+    async def fetch_coli_model(self, repo: str, job_class: str = "review") -> SetupResult:
+        """Fetch a whole repository of weights and point a job class at it.
+
+        The bytes are a directory rather than a file, and there can be hundreds of
+        gigabytes of them, so this returns as soon as the queue has the job: the window
+        follows it there, where it can also be paused.
+        """
+        from auger.downloads import Item
+        from auger.llm.catalog import COLI_MODELS, CatalogError, RepoChoice, resolve_repo
+        from auger.llm.setup import coli_backend_for, models_dir
+        from auger.net.download import Digest, client
+
+        wanted = JobClass(job_class)
+        if wanted in (JobClass.EMBED, JobClass.RERANK):
+            raise ValueError("this engine answers chat only")
+        known = next((one for one in COLI_MODELS if one.repo == repo), None)
+        choice = known or RepoChoice(
+            name=repo.split("/")[-1],
+            repo=repo,
+            family="auto",
+            disk_gb=0.0,
+            uploader=repo.split("/")[0],
+            description=f"added from {repo}",
+        )
+        result = SetupResult()
+        token = self.model_token()
+        try:
+            async with client() as http:
+                resolved = await resolve_repo(http, repo, self.log, token)
+        except CatalogError as error:
+            self.log.error(
+                "repository not resolved", reason="resolve_failed", repo=repo, error=error
+            )
+            result.error = str(error)
+            self.publish("setup.finished", ok=False, error=str(error))
+            return result
+
+        self.downloads.submit(
+            choice.name,
+            "weights",
+            models_dir(self.settings.home) / choice.name,
+            [
+                Item(
+                    one.path,
+                    one.url,
+                    Digest.sha256(one.sha256)
+                    if one.sha256
+                    else Digest.git_blob(one.git_sha1, one.size_bytes),
+                    one.size_bytes,
+                )
+                for one in resolved.files
+            ],
+        )
+        # The config is written now rather than when the bytes land: a managed server
+        # refuses to start until the weights are there and says so, which is a better
+        # report than a download that finished and changed nothing.
+        coli_backend_for(self.config, choice, wanted)
+        save(self.config_path, self.config)
+        self.reload_config()
+        result.review_model = choice.name
+        self.log.info(
+            "engine model queued",
+            repo=repo,
+            model=choice.name,
+            files=len(resolved.files),
+            bytes=resolved.total_bytes,
+        )
         return result
 
     def model_token(self) -> str | None:

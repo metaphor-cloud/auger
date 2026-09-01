@@ -27,7 +27,9 @@ import {
   stopModels,
 } from "../engine";
 import type { BackendList, Catalog, ModelChoice, SetupProgress } from "../types";
+import Downloads from "../parts/Downloads";
 import ModelSearch from "../parts/ModelSearch";
+import SecondEngine from "../parts/SecondEngine";
 import { Fact, Facts, Mono, PageTitle, Section } from "../ui";
 
 const JOB_CLASSES = ["review", "verify", "triage", "embed", "rerank"];
@@ -80,6 +82,9 @@ export default function Models({
   const [adversary, setAdversary] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"" | "check" | "start" | "stop" | "setup">("");
+  // Bumped when something is added to the download queue, so the panel picks it up at
+  // once rather than on its next tick.
+  const [transfers, setTransfers] = useState(0);
 
   const load = useCallback(async (fetcher: () => Promise<BackendList>) => {
     try {
@@ -274,6 +279,20 @@ export default function Models({
             void loadCatalog();
           }}
         />
+      </Section>
+
+      <Section
+        title="A second engine, for models that do not fit"
+        description="Auger's own engine holds the whole model in memory. This one streams a sparse model's experts from disk, so this machine can run one it could not hold."
+      >
+        <SecondEngine onQueued={() => setTransfers((value) => value + 1)} />
+      </Section>
+
+      <Section
+        title="Downloads"
+        description="Every transfer Auger starts, with the controls on it. Pause keeps the bytes."
+      >
+        <Downloads version={transfers} />
       </Section>
 
       <Section

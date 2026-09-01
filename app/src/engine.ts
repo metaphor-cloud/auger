@@ -6,6 +6,8 @@ import { takeEvents, type ServerEvent } from "./sse";
 import type {
   Activity,
   BackendList,
+  Coli,
+  DownloadList,
   Catalog,
   Dashboard,
   FileResults,
@@ -205,6 +207,44 @@ export async function getRuns(repo?: string, limit = 100): Promise<RunList> {
  * opens: a window opened in the middle of a run has missed those events for good. */
 export async function getActivity(): Promise<Activity> {
   return request<Activity>("/activity");
+}
+
+export async function getDownloads(): Promise<DownloadList> {
+  return request<DownloadList>("/downloads");
+}
+
+/** Pause, continue, drop, or take a finished job off the list. */
+export async function actOnDownload(
+  id: string,
+  action: "pause" | "resume" | "cancel" | "forget",
+): Promise<DownloadList> {
+  return request<DownloadList>(`/downloads/${encodeURIComponent(id)}/${action}`, {
+    method: "POST",
+  });
+}
+
+export async function getColi(): Promise<Coli> {
+  return request<Coli>("/engines/coli");
+}
+
+export async function installColi(): Promise<Coli> {
+  return request<Coli>("/engines/coli/install", { method: "POST" });
+}
+
+export async function fetchColiModel(repo: string, jobClass = "review"): Promise<DownloadList> {
+  return request<DownloadList>("/engines/coli/fetch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repo, job_class: jobClass }),
+  });
+}
+
+/** Repositories that look like weights the second engine can read.
+ *
+ * The format has no tag, so this is a search by name. Whether a repository really holds
+ * what the engine reads is decided when it is fetched. */
+export async function searchColiModels(query: string): Promise<SearchResults> {
+  return request<SearchResults>(`/engines/coli/search?q=${encodeURIComponent(query)}`);
 }
 
 export async function getQueue(): Promise<Queue> {

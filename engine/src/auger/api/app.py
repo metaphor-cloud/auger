@@ -29,8 +29,13 @@ from auger.api.models import (
     BackendOut,
     CatalogOut,
     CodeGraphChange,
+    ColiFetchRequest,
+    ColiModelOut,
+    ColiOut,
     ConfigText,
     DashboardOut,
+    DownloadList,
+    DownloadOut,
     EgressOut,
     ExcludeChange,
     FetchRequest,
@@ -275,6 +280,42 @@ def _index_out(rig: Rig) -> IndexOut:
         chunks=chunk_count(rig.store),
         vectors=rig.store.vectors,
         embedded=embedded,
+    )
+
+
+def _downloads_out(rig: Rig) -> DownloadList:
+    return DownloadList(downloads=[DownloadOut(**job.as_dict()) for job in rig.downloads.jobs()])
+
+
+def _coli_out(rig: Rig) -> ColiOut:
+    from auger.llm import coli
+    from auger.llm.catalog import COLI_MODELS
+    from auger.llm.gateway import CHAT_ONLY
+    from auger.llm.setup import models_dir
+
+    ready = coli.readiness(rig.settings.home)
+    here = models_dir(rig.settings.home)
+    return ColiOut(
+        name=coli.NAME,
+        supported=ready.supported,
+        python=ready.python,
+        installed=ready.installed,
+        problems=list(ready.problems),
+        cannot_serve=[one.value for one in CHAT_ONLY.get(coli.NAME, ())],
+        models=[
+            ColiModelOut(
+                name=choice.name,
+                repo=choice.repo,
+                family=choice.family,
+                disk_gb=choice.disk_gb,
+                uploader=choice.uploader,
+                description=choice.description,
+                # A directory with a config in it is weights that arrived. A directory
+                # holding only partial files is a download that has not.
+                downloaded=(here / choice.name / "config.json").is_file(),
+            )
+            for choice in COLI_MODELS
+        ],
     )
 
 
@@ -919,6 +960,92 @@ def create_app(rig: Rig) -> FastAPI:
     async def runs(repo: str | None = None, limit: int = 100) -> RunList:
         rows = await asyncio.to_thread(list_runs, rig.store, repo, limit)
         return RunList(runs=[RunOut.of(run) for run in rows])
+
+    @router.get("/downloads")
+    async def downloads() -> DownloadList:
+        return _downloads_out(rig)
+
+    @router.post("/downloads/{job}/pause")
+    async def pause_download(job: str) -> DownloadList:
+        if rig.downloads.job(job) is None:
+            raise HTTPException(status_code=404, detail=f"no download called {job}")
+        rig.downloads.pause(job)
+        return _downloads_out(rig)
+
+    @router.post("/downloads/{job}/resume")
+    async def resume_download(job: str) -> DownloadList:
+        if rig.downloads.job(job) is None:
+            raise HTTPException(status_code=404, detail=f"no download called {job}")
+        rig.downloads.resume(job)
+        return _downloads_out(rig)
+
+    @router.post("/downloads/{job}/cancel")
+    async def cancel_download(job: str) -> DownloadList:
+        """Drop the job and its partial files. The one control that loses work."""
+        if rig.downloads.job(job) is None:
+            raise HTTPException(status_code=404, detail=f"no download called {job}")
+        rig.downloads.cancel(job)
+        return _downloads_out(rig)
+
+    @router.post("/downloads/{job}/forget")
+    async def forget_download(job: str) -> DownloadList:
+        """Take a finished job off the list. Nothing on disk changes."""
+        rig.downloads.forget(job)
+        return _downloads_out(rig)
+
+    @router.get("/engines/coli")
+    async def coli_state() -> ColiOut:
+        return _coli_out(rig)
+
+    @router.get("/engines/coli/search")
+    async def search_coli_models(q: str, source: str = "huggingface") -> SearchOut:
+        """Look for weights this engine can read.
+
+        The shortlist is the expectation. This is everything else, and whether a
+        repository really holds weights in the shape it reads is decided when it is
+        fetched, by reading the tree.
+        """
+        token = rig.model_token()
+        try:
+            found = await source_for(source, token, log).search_shards(rig.gateway.client, q)
+        except SourceError as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+        return SearchOut(
+            results=[
+                RepositoryFound(
+                    source=one.source,
+                    id=one.id,
+                    url=one.url,
+                    downloads=one.downloads,
+                    likes=one.likes,
+                    gated=one.gated,
+                    updated=one.updated,
+                )
+                for one in found
+            ],
+            token=bool(token),
+            token_env=rig.config.models.token_env,
+        )
+
+    @router.post("/engines/coli/install")
+    async def install_coli() -> ColiOut:
+        result = await rig.install_coli()
+        if not result.ok:
+            raise HTTPException(
+                status_code=400, detail=result.error or "the engine did not install"
+            )
+        return _coli_out(rig)
+
+    @router.post("/engines/coli/fetch")
+    async def fetch_coli_model(request: ColiFetchRequest) -> DownloadList:
+        """Queue a whole repository of weights and point a job class at it."""
+        try:
+            result = await rig.fetch_coli_model(request.repo, request.job_class)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        if not result.ok:
+            raise HTTPException(status_code=400, detail=result.error or "could not read that model")
+        return _downloads_out(rig)
 
     @router.get("/activity")
     async def activity() -> ActivityOut:

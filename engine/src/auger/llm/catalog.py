@@ -59,6 +59,45 @@ class Resolved:
     size_bytes: int
 
 
+@dataclass(frozen=True)
+class RepoChoice:
+    """A model that arrives as a directory of shards rather than one file.
+
+    No memory figure: this engine streams the experts and holds only the dense layers,
+    so what it needs resident is a property of its own plan rather than of the file
+    sizes, and a number nobody measured would be worse than none. The disk figure is
+    the one that decides whether a download is worth starting.
+    """
+
+    name: str
+    repo: str
+    #: The engine's own name for the architecture. It detects this from the weights;
+    #: this is here so the window can say what the model is.
+    family: str
+    disk_gb: float
+    uploader: str
+    description: str
+
+
+@dataclass(frozen=True)
+class RepoFile:
+    path: str
+    url: str
+    sha256: str
+    git_sha1: str
+    size_bytes: int
+
+
+@dataclass(frozen=True)
+class ResolvedRepo:
+    repo: str
+    files: list[RepoFile]
+
+    @property
+    def total_bytes(self) -> int:
+        return sum(one.size_bytes for one in self.files)
+
+
 #: What Auger offers, largest first. Four families, so the reviewer and the model that
 #: checks it always come from different ones. A second opinion from the same family is
 #: barely a second opinion.
@@ -195,6 +234,149 @@ CATALOG: tuple[Choice, ...] = (
     *EMBED_MODELS,
     RERANK_MODEL,
 )
+
+
+#: Models for the engine that streams a sparse model's experts from disk, smallest
+#: first. These are not vendor releases: the format is a conversion, and the people who
+#: publish it are individuals. The window says so, because "a model from Hugging Face"
+#: and "a model from its authors" are not the same claim.
+#:
+#: The size here is what the repository held when it was added, for deciding before a
+#: download starts. The number that is acted on comes from the API at fetch time, along
+#: with every file's checksum, so this cannot go stale in a way that matters.
+COLI_MODELS: tuple[RepoChoice, ...] = (
+    RepoChoice(
+        name="qwen3.6-coder-35b-a3b",
+        repo="ilyaosovskoi/qwopus3.6-35b-a3b-coder-colibri-i4",
+        family="qwen36",
+        disk_gb=19.2,
+        uploader="ilyaosovskoi",
+        description=(
+            "A coder model, 35B with 3B active, at four bits. The smallest of these and "
+            "the one aimed at code."
+        ),
+    ),
+    RepoChoice(
+        name="qwen3.6-35b-a3b",
+        repo="minne100/qwen36-35b-a3b-colibri-i4",
+        family="qwen36",
+        disk_gb=21.1,
+        uploader="minne100",
+        description="General purpose, 35B with 3B active, at four bits.",
+    ),
+    RepoChoice(
+        name="qwen3.6-35b-a3b-int8",
+        repo="minne100/qwen36-35b-a3b-colibri-i8",
+        family="qwen36",
+        disk_gb=37.2,
+        uploader="minne100",
+        description="The same model at eight bits. Nearly twice the disk, and closer to source.",
+    ),
+    RepoChoice(
+        name="glm-5.3-flash",
+        repo="Justvugg/GLM-5.3-Flash-colibri-int4-g64",
+        family="glm53",
+        disk_gb=194.7,
+        uploader="JustVugg",
+        description="321B, at four bits, published by the engine's own author.",
+    ),
+    RepoChoice(
+        name="glm-5.2",
+        repo="mastouri/GLM-5.2-colibri-int4-g64-with-int8-mtp",
+        family="glm",
+        disk_gb=429.3,
+        uploader="mastouri",
+        description=(
+            "744B, at four bits. The one the engine is built for, and it wants a fast "
+            "disk with room to spare."
+        ),
+    ),
+)
+
+
+def coli_model(name: str) -> RepoChoice:
+    for choice in COLI_MODELS:
+        if choice.name == name:
+            return choice
+    raise CatalogError(f"no model named {name!r}")
+
+
+def looks_like_coli(paths: list[str]) -> bool:
+    """Whether a repository holds weights in the shape the second engine reads.
+
+    A configuration file and shards beside it. Not a strong claim, and it does not need
+    to be: the engine says plainly when it cannot read a directory, and this only decides
+    whether the repository is worth offering.
+    """
+    return "config.json" in paths and any(one.endswith(".safetensors") for one in paths)
+
+
+async def resolve_repo(
+    http: httpx.AsyncClient,
+    repo: str,
+    log: Logger | None = None,
+    token: str | None = None,
+) -> ResolvedRepo:
+    """Every file in a repository, with the checksum and size it publishes.
+
+    Weights that arrive as forty files need forty checksums, and they come from the API
+    host, which the download path matches exactly. That is what makes it safe for the
+    bytes to come from a delivery host matched by suffix.
+    """
+    log = (log or create_logger("llm")).bind(component="catalog")
+    from auger.net.download import Digest, auth_for
+
+    url = f"{HUGGINGFACE}/api/models/{repo}/tree/main?recursive=true"
+    try:
+        response = await http.get(url, headers=auth_for(url, token))
+        response.raise_for_status()
+        entries = response.json()
+    except httpx.HTTPStatusError as error:
+        if error.response.status_code in (401, 403):
+            raise CatalogError(
+                f"{repo} is gated. Accept its licence at https://huggingface.co/{repo}, "
+                f"then set a Hugging Face token in the variable your config names."
+            ) from error
+        if error.response.status_code == 404:
+            raise CatalogError(f"there is no repository called {repo}") from error
+        raise CatalogError(f"could not read {repo}: {error}") from error
+    except (httpx.HTTPError, ValueError) as error:
+        raise CatalogError(f"could not read {repo}: {error}") from error
+
+    files: list[RepoFile] = []
+    for entry in entries:
+        if entry.get("type") != "file":
+            continue
+        path = str(entry.get("path", ""))
+        if not path or path.startswith("."):
+            # A repository's own bookkeeping is not part of the model.
+            continue
+        digest = Digest.published(entry)
+        if digest.empty:
+            raise CatalogError(f"{repo}/{path} publishes no checksum")
+        files.append(
+            RepoFile(
+                path=path,
+                url=f"{HUGGINGFACE}/{repo}/resolve/main/{path}",
+                sha256=digest.value if digest.algorithm == "sha256" else "",
+                git_sha1=digest.value if digest.algorithm != "sha256" else "",
+                size_bytes=int(entry.get("size", 0) or 0),
+            )
+        )
+    if not files:
+        raise CatalogError(f"{repo} holds no files")
+    if not looks_like_coli([one.path for one in files]):
+        raise CatalogError(
+            f"{repo} does not look like weights for this engine: a config.json and "
+            f"shards beside it is what it reads."
+        )
+    log.info(
+        "repository resolved",
+        repo=repo,
+        files=len(files),
+        bytes=sum(one.size_bytes for one in files),
+    )
+    return ResolvedRepo(repo=repo, files=files)
 
 
 def total_memory_bytes() -> int:

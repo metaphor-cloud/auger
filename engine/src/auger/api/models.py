@@ -174,6 +174,79 @@ class RunList(BaseModel):
     runs: list[RunOut]
 
 
+class DownloadItemOut(BaseModel):
+    name: str
+    size_bytes: int
+    received: int
+    done: bool
+
+
+class DownloadOut(BaseModel):
+    """One thing being fetched."""
+
+    id: str
+    label: str
+    #: "runtime" or "weights".
+    kind: str
+    destination: str
+    #: queued | running | paused | done | failed | cancelled
+    state: str
+    error: str
+    started: float
+    updated: float
+    total_bytes: int
+    received_bytes: int
+    #: Bytes moved since this job last started or continued, and when that was, so the
+    #: window can work out a rate without counting what an earlier attempt already had.
+    moved: int
+    moving_since: float
+    files: int
+    files_done: int
+    current: str
+    items: list[DownloadItemOut]
+
+
+class DownloadList(BaseModel):
+    downloads: list[DownloadOut]
+    #: The queue is held in memory. The bytes are not: a restart loses this list and
+    #: keeps every partial file, so asking again continues where it stopped.
+    durable: bool = False
+
+
+class ColiModelOut(BaseModel):
+    name: str
+    repo: str
+    family: str
+    disk_gb: float
+    #: Who published this conversion. Not a vendor release, and the window says so.
+    uploader: str
+    description: str
+    #: True when the weights are already on this machine.
+    downloaded: bool
+
+
+class ColiOut(BaseModel):
+    """The second engine: whether it can run here, and what it can serve."""
+
+    name: str
+    #: A published build exists for this platform.
+    supported: bool
+    #: The interpreter its launcher needs, or empty when there is none.
+    python: str
+    #: Where the launcher is, or empty when it is not installed.
+    installed: str
+    #: What stands in the way, in the words the user has to act on.
+    problems: list[str]
+    #: Job classes it cannot answer at all.
+    cannot_serve: list[str]
+    models: list[ColiModelOut]
+
+
+class ColiFetchRequest(BaseModel):
+    repo: str
+    job_class: str = "review"
+
+
 class StepOut(BaseModel):
     """One run in flight, and where it has got to."""
 

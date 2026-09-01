@@ -132,14 +132,20 @@ class Supervisor:
         #: that knows how much room a prompt really has.
         self.contexts: dict[str, int] = {}
 
-    def server_command(self) -> str | None:
+    def server_command(self, engine: str = "llama") -> str | None:
         """The server to run: one the user has, or the one the rig installed itself.
 
         A graphical application has a narrow PATH, and a first run has nothing installed
         at all, so neither `PATH` alone nor `which` alone is enough.
-        """
-        from auger.llm import runtime
 
+        The second engine is never on `PATH` and is never a server the user already
+        runs: it is a launcher the rig unpacked, so only its own directory is looked in.
+        """
+        from auger.llm import coli, runtime
+
+        if engine == coli.NAME:
+            launcher = coli.installed(self.home())
+            return str(launcher) if launcher is not None else None
         own = runtime.resolve(self.models_dir.parent)
         if own is not None:
             return str(own)
@@ -257,6 +263,15 @@ class Supervisor:
         A number in the config is honoured but still held to what the model was trained
         for and what the machine can hold. Zero means work it out.
         """
+        from auger.llm import coli
+
+        if backend.engine == coli.NAME:
+            # This engine's weights are a directory of shards with no header to read a
+            # trained context out of, and it streams them rather than holding them, so
+            # the memory arithmetic that sizes the other engine does not apply either.
+            chosen = backend.context_tokens or sizing.MINIMUM_CONTEXT * 4
+            self.contexts[name] = chosen
+            return chosen
         model = sizing.read(model_path, self.log)
         if model is None:
             # Nothing to reason from. Fall back to a size that fits any machine rather
@@ -321,6 +336,33 @@ class Supervisor:
     def arguments(
         self, backend: Backend, server: str, model_path: Path, context: int = 0
     ) -> list[str]:
+        from auger.llm import coli
+
+        if backend.engine == coli.NAME:
+            # A different engine, so a different command line: a directory of weights
+            # rather than a file, a slot count rather than a shared context size, and
+            # the launcher run through the interpreter it is written for.
+            interpreter = coli.python()
+            room = context or backend.context_tokens or sizing.MINIMUM_CONTEXT
+            return [
+                *([interpreter] if interpreter else []),
+                server,
+                "serve",
+                "--model",
+                str(model_path),
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port_of(backend.url)),
+                # One request at a time per slot, as with the other engine.
+                "--kv-slots",
+                str(backend.max_concurrent),
+                # Its own default ceiling on an answer is a thousand tokens, which cuts
+                # a review's findings off part way. The reply is what a review is.
+                "--max-tokens",
+                str(max(room, sizing.MINIMUM_CONTEXT)),
+                *backend.args,
+            ]
         return [
             server,
             "--model",
@@ -366,10 +408,14 @@ class Supervisor:
                 output=self.last_output(name),
             )
             del self.running[name]
-        server = self.server_command()
+        server = self.server_command(backend.engine)
         if server is None:
+            from auger.llm import coli
+
             reason = (
-                "no model runtime yet. Press Set up in the Models view, and the rig will "
+                f"{coli.NAME} is not installed yet. Install it in the Models view."
+                if backend.engine == coli.NAME
+                else "no model runtime yet. Press Set up in the Models view, and the rig will "
                 "fetch one, or point this backend at a server you already run."
             )
             self.log.warn("managed start skipped", reason="no_server", backend=name)

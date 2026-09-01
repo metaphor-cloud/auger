@@ -61,6 +61,17 @@ class MissingBackendError(ModelError):
     """The profile names a backend that the config does not define."""
 
 
+class EngineMismatchError(ModelError):
+    """The profile asks an engine for a job class it cannot answer."""
+
+
+#: What each engine cannot answer. The engine that streams a sparse model's experts
+#: publishes a chat endpoint and nothing else, so retrieval stays with the other one.
+CHAT_ONLY: dict[str, tuple[JobClass, ...]] = {
+    "coli": (JobClass.EMBED, JobClass.RERANK),
+}
+
+
 class HostedRefusedError(ModelError):
     """The backend sends code off the machine and the user has not allowed that."""
 
@@ -207,6 +218,16 @@ class Gateway:
             raise HostedRefusedError(
                 f"backend {entry.backend!r} sends your code off this machine. Set "
                 "`allow_hosted = true` under [egress] to permit that."
+            )
+        if job_class in CHAT_ONLY.get(backend.engine, ()):
+            # Said here rather than left to fail per request. A profile that sends
+            # embedding to an engine with no embeddings endpoint produces a failed run
+            # for every repository and a log full of 404s, and the fix is one line of
+            # config that nothing points at.
+            raise EngineMismatchError(
+                f"backend {entry.backend!r} runs the {backend.engine!r} engine, which "
+                f"answers chat only. Point {job_class.value} at a backend on the "
+                f"default engine."
             )
         return Resolved(name=entry.backend, backend=backend, entry=entry, profile=profile_name)
 

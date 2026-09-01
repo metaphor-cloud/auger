@@ -95,6 +95,62 @@ it the bar counts up seconds against a token count of zero. A server that does n
 the field ignores it. A backend marked `hosted` is not asked, because the hosted APIs
 refuse a field they do not recognise.
 
+## A second engine, for models that do not fit
+
+The engine above holds the whole model in memory. That is a hard ceiling: a machine with
+32 GB runs a 30B dense model and nothing larger, however patient you are.
+
+`coli` is optional and installed only when you ask. It streams a sparse model's routed
+experts from disk and keeps the dense layers resident, so the same machine can run a
+model an order of magnitude larger — slower per token, with far more in it. Install it in
+the Models view. Two things are worth knowing before you do:
+
+- Its launcher is a Python 3 script, so Python 3 has to be on the machine. Auger says so
+  before it downloads anything.
+- It answers chat only. There is no embeddings endpoint and no rerank endpoint, so the
+  first engine keeps those job classes and both engines run at once, on their own ports.
+  A profile that points embedding at it is refused with a reason rather than failing once
+  per repository.
+
+Its weights are not GGUF. A model is a directory of safetensors shards, converted to the
+format the engine reads, and the conversions on Hugging Face are published by
+individuals rather than by the people who trained the models. Auger lists a shortlist
+with the size and the uploader, and searches for the rest; a repository that does not
+hold a `config.json` with shards beside it is refused before anything is fetched.
+
+Sizes are disk, not memory. What the engine needs resident is a property of its own plan
+rather than of the file sizes, so Auger reports the disk figure and does not invent a
+memory one.
+
+```toml
+[backend.coli-review]
+url = "http://127.0.0.1:1345/v1"
+managed = true
+engine = "coli"
+model_file = "qwen3.6-coder-35b-a3b"   # a directory under ~/.auger/models
+max_concurrent = 1                     # it serves one generation at a time
+```
+
+## Downloads
+
+Weights are tens of gigabytes, and for this engine sometimes hundreds, over dozens of
+files. Every transfer Auger starts goes on one queue in the Models view, one at a time,
+with three controls:
+
+- **Pause** stops fetching and keeps every byte already written. Continuing asks the
+  server for the missing range, and the checksum is still computed over the whole file,
+  so a resumed download is verified exactly as strictly as one that never stopped.
+- **Drop** is the only control that throws bytes away.
+- **Clear** takes a finished job off the list and touches nothing on disk.
+
+The queue itself is held in memory. Closing Auger loses the list and keeps every partial
+file, so asking for the same model again continues from where it stopped.
+
+Each file is verified against what its repository publishes: a sha256 for the large files
+it keeps out of line, and the git object hash for the small ones it keeps in the tree.
+Both come from the API host, which the download path matches exactly, and a file with
+neither is not fetched at all.
+
 ## What managed means
 
 `managed = true` tells the rig to start that backend when nothing answers at its URL. It
