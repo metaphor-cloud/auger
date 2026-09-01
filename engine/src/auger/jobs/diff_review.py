@@ -16,6 +16,7 @@ from auger.config import Policy
 from auger.config.schema import CodeGraph as CodeGraphConfig
 from auger.config.schema import JobClass
 from auger.context import ReviewContext, context_for_diff, reindex
+from auger.jobs.lookup import Lookup
 from auger.jobs.parse import (
     FINDINGS_SCHEMA,
     REPAIR,
@@ -25,7 +26,7 @@ from auger.jobs.parse import (
 )
 from auger.jobs.prompt import review_messages
 from auger.jobs.shell import Shell
-from auger.jobs.tools import complete_with_tools
+from auger.jobs.tools import ToolRun, complete_with_tools
 from auger.llm import Gateway, Message, ModelError
 from auger.log import Logger, create_logger
 from auger.mcp import McpRegistry
@@ -49,6 +50,8 @@ class ReviewOutcome:
     findings: list[Finding]
     problems: list[str]
     context: ReviewContext | None = None
+    #: What the tool loop did, or None when the review never had tools.
+    tools: ToolRun | None = None
 
 
 def snippet_for(diff: str, file: str, line: int | None) -> str:
@@ -160,10 +163,10 @@ async def review(
     except ModelError as error:
         return _failed(store, run, log, "model_failed", str(error), started)
 
-    # What this model can actually hold. The related code is drawn to fill it, and the
-    # whole prompt is cut to fit it, so a large diff loses context rather than the
-    # review losing the server.
-    budget = gateway.prompt_budget(JobClass.REVIEW, policy.model_profile)
+    # What one review should fill, which is not what the model could hold. The related
+    # code is drawn to fill it and the whole prompt is cut to fit it, so a large diff
+    # loses context rather than the review losing the server.
+    budget = gateway.prompt_budget(JobClass.REVIEW, policy.model_profile, policy.working_set_tokens)
     messages = review_messages(
         slug=repository.slug,
         branch=branch,
@@ -188,6 +191,7 @@ async def review(
             log,
             answer=ANSWER_FORMAT,
             shell=shell,
+            lookup=Lookup(store, repository.path, graph) if policy.code_tools else None,
             budget=budget,
         )
     except ModelError as error:
@@ -241,7 +245,7 @@ async def review(
         reranked=context.reranked,
         tool_calls=tool_run.calls,
     )
-    return ReviewOutcome(finish(store, run), findings, problems, context)
+    return ReviewOutcome(finish(store, run), findings, problems, context, tool_run)
 
 
 def _failed(

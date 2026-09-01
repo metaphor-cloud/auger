@@ -18,6 +18,7 @@ from auger.config import Policy
 from auger.config.schema import JobClass
 from auger.forge import Comment, Entry, ForgeError, PostedReview, PullRequest, Repo
 from auger.jobs.diff_review import ANSWER_FORMAT
+from auger.jobs.lookup import Lookup
 from auger.jobs.parse import parse_findings
 from auger.jobs.prompt import review_messages
 from auger.jobs.shell import Shell
@@ -115,7 +116,7 @@ async def review_pull(
     if not diff.strip():
         return _stop(store, run, log, "empty_diff", "", started)
 
-    budget = gateway.prompt_budget(JobClass.REVIEW, policy.model_profile)
+    budget = gateway.prompt_budget(JobClass.REVIEW, policy.model_profile, policy.working_set_tokens)
     messages = review_messages(
         slug=repository.slug,
         branch=pull.base_ref,
@@ -137,6 +138,7 @@ async def review_pull(
             log,
             answer=ANSWER_FORMAT,
             shell=shell,
+            lookup=Lookup(store, repository.path) if policy.code_tools else None,
             budget=budget,
         )
     except ModelError as error:

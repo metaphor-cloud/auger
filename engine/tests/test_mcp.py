@@ -282,7 +282,7 @@ async def test_the_loop_stops_at_the_call_limit(
     assert run.calls == 2
 
 
-async def test_with_no_ceiling_the_loop_ends_when_the_model_stops_asking(
+async def test_no_ceiling_is_available_to_anyone_who_asks_for_it(
     gateway: Gateway, model: FakeModelServer, config_with_server: Config
 ) -> None:
     """A count is an arbitrary number, so the default is none. The allowlist decides
@@ -299,11 +299,11 @@ async def test_with_no_ceiling_the_loop_ends_when_the_model_stops_asking(
         registry,
         JobClass.REVIEW,
         [Message("system", "rules")],
-        Policy(tools=["fixture.*"]),
+        Policy(tools=["fixture.*"], max_tool_calls=0),
         None,
     )
-    assert Policy().max_tool_calls == 0, "off is the default"
-    assert run.calls == 5
+    assert Policy().max_tool_calls == 4, "a fresh install has a bound"
+    assert run.calls == 5, "zero still means the loop ends when the model stops asking"
 
 
 async def test_no_tools_reach_a_review_whose_allowlist_is_empty(

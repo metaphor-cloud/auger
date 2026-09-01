@@ -82,9 +82,33 @@ class Policy(BaseModel):
     hints: str = ""
     #: MCP tools a job may call, as `server.tool` or `server.*`. Empty means none.
     tools: list[str] = Field(default_factory=list)
+    #: Let the reviewer read the repository for itself: a file, a keyword search, a
+    #: file's symbols, a function's callers. They answer out of the index in
+    #: milliseconds and run nothing, so a turn is cheap enough for a loop.
+    #:
+    #: Off, because the deterministic retrieval already puts the surrounding code in
+    #: the prompt before the model is asked anything, and a loop has to beat that to
+    #: earn its turns. `just bench-review --code-tools` is how to find out for a
+    #: repository.
+    code_tools: bool = False
+    #: Let the reviewer run commands in the sandbox. Off, because a turn costs a
+    #: container start and a review that loops over those does not finish: measured
+    #: on a 30B, the same diff took 123 seconds without it and over ten minutes with.
+    #: A repository that has something worth running turns it on, the way `adversary`
+    #: is turned on.
+    commands: bool = False
     #: A ceiling on how many tool calls one review may make. 0 means no ceiling, and
-    #: the loop ends when the model stops asking. `tools` decides whether it gets any.
-    max_tool_calls: int = Field(default=0, ge=0, le=64)
+    #: the loop ends when the model stops asking - which is a review that need never
+    #: end, so it is not what a fresh install gets. `tools` and `commands` decide
+    #: whether it gets any calls at all.
+    max_tool_calls: int = Field(default=4, ge=0, le=64)
+    #: How large a prompt one review should build, in tokens. This is a property of
+    #: the task - a diff, the code around it, the rules - and not of the machine.
+    #:
+    #: The model's context is a ceiling and only ever lowers this. Filling a 131072
+    #: token context because it is there costs over four minutes of prompt evaluation
+    #: at the speed a local model manages, and dilutes attention on the diff itself.
+    working_set_tokens: int = Field(default=8192, ge=1024, le=1_048_576)
     #: Run a whole repository audit this often. 0 turns audits off.
     audit_hours: int = Field(default=24, ge=0)
     #: Have a second model judge what the first one found. It needs a `verify` backend.
@@ -109,7 +133,10 @@ class Overrides(BaseModel):
     instructions: str | None = None
     hints: str | None = None
     tools: list[str] | None = None
+    code_tools: bool | None = None
+    commands: bool | None = None
     max_tool_calls: int | None = Field(default=None, ge=0, le=64)
+    working_set_tokens: int | None = Field(default=None, ge=1024, le=1_048_576)
     audit_hours: int | None = Field(default=None, ge=0)
     adversary: bool | None = None
     alternate: bool | None = None
@@ -343,8 +370,16 @@ class Schedule(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    #: Reviews that may run at once, across every repository.
-    max_concurrent_reviews: int = Field(default=2, ge=1, le=16)
+    #: Reviews that may run at once, across every repository. One, on purpose.
+    #:
+    #: Two reviews of different repositories share no prompt prefix, and they land on
+    #: the server's slots alternately, so each one evicts the other's key and value
+    #: cache. Prompt evaluation is a large share of a review's wall clock - at the few
+    #: hundred tokens a second a local model manages, a working set is tens of seconds
+    #: before the model writes anything - and a cache hit removes most of it. Raising
+    #: this buys parallelism the machine is not short of and pays for it by processing
+    #: nearly every prompt from scratch.
+    max_concurrent_reviews: int = Field(default=1, ge=1, le=16)
     #: How often the watcher looks for a new commit.
     poll_seconds: int = Field(default=60, ge=5)
     #: How often the watcher asks the forges for new pull requests. A forge counts

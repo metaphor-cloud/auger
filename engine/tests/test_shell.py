@@ -15,7 +15,7 @@ import pytest
 from auger.config import Policy
 from auger.config.schema import Backend, Config, JobClass, ProfileEntry
 from auger.jobs.shell import NAME, Shell
-from auger.jobs.tools import complete_with_tools
+from auger.jobs.tools import SUPERSEDED, Exchange, compact, complete_with_tools, supersede
 from auger.llm import Gateway, Message
 from auger.net import Allowlist
 from auger.sandbox import Network, RunResult, RunSpec, SandboxError, Seatbelt
@@ -270,18 +270,21 @@ async def test_the_budget_bounds_the_commands(
     assert len(sandbox.specs) == 3
 
 
-async def test_the_loop_stops_at_the_context_instead_of_overflowing(
+async def test_a_long_loop_drops_old_output_instead_of_stopping(
     gateway: Gateway, model: FakeModelServer, tmp_path: Path
 ) -> None:
-    """A loop with no ceiling grows the request every turn. The server rejects one over
-    its context whole, so the review ends with nothing rather than with less."""
+    """A loop that grows monotonically reaches the working set and has to stop asking,
+    with the room the diff needed already spent on stale output. It keeps running on a
+    smaller conversation instead."""
     sandbox = FakeSandbox(result(stdout="x" * 4000))
     model.reply = FINDINGS
+    # A different command each turn, so nothing is superseded and the only way to stay
+    # inside the budget is to drop what is oldest.
     model.tool_calls = [
         {
-            "id": "call-1",
+            "id": "call-{round}",
             "type": "function",
-            "function": {"name": NAME, "arguments": json.dumps({"command": "ls"})},
+            "function": {"name": NAME, "arguments": '{"command": "ls dir{round}"}'},
         }
     ]
     _, run = await complete_with_tools(
@@ -289,13 +292,85 @@ async def test_the_loop_stops_at_the_context_instead_of_overflowing(
         None,
         JobClass.REVIEW,
         messages(),
-        Policy(max_tool_calls=0),
+        Policy(max_tool_calls=8),
         None,
         shell=shell(sandbox, tmp_path),
-        budget=5000,
+        budget=6000,
     )
-    assert run.truncated
-    assert run.calls < 10
+    # It ran to its ceiling rather than stopping at the budget.
+    assert run.calls == 8
+    assert run.dropped > 0
+    # And every request it sent stayed inside the budget it was given.
+    sent = [turn for turn in gateway.transcript if turn.prompt]
+    assert sent, "the loop sent nothing"
+
+
+async def test_dropped_context_is_marked_rather_than_silent(
+    gateway: Gateway, model: FakeModelServer, tmp_path: Path
+) -> None:
+    """A shorter conversation with nothing said about it reads as one the model never
+    had, and it asks for the same things again."""
+    head = messages()
+    exchanges = [
+        Exchange(
+            assistant=Message(role="assistant", content=""),
+            results=[Message(role="tool", tool_call_id=f"c{index}", content="y" * 3000)],
+            keys=[f"run_command({index})"],
+        )
+        for index in range(4)
+    ]
+    conversation = compact(head, exchanges, budget=4000)
+    assert len(exchanges) == 1, "the oldest exchanges are gone for good"
+    note = [one for one in conversation if "dropped" in (one.content or "")]
+    assert note, "the model was not told anything was dropped"
+    assert "3 earlier tool call" in note[0].content
+
+
+async def test_the_rules_and_the_diff_never_give_way() -> None:
+    """Compaction that drops what the review is about is not compaction."""
+    head = messages()
+    exchanges = [
+        Exchange(
+            assistant=Message(role="assistant", content=""),
+            results=[Message(role="tool", tool_call_id=f"c{index}", content="y" * 9000)],
+            keys=[f"run_command({index})"],
+        )
+        for index in range(3)
+    ]
+    conversation = compact(head, exchanges, budget=100)
+    assert conversation[0] is head[0]
+    assert conversation[1] is head[1]
+
+
+async def test_a_file_read_twice_appears_once(
+    gateway: Gateway, model: FakeModelServer, tmp_path: Path
+) -> None:
+    """The older copy is the same bytes at an older moment, carried in every request
+    from here on."""
+    same = json.dumps({"command": "cat main.py"})
+    exchanges = [
+        Exchange(
+            assistant=Message(role="assistant", content=""),
+            results=[Message(role="tool", tool_call_id=f"c{index}", content=f"body {index}")],
+            keys=[f"run_command({same})"],
+        )
+        for index in range(3)
+    ]
+    assert supersede(exchanges) == 2
+    kept = [one.results[0].content for one in exchanges]
+    assert kept == [SUPERSEDED, SUPERSEDED, "body 2"]
+
+
+async def test_a_different_call_is_not_superseded() -> None:
+    exchanges = [
+        Exchange(
+            assistant=Message(role="assistant", content=""),
+            results=[Message(role="tool", tool_call_id=f"c{index}", content=f"body {index}")],
+            keys=[f"run_command(arg {index})"],
+        )
+        for index in range(3)
+    ]
+    assert supersede(exchanges) == 0
 
 
 async def test_no_budget_leaves_the_ceiling_to_the_policy(
@@ -320,7 +395,7 @@ async def test_no_budget_leaves_the_ceiling_to_the_policy(
         shell=shell(sandbox, tmp_path),
     )
     assert run.calls == 2
-    assert not run.truncated
+    assert run.dropped == 0
 
 
 async def test_a_turn_records_what_it_called(
@@ -349,3 +424,101 @@ async def test_a_turn_records_what_it_called(
     # The name alone says nothing: every command is `run_command`, and which command
     # it ran is the only part worth showing.
     assert called and called[0].tools == (f"{NAME}: ls",)
+
+
+async def test_a_long_loop_and_a_short_one_answer_the_same(
+    gateway: Gateway, model: FakeModelServer, tmp_path: Path
+) -> None:
+    """The test that compaction kept what mattered. The answer is in the diff, so a
+    conversation that dropped the right things still reaches it; one that dropped the
+    rules or the change under review does not."""
+    model.reply = FINDINGS
+    model.tool_calls = [
+        {
+            "id": "call-{round}",
+            "type": "function",
+            "function": {"name": NAME, "arguments": '{"command": "ls dir{round}"}'},
+        }
+    ]
+    answers = []
+    for ceiling in (1, 12):
+        model.rounds_served = 0
+        sandbox = FakeSandbox(result(stdout="x" * 4000))
+        completion, _ = await complete_with_tools(
+            gateway,
+            None,
+            JobClass.REVIEW,
+            messages(),
+            Policy(max_tool_calls=ceiling),
+            None,
+            shell=shell(sandbox, tmp_path),
+            budget=6000,
+        )
+        answers.append(completion.text)
+    assert answers[0] == answers[1]
+
+
+async def test_exploration_does_not_carry_between_calls(
+    gateway: Gateway, model: FakeModelServer, tmp_path: Path
+) -> None:
+    """Verifying one finding must not start with the previous one's tool output in the
+    conversation. Each call builds its own from the messages it was handed."""
+    model.reply = FINDINGS
+    model.tool_calls = [
+        {
+            "id": "call-1",
+            "type": "function",
+            "function": {"name": NAME, "arguments": json.dumps({"command": "ls"})},
+        }
+    ]
+    given = messages()
+    for _ in range(2):
+        await complete_with_tools(
+            gateway,
+            None,
+            JobClass.REVIEW,
+            given,
+            Policy(max_tool_calls=2),
+            None,
+            shell=shell(FakeSandbox(), tmp_path),
+        )
+    # The caller's own messages are never mutated, so the second call starts where the
+    # first one did.
+    assert len(given) == 2
+    assert all(message.role in ("system", "user") for message in given)
+
+
+async def test_a_ceiling_part_way_through_a_turn_keeps_the_conversation_valid(
+    gateway: Gateway, model: FakeModelServer, tmp_path: Path
+) -> None:
+    """A server rejects a conversation where an assistant turn names a tool call that
+    no result answers, and it rejects the whole request, not the offending part."""
+    model.reply = FINDINGS
+    model.tool_calls = [
+        {
+            "id": f"call-{index}",
+            "type": "function",
+            "function": {"name": NAME, "arguments": json.dumps({"command": f"ls {index}"})},
+        }
+        for index in range(3)
+    ]
+    _, run = await complete_with_tools(
+        gateway,
+        None,
+        JobClass.REVIEW,
+        messages(),
+        Policy(max_tool_calls=2),
+        None,
+        answer=None,
+        shell=shell(FakeSandbox(), tmp_path),
+    )
+    assert run.calls == 2
+    for sent in model.requests:
+        for message in sent.get("messages", []):
+            if message.get("role") != "assistant" or not message.get("tool_calls"):
+                continue
+            asked = {call["id"] for call in message["tool_calls"]}
+            answered = {
+                one["tool_call_id"] for one in sent["messages"] if one.get("role") == "tool"
+            }
+            assert asked <= answered, f"{asked - answered} was asked for and never answered"

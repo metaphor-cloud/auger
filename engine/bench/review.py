@@ -8,10 +8,15 @@ else: the answer never reaches it.
     just bench-review                       every case, the configured reviewer
     just bench-review --tier 4              only the ones that need real understanding
     just bench-review --model gpt-oss-120b  a model that is not the configured one
+    just bench-review --working-set 16384   a different prompt size
+    just bench-review --code-tools          let the model read the repository itself
+    just bench-review --commands            let the model run commands in the sandbox
 
-Two numbers come back. Detection is the share of planted defects the model reported.
+Three numbers come back. Detection is the share of planted defects the model reported.
 Noise is how many findings it reported that were not the planted defect, per case: a
-model that reports everything detects everything and is worth nothing.
+model that reports everything detects everything and is worth nothing. Wall clock is
+the third, because a rig that finds everything and takes an hour is not usable, and
+every setting these flags reach trades one against the others.
 
 A finding counts as a detection when it points inside the planted span, give or take a
 few lines. Line proximity is a blunt rule and it is the honest one: asking a second model
@@ -34,10 +39,12 @@ from pathlib import Path
 from auger.config.loader import config_path, home_dir, load
 from auger.config.schema import Config, Policy
 from auger.jobs import diff_review
+from auger.jobs.shell import Shell
 from auger.llm import Gateway
 from auger.llm.supervisor import Supervisor
 from auger.models import Repository
 from auger.net import Allowlist
+from auger.sandbox import select
 from auger.store.db import Store
 
 CASES = Path(__file__).parent / "cases"
@@ -98,6 +105,7 @@ class Result:
     noise: int = 0
     reported: list[str] = field(default_factory=list)
     seconds: float = 0.0
+    tool_calls: int = 0
     error: str = ""
 
 
@@ -153,6 +161,17 @@ async def run_case(case: Case, config: Config, gateway: Gateway, policy: Policy)
         store = Store.open(Path(scratch) / "store")
         try:
             repository = build(case, Path(scratch) / "repo")
+            # The command tool is built the way the scheduler builds it, so measuring
+            # it here measures what a review actually gets.
+            shell = (
+                Shell(
+                    sandbox=select().sandbox,
+                    repository=repository.path,
+                    image=config.image,
+                )
+                if policy.commands and config.image
+                else None
+            )
             outcome = await diff_review.review(
                 store=store,
                 gateway=gateway,
@@ -160,9 +179,11 @@ async def run_case(case: Case, config: Config, gateway: Gateway, policy: Policy)
                 policy=policy,
                 target="HEAD",
                 graph=None,
+                shell=shell,
             )
             if outcome.run.error:
                 result.error = outcome.run.error
+            result.tool_calls = outcome.tools.calls if outcome.tools else 0
             for finding in outcome.findings:
                 if case.hit_by(finding.file, finding.line):
                     result.found = True
@@ -180,13 +201,15 @@ async def run_case(case: Case, config: Config, gateway: Gateway, policy: Policy)
     return result
 
 
-def report(results: list[Result], model: str) -> None:
+def report(results: list[Result], model: str, settings: str = "") -> None:
     """What the model did, over the cases it actually got to answer.
 
     A run that failed is not a miss. Counting a dead model server as a model that saw
     the defect and said nothing would report a number that means nothing.
     """
     print(f"\nreviewer: {model}")
+    if settings:
+        print(f"settings: {settings}")
     for tier in sorted({one.case.tier for one in results}):
         rows = [one for one in results if one.case.tier == tier]
         answered = [one for one in rows if not one.error]
@@ -208,9 +231,15 @@ def report(results: list[Result], model: str) -> None:
         return
     found = sum(1 for one in answered if one.found)
     noise = sum(one.noise for one in answered)
+    seconds = sum(one.seconds for one in answered)
+    calls = sum(one.tool_calls for one in answered)
     print(
         f"\ntotal: found {found} of {len(answered)}"
         f" ({found / len(answered):.0%}), {noise / len(answered):.1f} other findings per case"
+    )
+    print(
+        f"wall clock: {seconds:.0f}s over {len(answered)} cases,"
+        f" {seconds / len(answered):.0f}s each, {calls} tool calls"
     )
     if failed:
         print(f"{failed} runs failed and are not counted.")
@@ -222,6 +251,28 @@ async def main(argv: list[str]) -> int:
     parser.add_argument("--only", default="", help="Only cases whose name holds this.")
     parser.add_argument("--model", default="", help="A backend name from the config.")
     parser.add_argument("--repeat", type=int, default=1, help="Runs per case.")
+    parser.add_argument(
+        "--working-set",
+        type=int,
+        default=0,
+        help="Prompt size in tokens. 0 uses the configured default.",
+    )
+    parser.add_argument(
+        "--code-tools",
+        action="store_true",
+        help="Let the model read the repository for itself, in process.",
+    )
+    parser.add_argument(
+        "--commands",
+        action="store_true",
+        help="Let the model run commands in the analysis sandbox.",
+    )
+    parser.add_argument(
+        "--max-tool-calls",
+        type=int,
+        default=0,
+        help="Tool call ceiling. 0 uses the configured default.",
+    )
     arguments = parser.parse_args(argv)
 
     chosen = cases(arguments.tier, arguments.only)
@@ -249,8 +300,19 @@ async def main(argv: list[str]) -> int:
         if not health[backend].up:
             print(f"{backend} will not start: {health[backend].reason}")
             return 1
-        # No hints, no tools, no second model: this measures the reviewer.
-        policy = Policy(tools=[], adversary=False)
+        # No hints, no MCP tools, no second model: this measures the reviewer, and
+        # the flags decide which review path it measures.
+        settings: dict[str, object] = {
+            "tools": [],
+            "adversary": False,
+            "code_tools": arguments.code_tools,
+            "commands": arguments.commands,
+        }
+        if arguments.working_set:
+            settings["working_set_tokens"] = arguments.working_set
+        if arguments.max_tool_calls:
+            settings["max_tool_calls"] = arguments.max_tool_calls
+        policy = Policy(**settings)  # type: ignore[arg-type]
         for case in chosen:
             for _ in range(arguments.repeat):
                 # A long run outlives its server: something else stops it, or it runs
@@ -259,17 +321,28 @@ async def main(argv: list[str]) -> int:
                     print(f"{backend} stopped answering and will not start again")
                     break
                 result = await run_case(case, config, gateway, policy)
+                calls = f", {result.tool_calls} tool calls" if result.tool_calls else ""
                 print(
                     f"{'FOUND ' if result.found else 'missed'} {case.name}"
-                    f" ({result.noise} noise, {result.seconds:.0f}s)"
+                    f" ({result.noise} noise, {result.seconds:.0f}s{calls})"
                 )
                 results.append(result)
     finally:
         await gateway.aclose()
         supervisor.stop_all()
 
-    report(results, config.backend[backend].model or backend)
+    report(results, config.backend[backend].model or backend, describe(policy))
     return 0
+
+
+def describe(policy: Policy) -> str:
+    """The settings this run measured, so a number can be read months later."""
+    parts = [f"working set {policy.working_set_tokens} tokens"]
+    parts.append("code tools on" if policy.code_tools else "code tools off")
+    parts.append("commands on" if policy.commands else "commands off")
+    if policy.code_tools or policy.commands:
+        parts.append(f"ceiling {policy.max_tool_calls or 'none'}")
+    return ", ".join(parts)
 
 
 if __name__ == "__main__":

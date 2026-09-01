@@ -14,7 +14,7 @@ from auger.config import Config, Policy
 from auger.config.schema import Backend, JobClass, ProfileEntry
 from auger.jobs.prompt import CUT, fit, review_messages
 from auger.llm import Gateway
-from auger.llm.gateway import CHARS_PER_TOKEN, DEFAULT_PROMPT_CHARS, RESERVED_TOKENS
+from auger.llm.gateway import CHARS_PER_TOKEN, DEFAULT_WORKING_SET_TOKENS, RESERVED_TOKENS
 from auger.net import Allowlist
 
 
@@ -96,30 +96,44 @@ def gateway_for(context_tokens: int) -> Gateway:
     return Gateway(config, Allowlist.from_values(["http://127.0.0.1:9"]))
 
 
-def test_the_budget_follows_the_backends_context() -> None:
-    """Raising the context in config gives the reviewer the room, with no other change."""
-    small = gateway_for(8192).prompt_budget(JobClass.REVIEW)
-    large = gateway_for(65536).prompt_budget(JobClass.REVIEW)
-    assert large > small
-    assert small == (8192 - RESERVED_TOKENS) * CHARS_PER_TOKEN
+def test_the_budget_comes_from_the_task_not_the_machine() -> None:
+    """The working set is a property of the review. A machine with more memory does
+    not mean a review should read more code, and deriving one from the other is what
+    made every review fill a 131072 token context."""
+    small = gateway_for(131_072).prompt_budget(JobClass.REVIEW, working_set_tokens=8192)
+    large = gateway_for(131_072).prompt_budget(JobClass.REVIEW, working_set_tokens=16_384)
+    assert small == 8192 * CHARS_PER_TOKEN
+    assert large == 16_384 * CHARS_PER_TOKEN
+
+
+def test_a_larger_context_does_not_raise_the_budget() -> None:
+    """The ceiling clamps and never sets. This is the whole point of the separation."""
+    asked = 8192
+    for context in (32_768, 131_072, 262_144):
+        budget = gateway_for(context).prompt_budget(JobClass.REVIEW, working_set_tokens=asked)
+        assert budget == asked * CHARS_PER_TOKEN
+
+
+def test_a_context_too_small_for_the_working_set_clamps_it() -> None:
+    """A prompt over the context is not a smaller answer, it is no answer."""
+    budget = gateway_for(16_384).prompt_budget(JobClass.REVIEW, working_set_tokens=65_536)
+    assert budget == (16_384 - RESERVED_TOKENS) * CHARS_PER_TOKEN
 
 
 def test_a_context_smaller_than_the_reserve_asks_for_nothing() -> None:
-    assert gateway_for(2048).prompt_budget(JobClass.REVIEW) == 0
+    assert gateway_for(2048).prompt_budget(JobClass.REVIEW, working_set_tokens=8192) == 0
+
+
+def test_asking_for_nothing_uses_the_default_working_set() -> None:
+    budget = gateway_for(131_072).prompt_budget(JobClass.REVIEW)
+    assert budget == DEFAULT_WORKING_SET_TOKENS * CHARS_PER_TOKEN
 
 
 def test_no_backend_falls_back_rather_than_raising() -> None:
     config = Config()
     config.profile["balanced"].review = ProfileEntry(backend="")
     gateway = Gateway(config, Allowlist.from_values([]))
-    assert gateway.prompt_budget(JobClass.REVIEW) == DEFAULT_PROMPT_CHARS
-
-
-def test_the_budget_leaves_room_for_the_answer() -> None:
-    """The reply, the rules and the tool descriptions are not in the measured part."""
-    tokens = 32768
-    budget = gateway_for(tokens).prompt_budget(JobClass.REVIEW)
-    assert budget < tokens * CHARS_PER_TOKEN
+    assert gateway.prompt_budget(JobClass.REVIEW) == DEFAULT_WORKING_SET_TOKENS * CHARS_PER_TOKEN
 
 
 def test_a_backend_works_its_context_out_by_default() -> None:
@@ -129,17 +143,27 @@ def test_a_backend_works_its_context_out_by_default() -> None:
     assert Backend().context_tokens == 0
 
 
-def test_the_budget_prefers_what_the_server_was_actually_given() -> None:
+def test_the_server_record_is_the_ceiling_that_clamps() -> None:
     """The config holds no number when the context is worked out, so the supervisor's
-    record is the only thing that knows how much room a prompt really has."""
+    record is the only thing that knows how small the room really is."""
     gateway = gateway_for(0)
-    gateway.contexts["review"] = 65536
-    assert gateway.prompt_budget(JobClass.REVIEW) == (65536 - RESERVED_TOKENS) * CHARS_PER_TOKEN
+    gateway.contexts["review"] = 12_288
+    budget = gateway.prompt_budget(JobClass.REVIEW, working_set_tokens=65_536)
+    assert budget == (12_288 - RESERVED_TOKENS) * CHARS_PER_TOKEN
 
 
-def test_an_unstarted_backend_falls_back_rather_than_promising_nothing() -> None:
-    """Budget zero would leave the prompt unfitted, which is the failure this guards."""
-    assert gateway_for(0).prompt_budget(JobClass.REVIEW) == DEFAULT_PROMPT_CHARS
+def test_an_unknown_ceiling_clamps_nothing() -> None:
+    """A backend nothing has started says nothing about how much room there is, and an
+    unknown ceiling is not a reason to shrink a review that was sized deliberately."""
+    budget = gateway_for(0).prompt_budget(JobClass.REVIEW, working_set_tokens=16_384)
+    assert budget == 16_384 * CHARS_PER_TOKEN
+
+
+def test_the_default_working_set_is_small() -> None:
+    """Prompt evaluation is linear in tokens, so the default is a review's size and not
+    the machine's. A regression here costs minutes per review and nothing says so."""
+    assert Policy().working_set_tokens == DEFAULT_WORKING_SET_TOKENS
+    assert Policy().working_set_tokens <= 16_384
 
 
 def test_a_policy_and_a_backend_agree_by_default() -> None:

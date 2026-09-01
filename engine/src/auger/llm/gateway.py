@@ -40,9 +40,9 @@ CHARS_PER_TOKEN = 3
 #: thinking uses the context up: the request succeeds, the server reports `stop`, and the
 #: content comes back empty, which reads as the model having nothing to say.
 RESERVED_TOKENS = 8192
-#: When no backend answers for this job class there is nothing to ask, so fall back to a
-#: budget that suits the smallest context worth configuring.
-DEFAULT_PROMPT_CHARS = 24_000
+#: What one request fills when the caller asks for nothing in particular. It is a task
+#: size, not a hardware one: `Policy.working_set_tokens` is where a repository sets it.
+DEFAULT_WORKING_SET_TOKENS = 8192
 
 #: The smallest ceiling a review can answer under. A reasoning model spends most of its
 #: output thinking before it writes anything - one of the models the rig ships uses
@@ -254,25 +254,50 @@ class Gateway:
         self._said.add(key)
         self.log.warn(message, **data)
 
-    def prompt_budget(self, job_class: JobClass, profile_name: str = "balanced") -> int:
-        """How many characters of prompt the model that answers this can actually hold.
+    def prompt_budget(
+        self,
+        job_class: JobClass,
+        profile_name: str = "balanced",
+        working_set_tokens: int = 0,
+    ) -> int:
+        """How many characters of prompt one request should hold.
 
-        A prompt built without asking is a prompt the server rejects whole: llama.cpp
-        answers "request exceeds the available context size" and the review fails with
-        nothing to show for the work. Fitting the prompt to the model beforehand turns
-        that into less context, which is a review rather than a failure.
+        Two numbers meet here and only one of them is about the work. The working set
+        is what the task wants in the prompt, and the task decides it. The model's
+        context is what the machine can hold, and it is a ceiling: it lowers the
+        working set when the working set will not fit, and it never raises it.
+
+        Deriving the budget from the context instead is what made every review fill
+        131072 tokens - four minutes of prompt evaluation at the speed a local model
+        manages, spent carrying code the diff never needed.
+
+        The ceiling still has to be applied, because a prompt built without asking is
+        a prompt the server rejects whole: llama.cpp answers "request exceeds the
+        available context size" and the review fails with nothing to show for the work.
         """
+        wanted = working_set_tokens or DEFAULT_WORKING_SET_TOKENS
         try:
             resolved = self.resolve(self._routed(job_class), profile_name)
         except (MissingBackendError, HostedRefusedError):
-            return DEFAULT_PROMPT_CHARS
-        # What the server was actually given first, then what the config asked for, then
-        # a size that suits the smallest context worth configuring. Guessing high here
-        # is the failure that costs the whole request.
-        tokens = self.contexts.get(resolved.name) or resolved.backend.context_tokens
-        if not tokens:
-            return DEFAULT_PROMPT_CHARS
-        return max(0, tokens - RESERVED_TOKENS) * CHARS_PER_TOKEN
+            return wanted * CHARS_PER_TOKEN
+        # What the server was actually given first, then what the config asked for. No
+        # answer from either means nothing is known about the ceiling, and an unknown
+        # ceiling clamps nothing.
+        ceiling = self.contexts.get(resolved.name) or resolved.backend.context_tokens
+        if ceiling:
+            room = max(0, ceiling - RESERVED_TOKENS)
+            if room < wanted:
+                self._say_once(
+                    f"{resolved.name}:working-set",
+                    "working set clamped to the model's context",
+                    reason="working_set_clamped",
+                    backend=resolved.name,
+                    asked=wanted,
+                    using=room,
+                    context=ceiling,
+                )
+                wanted = room
+        return wanted * CHARS_PER_TOKEN
 
     def _limit(self, name: str, backend: Backend) -> asyncio.Semaphore:
         if name not in self._limits:

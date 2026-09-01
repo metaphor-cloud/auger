@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -49,6 +50,8 @@ class FakeModelServer:
         #: Tool calls the assistant asks for, until `tool_call_rounds` runs out.
         self.tool_calls: list[dict[str, Any]] = []
         self.tool_call_rounds = 99
+        #: How many tool-calling turns have been served, for `{round}` substitution.
+        self.rounds_served = 0
         self.concurrent = 0
         self.peak_concurrent = 0
         #: What a real server sends when a reply stopped at `max_tokens`.
@@ -73,7 +76,13 @@ class FakeModelServer:
             message: dict[str, Any] = {"role": "assistant", "content": content}
             if self.tool_calls and self.tool_call_rounds > 0:
                 self.tool_call_rounds -= 1
-                message["tool_calls"] = self.tool_calls
+                # `{round}` anywhere in a call becomes the turn number, so a test can
+                # ask for a different call each turn rather than the same one again.
+                turn = str(self.rounds_served)
+                self.rounds_served += 1
+                message["tool_calls"] = json.loads(
+                    json.dumps(self.tool_calls).replace("{round}", turn)
+                )
                 message["content"] = ""
             return JSONResponse(
                 {

@@ -143,6 +143,29 @@ nothing at all for three of them; adding `nomic-embed-code` reached 0.686 and fo
 something for every one. A reranker made it markedly worse, so the rig does not fetch
 one. The numbers are in [docs/models.md](docs/models.md).
 
+## Retrieve, then ask once
+
+A review is one focused request, not an agentic loop. The retrieval above runs first,
+deterministically and in parallel, and puts the surrounding code in the prompt before the
+model is asked anything. A coding agent loops partly *because* it lacks that and has to
+find things by hand.
+
+A loop is only viable when a turn is cheap. A coding agent's `read` and `grep` are
+in-process and take milliseconds, so twenty turns cost less than one model call. A tool
+that starts a container costs seconds per turn, and the arithmetic inverts. So the
+reviewer gets no tools unless a repository asks for them: `code_tools` for reading the
+index in process, `commands` for running something in the sandbox. Both are off, and
+`max_tool_calls` bounds the loop either way.
+
+The prompt is sized by the task and not by the machine. `working_set_tokens` says how
+large a prompt one review builds; the model's context is a ceiling that only ever lowers
+it. Bigger is not neutral - prompt evaluation is linear in tokens, and a long prompt also
+dilutes attention on the diff under review.
+
+Reviews run one at a time. Two reviews of different repositories share no prompt prefix,
+so on a two-slot server they evict each other's key and value cache and nearly every
+prompt is processed from scratch.
+
 ## Other agents
 
 A review that runs while a coding agent edits the same tree reads a half finished state.

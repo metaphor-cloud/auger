@@ -99,7 +99,10 @@ hints = "Treat a leaked credential as critical. Ignore style."
 | `hints` | `""` | Notes that live with the repository. Data, and they only set priorities. |
 | `system_prompt` | `""` | The whole system prompt. Empty means the one auger ships. |
 | `tools` | `[]` | MCP tools this repository may use, as `server.tool` or `server.*`. |
-| `max_tool_calls` | `8` | How many tool calls one review may make. |
+| `code_tools` | `false` | Let the reviewer read the repository itself: a file, a keyword search, a file's symbols, a function's callers. In process, so a call costs milliseconds. |
+| `commands` | `false` | Let the reviewer run commands in the sandbox. Each call starts a container, so a review that loops over them does not finish. |
+| `max_tool_calls` | `4` | How many tool calls one review may make. `0` removes the ceiling. |
+| `working_set_tokens` | `8192` | How large a prompt one review builds. The model's context only ever lowers it. |
 | `audit_hours` | `24` | How often a whole repository audit runs. `0` turns audits off. |
 | `adversary` | `false` | Have a second model judge what the first one found. |
 | `alternate` | `true` | Swap the two models between runs, so neither decides alone. |
@@ -236,13 +239,12 @@ allow_hosted = false
 
 ```toml
 [schedule]
-max_concurrent_reviews = 2
 quiet_hours = "22:00-07:00"
 ```
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `max_concurrent_reviews` | `2` | Reviews at once, across every repository. |
+| `max_concurrent_reviews` | `1` | Reviews at once, across every repository. |
 | `poll_seconds` | `60` | How often the rig looks for a new commit. |
 | `forge_poll_seconds` | `300` | How often it asks the forges for pull requests. |
 | `retry_seconds` | `120` | How long to wait before retrying a busy repository. |
@@ -252,6 +254,12 @@ quiet_hours = "22:00-07:00"
 | `idle_only` | `false` | Work only while nobody is using the machine. |
 | `idle_after_seconds` | `300` | How long the machine has to be left alone to count as idle. |
 | `model_poll_seconds` | `60` | How often it checks that the managed models are still running, and starts one that stopped. |
+
+`max_concurrent_reviews` is one for a reason worth reading before raising it. A model
+server reuses a slot's key and value cache when a new prompt shares a prefix with what
+that slot last held. Two reviews of different repositories share no prefix, so they land
+on the slots alternately and each evicts the other's cache. Prompt evaluation is a large
+share of a review's wall clock at local speeds, and a cache hit removes most of it.
 
 ## Forges
 
@@ -295,6 +303,25 @@ pass_env = ["GITHUB_PERSONAL_ACCESS_TOKEN"]
 
 An MCP server runs outside the sandbox and speaks for you. Nothing is allowed by default:
 a tool runs only when a policy's `tools` names it.
+
+### The reviewer's own tools
+
+Two switches on a policy, both off, and neither needs an MCP server.
+
+`code_tools` lets the reviewer read the repository for itself: a slice of a file, a
+keyword search over the index, a file's symbols, a function's callers. They answer in
+process out of the index that is already built, so a call costs milliseconds and nothing
+is executed.
+
+`commands` lets it run a command in the analysis sandbox. That call starts a container,
+which costs seconds, so a review that loops over them takes minutes rather than the two
+it takes without. Turn it on for a repository where running something settles a question
+reading cannot.
+
+Both are off because retrieval already puts the surrounding code in the prompt before the
+model is asked anything, and a loop has to beat that to earn its turns. `max_tool_calls`
+bounds the loop whichever is on; `0` removes the bound, and a review with a tool then
+need never end.
 
 An `http` server is a destination like any other, so it must be reachable: an enabled
 server joins the egress allowlist, and its traffic goes through the same guard as

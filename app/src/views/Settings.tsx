@@ -263,6 +263,19 @@ export default function SettingsView({
               />
             </Row>
             <Row
+              label="Prompt size"
+              help="How much one review puts in front of the model, in tokens. It is a property of the review, not of the machine: the model's context only ever lowers it. Bigger is slower and not better — prompt evaluation is linear in tokens, and a long prompt dilutes attention on the diff under review."
+              keywords="working_set_tokens prompt budget context"
+            >
+              <NumberSetting
+                value={settings.defaults.working_set_tokens}
+                title="tokens"
+                onSave={(working_set_tokens) =>
+                  void change("defaults", "", { working_set_tokens })
+                }
+              />
+            </Row>
+            <Row
               label="Temperature"
               help="0 makes the model pick its likeliest answer every time, which is what a structured review wants."
             >
@@ -886,6 +899,27 @@ export default function SettingsView({
                 }
               />
             </Block>
+            <Row
+              label="Let the reviewer run commands"
+              help="Each command starts a container, which costs seconds. A review that loops over those takes minutes rather than the two it takes without. Turn it on for a repository where running something settles a question reading cannot."
+              keywords="commands shell sandbox run_command"
+            >
+              <SwitchSetting
+                checked={settings.defaults.commands}
+                onSave={(commands) => void change("defaults", "", { commands })}
+              />
+            </Row>
+            <Row
+              label="Tool calls per review"
+              help="A ceiling the model cannot argue with. 0 removes it, and a review with a tool then need never end."
+              keywords="max_tool_calls"
+            >
+              <NumberSetting
+                value={settings.defaults.max_tool_calls}
+                title="calls"
+                onSave={(max_tool_calls) => void change("defaults", "", { max_tool_calls })}
+              />
+            </Row>
           </Group>
         </TabsContent>
 

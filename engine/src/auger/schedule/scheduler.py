@@ -264,12 +264,16 @@ class Scheduler:
     def _shell(self, task: Task) -> Shell | None:
         """The sandbox, as a tool the reviewer may call.
 
+        Only when the repository asked for one. A command tool turns every review into
+        an agentic loop whose turns each cost a container start, and the deterministic
+        retrieval path is both faster and the one that finishes.
+
         No image means no analysis image was built, and a command with nothing to run
         in is worse than no command at all: the model would spend its budget on calls
         that cannot work.
         """
         rig = self.rig
-        if not rig.config.image:
+        if not task.policy.commands or not rig.config.image:
             return None
         return Shell(
             sandbox=rig.selection.sandbox,

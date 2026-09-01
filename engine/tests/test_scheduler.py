@@ -366,3 +366,47 @@ async def test_the_gate_is_off_unless_it_is_turned_on(
     await scheduler.stop()
 
     assert [event for event, _ in rig.events][:1] == ["run.started"]
+
+
+# --- the command tool is something a repository asks for ------------------------------
+
+
+async def test_no_command_tool_unless_the_repository_asked(rig: StubRig, tmp_path: Path) -> None:
+    """A tool that starts a container per call turns every review into a loop whose
+    turns cost seconds. Measured on a 30B, the same diff took 123 seconds without it
+    and did not finish in ten minutes with it."""
+    rig.config.image = "ghcr.io/example/analysis:1"
+    scheduler = Scheduler(rig)
+    assert scheduler._shell(Task.review(Repository(path=tmp_path), Policy())) is None
+
+
+async def test_a_repository_that_asks_gets_one(rig: StubRig, tmp_path: Path) -> None:
+    rig.config.image = "ghcr.io/example/analysis:1"
+    scheduler = Scheduler(rig)
+    task = Task.review(Repository(path=tmp_path), Policy(commands=True))
+    assert scheduler._shell(task) is not None
+
+
+async def test_asking_for_one_with_no_image_still_gets_nothing(
+    rig: StubRig, tmp_path: Path
+) -> None:
+    """A command with nothing to run in is worse than no command: the model spends its
+    ceiling on calls that cannot work."""
+    rig.config.image = ""
+    scheduler = Scheduler(rig)
+    task = Task.review(Repository(path=tmp_path), Policy(commands=True))
+    assert scheduler._shell(task) is None
+
+
+def test_reviews_do_not_run_two_at_a_time_by_default() -> None:
+    """Two reviews of different repositories share no prompt prefix and land on the
+    server's slots alternately, so each evicts the other's cache and nearly every
+    prompt is processed from scratch."""
+    assert Config().schedule.max_concurrent_reviews == 1
+
+
+def test_a_review_has_a_tool_ceiling_by_default() -> None:
+    """Zero means the loop ends when the model stops asking, which is a review that
+    need never end. It stays available to anyone who sets it deliberately."""
+    assert Policy().max_tool_calls == 4
+    assert Policy(max_tool_calls=0).max_tool_calls == 0
