@@ -13,6 +13,7 @@ export type Policy = {
   system_prompt: string;
   hints: string;
   tools: string[];
+  code_tools: boolean;
   commands: boolean;
   max_tool_calls: number;
   working_set_tokens: number;

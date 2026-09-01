@@ -17,18 +17,21 @@ from auger.config.schema import Config
 
 #: Sections the window already edits with a form built for them. They are described
 #: here too, so nothing is invisible, and the window is free to skip them.
-HANDLED = ("roots", "defaults", "mcp", "forge", "exclude")
+#: Sections the window builds a form of its own for. They are still described, so a
+#: new key in one of them cannot go missing, but the generic list skips them rather
+#: than showing every one of them a second time.
+HANDLED = ("roots", "defaults", "mcp", "forge", "exclude", "schedule", "codegraph")
 
 #: What a control can be drawn for.
 KINDS = {"boolean": "boolean", "integer": "integer", "number": "number", "string": "string"}
 
 TITLES = {
-    "schedule": "How hard it works",
-    "egress": "What it may reach",
+    "schedule": "Schedule",
+    "egress": "Network",
     "codegraph": "Call graph",
-    "models": "Where the weights come from",
+    "models": "Model downloads",
     "defaults": "Every repository",
-    "image": "The analysis image",
+    "image": "Analysis image",
 }
 
 
@@ -123,8 +126,8 @@ def describe(config: Config) -> tuple[list[dict[str, Any]], list[str]]:
         sections.append(
             {
                 "name": "file",
-                "title": "The file itself",
-                "describes": "Settings that sit at the top of the config file.",
+                "title": "Other",
+                "describes": "Settings without a form of their own.",
                 "fields": loose,
             }
         )

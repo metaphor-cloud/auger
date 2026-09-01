@@ -71,13 +71,16 @@ export function SwitchSetting({
 }: {
   checked: boolean;
   disabled?: boolean;
+  /** A word beside the switch, for a control whose label alone is ambiguous. A
+   *  sentence does not go here: the row already has one under the label, and a second
+   *  copy renders on top of the switch. */
   note?: string;
   onSave: (next: boolean) => void;
 }) {
   return (
     <span className="flex items-center gap-2">
       <Switch checked={checked} disabled={disabled} onCheckedChange={onSave} />
-      {note && <span className="text-xs text-text-secondary">{note}</span>}
+      {note && <span className="whitespace-nowrap text-xs text-text-secondary">{note}</span>}
     </span>
   );
 }

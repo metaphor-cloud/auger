@@ -34,7 +34,6 @@ function Control({
     return (
       <SwitchSetting
         checked={field.value === true}
-        note={field.describes}
         onSave={(next) => onSave(field.path, next)}
       />
     );
@@ -101,7 +100,9 @@ export default function EverySetting({
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      {(schema?.sections ?? []).map((section) => (
+      {(schema?.sections ?? [])
+        .filter((section) => !(schema?.handled ?? []).includes(section.name))
+        .map((section) => (
         <Group key={section.name} title={section.title} description={section.describes}>
           {section.fields.map((field) => (
             <Row
@@ -114,7 +115,7 @@ export default function EverySetting({
             </Row>
           ))}
         </Group>
-      ))}
+        ))}
     </>
   );
 }

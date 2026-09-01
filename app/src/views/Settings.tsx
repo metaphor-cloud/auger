@@ -14,7 +14,6 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  Textarea,
 } from "@metaphor-cloud/ui";
 import { useCallback, useEffect, useState } from "react";
 
@@ -22,14 +21,12 @@ import {
   changeExclusion,
   changeSettings,
   checkTools,
-  getConfigText,
   getForges,
   getSettings,
   getTools,
   setCodegraph,
   setSetting,
   signInTool,
-  writeConfigText,
 } from "../engine";
 import EverySetting from "../parts/EverySetting";
 import PromptEditor from "../parts/PromptEditor";
@@ -52,15 +49,15 @@ const SECTIONS = [
 const MODES: readonly Mode[] = ["off", "draft", "complete"] as const;
 const TRANSPORTS = ["stdio", "http"] as const;
 
-/** Every polling interval, named. A key with no entry here used to reach the screen
- *  as raw snake case, which is how `verify_poll_seconds` ended up on show. */
+/** Every polling interval, named. A key with no entry here reaches the screen as raw
+ *  snake case. */
 const POLLS = [
-  { key: "poll_seconds", label: "Check for new commits", help: "Seconds between asking each repository whether anything changed." },
-  { key: "forge_poll_seconds", label: "Check pull requests", help: "Seconds between asking the connected forges for work assigned to you." },
-  { key: "audit_poll_seconds", label: "Check for due audits", help: "Seconds between looking for a repository whose full audit is due." },
-  { key: "model_poll_seconds", label: "Check model servers", help: "Seconds between asking the model servers whether they still answer." },
-  { key: "verify_poll_seconds", label: "Check for findings to judge", help: "Seconds between looking for findings nobody has checked yet." },
-  { key: "retry_seconds", label: "Retry a busy repository", help: "Seconds to wait before trying a repository that was busy or had no model." },
+  { key: "poll_seconds", label: "New commits", help: "Seconds between checks for a new commit." },
+  { key: "forge_poll_seconds", label: "Pull requests", help: "Seconds between checks for pull requests on connected forges." },
+  { key: "audit_poll_seconds", label: "Due audits", help: "Seconds between checks for a repository due a full audit." },
+  { key: "model_poll_seconds", label: "Model servers", help: "Seconds between checks that the model servers still answer." },
+  { key: "verify_poll_seconds", label: "Findings to check", help: "Seconds between checks for findings the second model has not judged." },
+  { key: "retry_seconds", label: "Retry after busy", help: "Seconds to wait before retrying a repository that was busy." },
 ] as const;
 
 /** A config key holds dots of its own, so it goes into the path quoted. */
@@ -94,8 +91,6 @@ export default function SettingsView({
   const [pattern, setPattern] = useState("");
   const [root, setRoot] = useState("");
   const [server, setServer] = useState<NewServer>(EMPTY_SERVER);
-  const [raw, setRaw] = useState<string | null>(null);
-  const [rawSaved, setRawSaved] = useState(true);
   const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
@@ -165,26 +160,6 @@ export default function SettingsView({
     setServers((await getTools()).servers);
   }
 
-  async function openRaw() {
-    try {
-      setRaw(await getConfigText());
-      setRawSaved(true);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    }
-  }
-
-  async function saveRaw() {
-    if (raw === null) return;
-    try {
-      setSettings(await writeConfigText(raw));
-      setRawSaved(true);
-      setError(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    }
-  }
-
   if (settings === null) {
     return <p className="text-xs text-text-secondary">{error ?? "Loading"}</p>;
   }
@@ -194,7 +169,7 @@ export default function SettingsView({
 
   return (
     <>
-      <PageTitle title="Settings" description={<Mono>{settings.config_path}</Mono>} />
+      <PageTitle title="Settings" />
 
       {error && (
         <Alert variant="danger" className="mb-4">
@@ -242,13 +217,13 @@ export default function SettingsView({
           <Models setup={setup} nested />
 
           <Group
-            title="Generation"
-            description="How the reviewer is asked to answer. Leave these alone unless an answer is coming back wrong."
+            title="Answers"
+            description="How the reviewer replies. Change these only if answers come back wrong."
             keywords="tokens temperature profile sampling"
           >
             <Row
               label="Response limit"
-              help="The longest answer the model may write, in tokens. 0 lets it finish, and the model's context decides — which is what you want unless an answer is running away. A number below 4096 is raised to it: a reasoning model spends most of its output thinking, and a ceiling under that cuts the findings off before the first one is written. A number above the context is ignored, because the context stops it first either way."
+              help="The longest answer the model may write, in tokens. 0 means no limit, which is usually right. Anything under 4096 is treated as 4096."
               keywords="max_tokens"
             >
               <NumberSetting
@@ -264,7 +239,7 @@ export default function SettingsView({
             </Row>
             <Row
               label="Prompt size"
-              help="How much one review puts in front of the model, in tokens. It is a property of the review, not of the machine: the model's context only ever lowers it. Bigger is slower and not better — prompt evaluation is linear in tokens, and a long prompt dilutes attention on the diff under review."
+              help="How much code one review sends the model, in tokens. Smaller is faster. The model's context can lower this but never raise it."
               keywords="working_set_tokens prompt budget context"
             >
               <NumberSetting
@@ -277,7 +252,7 @@ export default function SettingsView({
             </Row>
             <Row
               label="Temperature"
-              help="0 makes the model pick its likeliest answer every time, which is what a structured review wants."
+              help="0 makes the model pick its most likely answer every time. Leave it there for reviews."
             >
               <NumberSetting
                 value={Number(settings.profile_limits?.review_temperature ?? 0)}
@@ -292,7 +267,7 @@ export default function SettingsView({
             {(settings.profile_limits?.names.length ?? 0) > 1 && (
               <Row
                 label="Model profile"
-                help="Which set of model assignments to use. A job asks for a role, and the profile decides which server answers."
+                help="Which set of models to use."
               >
                 <ChoiceSetting
                   value={settings.defaults.model_profile}
@@ -304,13 +279,13 @@ export default function SettingsView({
           </Group>
 
           <Group
-            title="Access"
-            description="Where weights come from, and whether your code may leave this machine."
+            title="Downloads and privacy"
+            description="Where model files come from, and whether your code may leave this machine."
             keywords="hugging face token hosted egress"
           >
             <Row
               label="Hugging Face token"
-              help="The name of an environment variable holding your token. Auger reads the variable, never the value in this file."
+              help="The name of an environment variable holding your token. Auger reads the variable, never the token itself."
               keywords="token_env"
             >
               <TextSetting
@@ -322,7 +297,7 @@ export default function SettingsView({
             </Row>
             <Row
               label="Allow hosted models"
-              help="Off by default. A hosted model means your code is sent to somebody else's server, and the backend must be marked hosted as well."
+              help="A hosted model sends your code to someone else's server. The model has to be marked hosted too."
               keywords="allow_hosted"
             >
               <SwitchSetting
@@ -341,12 +316,12 @@ export default function SettingsView({
         <TabsContent value="review">
           <Group
             title="What gets reviewed"
-            description="Applies to every repository. An override below takes precedence."
+            description="Applies to every repository. Overrides below win where they disagree."
             keywords="defaults policy"
           >
             <Row
               label="Pull request reviews"
-              help="Off reviews nothing. Draft leaves a review for you to submit. Complete posts it under your name."
+              help="Off posts nothing. Draft leaves a review for you to submit. Complete posts it as you."
               keywords="mode"
             >
               <ChoiceSetting
@@ -357,7 +332,7 @@ export default function SettingsView({
             </Row>
             <Row
               label="Review pull requests assigned to you"
-              help="Auger watches the forges you have connected and reviews what lands on your plate."
+              help="Reviews pull requests assigned to you, or waiting on your review, on connected forges."
             >
               <SwitchSetting
                 checked={settings.defaults.auto_review_assigned_prs}
@@ -366,7 +341,7 @@ export default function SettingsView({
             </Row>
             <Row
               label="Full repository audit"
-              help="How many hours between reading a whole repository rather than a single change. 0 never does."
+              help="Hours between reading a whole repository instead of one change. 0 turns it off."
               keywords="audit_hours"
             >
               <NumberSetting
@@ -377,7 +352,7 @@ export default function SettingsView({
             </Row>
             <Row
               label="Wait after the last edit"
-              help="Seconds a repository must sit still before it is reviewed, so you are not reviewed mid-keystroke."
+              help="Seconds a repository must go untouched before it is reviewed."
               keywords="idle_seconds"
             >
               <NumberSetting
@@ -388,7 +363,7 @@ export default function SettingsView({
             </Row>
             <Row
               label="Queue priority"
-              help="Which repositories go first when several are waiting. 1 is first, 9 is last."
+              help="Which repositories go first. 1 is first, 9 is last."
             >
               <NumberSetting
                 value={settings.defaults.priority}
@@ -399,12 +374,12 @@ export default function SettingsView({
 
           <Group
             title="Second opinion"
-            description="A second model reads the findings and throws out the ones it cannot stand up."
+            description="A second model checks the findings and dismisses the ones it cannot support."
             keywords="adversary verify judge"
           >
             <Row
               label="Check findings with a second model"
-              help="Needs a second model set up under Models. It runs when the queue is quiet."
+              help="Needs a second model set up in Models. Runs when the queue is quiet."
             >
               <SwitchSetting
                 checked={settings.defaults.adversary}
@@ -413,7 +388,7 @@ export default function SettingsView({
             </Row>
             <Row
               label="Swap the two models each run"
-              help="The reviewer and the checker trade places, so one model's blind spots do not decide alone."
+              help="The reviewer and the checker trade places between runs."
               keywords="alternate"
             >
               <SwitchSetting
@@ -425,13 +400,7 @@ export default function SettingsView({
 
           <Group
             title="System prompt"
-            description={
-              <>
-                What the reviewer is told, word for word. Start from a preset or write your
-                own. A repository&apos;s <code>hints</code> are separate and are read as
-                information, not as instructions.
-              </>
-            }
+            description="What the reviewer is told, word for word. Start from a preset or write your own."
           >
             <PromptEditor
               rules={settings.defaults.system_prompt}
@@ -441,7 +410,7 @@ export default function SettingsView({
 
           <Group
             title="Overrides"
-            description="Settings for one organisation or one repository, on top of the defaults above."
+            description="Settings for one organisation or repository, on top of the defaults above."
           >
             {settings.levels.length === 0 ? (
               <p className="text-xs text-text-secondary">
@@ -533,8 +502,8 @@ export default function SettingsView({
         {/* ----------------------------------------------------------------- where */}
         <TabsContent value="where">
           <Group
-            title="Where to look"
-            description="Auger walks each of these directories. A folder holding .git is a repository, and the walk stops there."
+            title="Folders to watch"
+            description="Auger looks inside these folders. Any folder with a .git in it is a repository."
           >
             {settings.roots.length === 0 && (
               <p className="mb-3 text-xs text-text-secondary">
@@ -620,7 +589,7 @@ export default function SettingsView({
           </Group>
 
           <Group
-            title="Skipped repositories"
+            title="Ignored"
             description={
               <>
                 A path, a glob, or a forge key such as <code>github.com/acme</code>. An excluded
@@ -678,7 +647,7 @@ export default function SettingsView({
         <TabsContent value="integrations">
                   <Group
             title="Forges"
-            description="A connected forge is added to the network allowlist, and its pull requests become reviewable."
+            description="Connect a forge to review its pull requests."
           >
             <Table>
               <TableHeader>
@@ -729,7 +698,7 @@ export default function SettingsView({
           </Group>
                   <Group
             title="MCP servers"
-            description="A server runs outside the sandbox and acts as you. What it returns is read as information, never as instructions."
+            description="A server runs outside the sandbox and acts as you. What it returns is treated as information, never as instructions."
             action={
               <Button
                 size="sm"
@@ -875,15 +844,15 @@ export default function SettingsView({
           </Group>
 
           <Group
-            title="Tool access"
-            description="A review can call a tool only when it is named here."
+            title="Tools"
+            description="What the reviewer may use while it reviews. All off unless you turn them on."
           >
-            <Row label="Allowed now" help="What a review can reach with the current list.">
+            <Row label="Allowed now" help="What a review can reach right now.">
               <Mono>{allowed.length ? allowed.join(", ") : "nothing"}</Mono>
             </Row>
             <Block
               label="Allow these"
-              help="One tool as server.tool, or every tool on a server as server.*, separated by commas."
+              help="One tool as server.tool, or a whole server as server.*. Separate them with commas."
               keywords="tools allowlist"
             >
               <TextSetting
@@ -900,8 +869,18 @@ export default function SettingsView({
               />
             </Block>
             <Row
+              label="Let the reviewer read the repository"
+              help="Lets it open a file, search the code, and list what a file defines while it reviews. Answers come out of the index in milliseconds."
+              keywords="code_tools read search symbols callers"
+            >
+              <SwitchSetting
+                checked={settings.defaults.code_tools}
+                onSave={(code_tools) => void change("defaults", "", { code_tools })}
+              />
+            </Row>
+            <Row
               label="Let the reviewer run commands"
-              help="Each command starts a container, which costs seconds. A review that loops over those takes minutes rather than the two it takes without. Turn it on for a repository where running something settles a question reading cannot."
+              help="Each command starts a container and takes seconds, so reviews take minutes instead of about two. Worth it only where running something answers a question reading cannot."
               keywords="commands shell sandbox run_command"
             >
               <SwitchSetting
@@ -911,7 +890,7 @@ export default function SettingsView({
             </Row>
             <Row
               label="Tool calls per review"
-              help="A ceiling the model cannot argue with. 0 removes it, and a review with a tool then need never end."
+              help="How many tool calls one review may make. 0 means no limit."
               keywords="max_tool_calls"
             >
               <NumberSetting
@@ -925,13 +904,13 @@ export default function SettingsView({
 
         <TabsContent value="advanced">
           <Group
-            title="When Auger works"
-            description="Reviewing holds two cores and tens of gigabytes. These decide when it is allowed to."
+            title="Schedule"
+            description="When reviews are allowed to run. A review uses two cores and tens of gigabytes."
             keywords="schedule idle quiet hours concurrency"
           >
             <Row
               label="Only work when you are away"
-              help="Nothing is reviewed while you are at the keyboard, so the fans stay down while you work."
+              help="Nothing is reviewed while you are using the machine."
               keywords="idle_only"
             >
               <SwitchSetting
@@ -941,7 +920,7 @@ export default function SettingsView({
             </Row>
             <Row
               label="Count as away after"
-              help="Seconds the machine must be untouched before Auger treats you as gone."
+              help="Seconds the machine must be untouched to count as away."
               keywords="idle_after_seconds"
             >
               <NumberSetting
@@ -964,7 +943,7 @@ export default function SettingsView({
             </Row>
             <Row
               label="Reviews at once"
-              help="More finishes the queue sooner and takes more of the machine."
+              help="More at once uses more of the machine. One is fastest per review: two reviews of different repositories evict each other's prompt cache."
               keywords="max_concurrent_reviews"
             >
               <NumberSetting
@@ -975,8 +954,8 @@ export default function SettingsView({
           </Group>
 
           <Group
-            title="How often Auger checks"
-            description="Polling intervals. The defaults suit a machine you work on all day."
+            title="Timing"
+            description="How often Auger looks for work. The defaults suit a machine you use all day."
             keywords="poll interval seconds timing"
           >
             {POLLS.map((one) => (
@@ -992,7 +971,7 @@ export default function SettingsView({
 
           <Group
             title="Call graph"
-            description="A real call graph tells the reviewer who calls a symbol that changed."
+            description="Tells the reviewer who calls a symbol that changed."
             keywords="codegraph retrieval"
           >
             <Row
@@ -1000,7 +979,7 @@ export default function SettingsView({
               help={
                 settings.codegraph_available
                   ? "Where a repository has an index, changed symbols come with their callers."
-                  : "codegraph is not installed on this machine."
+                  : "codegraph is not installed."
               }
             >
               <SwitchSetting
@@ -1015,46 +994,6 @@ export default function SettingsView({
             </Row>
           </Group>
 
-          <Group
-            title="Config file"
-            description="The whole file, including anything no form covers. A file that fails to parse is not saved."
-            action={
-              raw === null ? (
-                <Button size="sm" variant="secondary" onClick={() => void openRaw()}>
-                  Open
-                </Button>
-              ) : (
-                <div className="flex gap-2">
-                  <Button size="sm" variant="ghost" onClick={() => setRaw(null)}>
-                    Close
-                  </Button>
-                  <Button size="sm" disabled={rawSaved} onClick={() => void saveRaw()}>
-                    {rawSaved ? "Saved" : "Save"}
-                  </Button>
-                </div>
-              )
-            }
-          >
-            {raw === null ? (
-              <p className="text-xs text-text-secondary">
-                <Mono>{settings.config_path}</Mono>
-              </p>
-            ) : (
-              <Textarea
-                rows={22}
-                className="font-mono text-[11px]"
-                value={raw}
-                onChange={(event) => {
-                  setRaw(event.target.value);
-                  setRawSaved(false);
-                }}
-              />
-            )}
-          </Group>
-                  <p className="mb-3 text-xs text-text-secondary">
-            Every setting there is, listed straight from the engine. The sections above
-            group the ones people reach for. This one leaves nothing out.
-          </p>
           <EverySetting version={version} onSave={save} />
         </TabsContent>
         </div>

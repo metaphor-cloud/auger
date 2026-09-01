@@ -59,7 +59,7 @@ export default function PromptEditor({
               key={preset.key}
               title={preset.summary}
               onClick={() => setDraft(preset.system)}
-              className="rounded-full border px-2.5 py-0.5 text-[11px] transition-colors"
+              className="whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] leading-none transition-colors"
               style={{
                 borderColor: on ? "var(--color-accent)" : "var(--color-border-subtle)",
                 color: on ? "var(--color-accent)" : "var(--color-text-tertiary)",
@@ -87,8 +87,8 @@ export default function PromptEditor({
       {missing.length > 0 && (
         <Alert variant="warning">
           <AlertDescription>
-            This prompt no longer asks for {missing.join(", ")}. The reviewer will answer,
-            and nothing will be able to read it, so every run will record a bad answer.
+            This prompt no longer asks for {missing.join(", ")}. Auger will not be able to
+            read the reviewer's answers, and every run will record a bad answer.
           </AlertDescription>
         </Alert>
       )}
@@ -107,9 +107,9 @@ export default function PromptEditor({
           disabled={draft.trim() === shipped.trim()}
           onClick={() => setDraft(shipped)}
         >
-          Back to the one auger ships
+          Reset to default
         </Button>
-        {!saved && <span className="text-[11px] text-warning">Not saved yet</span>}
+        {!saved && <span className="text-[11px] text-warning">Not saved</span>}
       </div>
     </div>
   );
