@@ -15,6 +15,7 @@ import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
@@ -38,6 +39,61 @@ PARTIAL = ".part"
 
 class DownloadError(RuntimeError):
     pass
+
+
+#: The two checksums a model repository publishes, and what they are worth.
+#:
+#: A large file is kept out of line and carries a sha256. A small one is kept in the git
+#: tree and carries only the git object hash of its contents. Both come from the API
+#: host, which this path matches exactly.
+#:
+#: The weaker of the two is not the only thing standing behind a small file: a file with
+#: no sha256 is one the API host serves itself rather than handing to a delivery host, so
+#: the exact host match already covers it and the hash is a second check on top. A file
+#: with neither is not fetched at all.
+SHA256 = "sha256"
+GIT_BLOB = "git-blob"
+
+
+@dataclass(frozen=True)
+class Digest:
+    algorithm: str
+    value: str
+    #: A git object hash covers a header carrying the length, so that hash needs the
+    #: size the API published. A sha256 does not.
+    size: int = 0
+
+    @classmethod
+    def sha256(cls, value: str) -> Digest:
+        return cls(SHA256, value.removeprefix("sha256:").strip().lower())
+
+    @classmethod
+    def git_blob(cls, value: str, size: int) -> Digest:
+        return cls(GIT_BLOB, value.strip().lower(), size)
+
+    @classmethod
+    def published(cls, entry: dict[str, Any]) -> Digest:
+        """The best checksum one entry of a repository tree publishes."""
+        lfs = entry.get("lfs")
+        oid = str((lfs or {}).get("oid", "")) if isinstance(lfs, dict) else ""
+        if oid:
+            return cls.sha256(oid)
+        size = entry.get("size") or 0
+        return cls.git_blob(str(entry.get("oid", "")), int(size))
+
+    @property
+    def empty(self) -> bool:
+        return not self.value
+
+    def start(self) -> Any:
+        if self.algorithm == GIT_BLOB:
+            hasher = hashlib.sha1(usedforsecurity=False)
+            hasher.update(b"blob %d\0" % self.size)
+            return hasher
+        return hashlib.sha256()
+
+    def matches(self, hasher: Any) -> bool:
+        return bool(hasher.hexdigest() == self.value)
 
 
 @dataclass(frozen=True)
@@ -80,7 +136,7 @@ async def fetch(
     http: httpx.AsyncClient,
     url: str,
     destination: Path,
-    sha256: str,
+    checksum: Digest | str,
     on_progress: Callable[[Progress], None] | None = None,
     log: Logger | None = None,
     token: str | None = None,
@@ -90,21 +146,24 @@ async def fetch(
     A checksum is required. Without one there is nothing to check the delivery host
     against, and a file that looks complete but is wrong fails later, inside a review,
     with a message that says nothing useful.
+
+    A plain string is read as a sha256, which is what a release asset publishes.
     """
     log = (log or create_logger("download")).bind(component="download")
+    wanted = Digest.sha256(checksum) if isinstance(checksum, str) else checksum
     if destination.exists():
         log.info("already present", path=str(destination))
         return destination
-    if not sha256:
+    if wanted.empty:
         raise DownloadError(f"{destination.name} has no published checksum")
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     partial = destination.with_suffix(destination.suffix + PARTIAL)
-    digest, already = _resume_point(partial)
+    digest, already = _resume_point(partial, wanted)
     log.info("download started", name=destination.name, url=safe_url(url), resume_from=already)
     try:
         received, digest = await _stream(
-            http, url, partial, digest, destination.name, already, on_progress, log, token
+            http, url, partial, digest, destination.name, already, on_progress, log, token, wanted
         )
     except DownloadError:
         partial.unlink(missing_ok=True)
@@ -113,13 +172,14 @@ async def fetch(
         partial.unlink(missing_ok=True)
         raise DownloadError(f"could not fetch {destination.name}: {error}") from error
 
-    if digest.hexdigest() != sha256.removeprefix("sha256:"):
+    if not wanted.matches(digest):
         partial.unlink(missing_ok=True)
         log.error(
             "download refused",
             reason="checksum_mismatch",
             name=destination.name,
-            expected=sha256,
+            algorithm=wanted.algorithm,
+            expected=wanted.value,
         )
         raise DownloadError(f"{destination.name} does not match its published checksum")
     partial.replace(destination)
@@ -127,13 +187,14 @@ async def fetch(
     return destination
 
 
-def _resume_point(partial: Path) -> tuple[hashlib._Hash, int]:
+def _resume_point(partial: Path, wanted: Digest) -> tuple[Any, int]:
     """Hash whatever was already written, so a resumed file still checks out.
 
     Weights are tens of gigabytes. Starting again after a dropped connection at ninety
-    per cent is the difference between a setup that finishes and one that never does.
+    per cent is the difference between a setup that finishes and one that never does,
+    and a paused download is a dropped connection the user asked for.
     """
-    digest = hashlib.sha256()
+    digest = wanted.start()
     if not partial.exists():
         return digest, 0
     already = 0
@@ -148,13 +209,14 @@ async def _stream(
     http: httpx.AsyncClient,
     url: str,
     partial: Path,
-    digest: hashlib._Hash,
+    digest: Any,
     name: str,
     already: int,
     on_progress: Callable[[Progress], None] | None,
     log: Logger,
     token: str | None = None,
-) -> tuple[int, hashlib._Hash]:
+    wanted: Digest | None = None,
+) -> tuple[int, Any]:
     """Follow the redirects on the GET itself, checking every hop.
 
     A separate HEAD would be one more round trip, and not every delivery host answers
@@ -186,7 +248,8 @@ async def _stream(
                 # The host ignored the range. Start again rather than write a file that
                 # holds the same bytes twice.
                 log.info("download restarted", name=name, reason="no_range_support")
-                digest, already, received = hashlib.sha256(), 0, 0
+                fresh = wanted.start() if wanted is not None else hashlib.sha256()
+                digest, already, received = fresh, 0, 0
             total = int(response.headers.get("content-length", 0)) + already
             with partial.open("ab" if resumed else "wb") as handle:
                 async for chunk in response.aiter_bytes(CHUNK):
