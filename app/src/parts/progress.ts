@@ -42,7 +42,18 @@ export const KIND: Record<string, string> = {
   verify: "verify",
 };
 
+/** Whether the model is still reading the prompt rather than writing an answer.
+ *
+ * Both happen inside one phase, and on a large prompt the reading is the longer half:
+ * a count that is rising while no token has been written yet is the difference between
+ * a slow model and a stuck one.
+ */
+export function reading(step: Step): boolean {
+  return step.phase === "asking" && step.tokens === 0 && step.total > 0;
+}
+
 export function phaseOf(step: Step): string {
+  if (reading(step)) return "reading the prompt";
   return PHASE[step.phase] ?? step.phase;
 }
 
@@ -84,6 +95,7 @@ export function rate(step: Step, now: number): string {
 /** The count beside a phase, when there is one worth showing. */
 export function counted(step: Step): string {
   if (step.tokens > 0) return `${step.tokens} tokens`;
+  if (reading(step)) return `${step.done}/${step.total} tokens read`;
   if (step.total > 0) return `${step.done}/${step.total}`;
   return "";
 }

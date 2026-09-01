@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Activity, Run, Step } from "../types";
-import { counted, fraction, kindOf, line, phaseOf, rate, resting, since } from "./progress";
+import { counted, fraction, kindOf, line, phaseOf, rate, reading, resting, since } from "./progress";
 
 const NOW = 1_700_000_000;
 
@@ -149,5 +149,26 @@ describe("resting", () => {
   it("says it is starting before the workers exist", () => {
     expect(resting(activity({ ready: false }), NOW)).toBe("Starting up");
     expect(resting(null, NOW)).toBe("Connecting");
+  });
+});
+
+describe("reading the prompt", () => {
+  it("is what a rising count with no answer yet means", () => {
+    const prompt = step({ phase: "asking", tokens: 0, done: 20_000, total: 46_794 });
+    expect(reading(prompt)).toBe(true);
+    expect(phaseOf(prompt)).toBe("reading the prompt");
+    expect(counted(prompt)).toBe("20000/46794 tokens read");
+    expect(fraction(prompt)).toBeCloseTo(0.4274, 3);
+  });
+
+  it("gives way to the answer as soon as one token exists", () => {
+    const answering = step({ phase: "asking", tokens: 1, done: 0, total: 0 });
+    expect(reading(answering)).toBe(false);
+    expect(phaseOf(answering)).toBe("asking the model");
+    expect(counted(answering)).toBe("1 tokens");
+  });
+
+  it("does not claim a countable phase elsewhere is a prompt", () => {
+    expect(reading(step({ phase: "embed", done: 3, total: 9 }))).toBe(false);
   });
 });

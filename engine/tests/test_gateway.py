@@ -350,3 +350,42 @@ async def test_a_server_that_sends_no_counts_adds_nothing(
         assert gateway.usage["embed"].prompt_tokens == 5
     finally:
         await gateway.aclose()
+
+
+async def test_reading_a_large_prompt_is_reported(gateway: Gateway, fake: FakeModelServer) -> None:
+    """The longest silence in a real run is a large prompt being read: minutes with no
+    token of the answer written yet, inside the phase the answer arrives in."""
+    said: list[dict[str, object]] = []
+    ticking = itertools.count(1000.0, EVERY).__next__
+    activity = Activity(lambda _event, data: said.append(dict(data)), ticking)
+    watch = activity.begin("/repo/alpha", "acme/alpha", "diff_review")
+    watch.phase("asking")
+    fake.prompt_tokens = 40_000
+    await gateway.complete(JobClass.REVIEW, HELLO, watch=watch)
+
+    assert fake.requests[0]["return_progress"] is True
+    read = [(int(data["done"]), int(data["total"])) for data in said]  # type: ignore[call-overload]
+    assert (20_000, 40_000) in read, f"the prompt was never counted: {read}"
+    # And once the answer starts, the count is no longer about the prompt.
+    assert watch.step.total == 0
+    assert watch.step.tokens > 0
+
+
+async def test_a_hosted_backend_is_not_asked_for_progress(
+    fake: FakeModelServer, serve: Serve
+) -> None:
+    """`return_progress` is a local server's field. A hosted API refuses a field it does
+    not know, and a refused request is a lost review."""
+    base = await serve(fake.app())
+    config = Config(
+        backend={"review": Backend(url=f"{base}/v1", model="review-model", hosted=True)},
+        profile={"balanced": Profile(review=ProfileEntry(backend="review"))},
+    )
+    config.egress.allow_hosted = True
+    gateway = Gateway(config, Allowlist.from_values([base]))
+    try:
+        await gateway.complete(JobClass.REVIEW, HELLO)
+    finally:
+        await gateway.aclose()
+    assert "return_progress" not in fake.requests[0]
+    assert fake.requests[0]["stream"] is True

@@ -89,6 +89,12 @@ A server that cannot stream cannot serve a chat job class here. A server that se
 `usage` block still works: the token counts are then a lower bound rather than a
 measurement.
 
+A local server is also asked for `return_progress`, which reports how much of the
+prompt it has read. On a large prompt that is the longer half of the wait, and without
+it the bar counts up seconds against a token count of zero. A server that does not know
+the field ignores it. A backend marked `hosted` is not asked, because the hosted APIs
+refuse a field they do not recognise.
+
 ## What managed means
 
 `managed = true` tells the rig to start that backend when nothing answers at its URL. It

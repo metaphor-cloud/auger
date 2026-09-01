@@ -130,6 +130,17 @@ class Watch:
             self.step.detail = detail
         self._say(self._clock())
 
+    def prefill(self, done: int, total: int) -> None:
+        """How much of the prompt the server has read.
+
+        A large prompt spends minutes being read before the first token of the answer
+        exists. That is the longest silence in the whole rig, and the phase it happens
+        in is the same one the answer arrives in, so it is counted rather than named.
+        """
+        self.step.done = done
+        self.step.total = total
+        self._say(self._clock())
+
     def tokens(self, count: int) -> None:
         """How much of an answer has arrived. Published at a bounded rate."""
         now = self._clock()

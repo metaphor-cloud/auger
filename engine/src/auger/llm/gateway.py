@@ -413,6 +413,12 @@ class Gateway:
                     continue
                 if isinstance(chunk.get("usage"), dict):
                     counts = chunk["usage"]
+                progress = chunk.get("prompt_progress")
+                if watch is not None and isinstance(progress, dict) and not pieces:
+                    watch.prefill(
+                        int(progress.get("processed", 0) or 0),
+                        int(progress.get("total", 0) or 0),
+                    )
                 choices = chunk.get("choices") or []
                 if not choices:
                     continue
@@ -425,6 +431,10 @@ class Gateway:
                         pieces += 1
                 for entry in delta.get("tool_calls") or []:
                     _merge_call(calls, entry)
+                if watch is not None and pieces == 1 and (text or thinking):
+                    # The first piece of the answer means the prompt is fully read, so
+                    # the count stops being about the prompt.
+                    watch.prefill(0, 0)
                 if first.get("finish_reason"):
                     finish = str(first["finish_reason"])
                 if watch is not None and pieces:
@@ -468,6 +478,13 @@ class Gateway:
             # streams, and every run would report nothing spent.
             "stream_options": {"include_usage": True},
         }
+        if not resolved.backend.hosted:
+            # How much of the prompt has been read. A forty thousand token prompt can
+            # spend most of an hour here with no token of the answer written yet, and
+            # that is the longest silence the rig has. `llama-server` and the other
+            # local servers answer it and ignore it when they do not; the hosted APIs
+            # refuse a field they do not know, so they are not asked.
+            payload["return_progress"] = True
         ceiling = self.answer_limit(resolved)
         if ceiling:
             payload["max_tokens"] = ceiling

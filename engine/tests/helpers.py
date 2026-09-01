@@ -57,6 +57,8 @@ class FakeModelServer:
         self.peak_concurrent = 0
         #: What a real server sends when a reply stopped at `max_tokens`.
         self.finish_reason = "stop"
+        #: How large the prompt is said to be, for the reading-the-prompt reports.
+        self.prompt_tokens = 400
 
     def app(self) -> FastAPI:
         app = FastAPI()
@@ -79,8 +81,9 @@ class FakeModelServer:
                     }
                 )
             wants_usage = bool((body.get("stream_options") or {}).get("include_usage"))
+            progress = bool(body.get("return_progress"))
             return StreamingResponse(
-                self._deltas(message, wants_usage),
+                self._deltas(message, wants_usage, progress),
                 media_type="text/event-stream",
             )
 
@@ -138,17 +141,33 @@ class FakeModelServer:
             message["content"] = ""
         return message
 
-    async def _deltas(self, message: dict[str, Any], wants_usage: bool) -> AsyncIterator[str]:
+    async def _deltas(
+        self, message: dict[str, Any], wants_usage: bool, progress: bool = False
+    ) -> AsyncIterator[str]:
         """The same answer, in pieces, the way a real server sends one.
 
         The content arrives a character at a time and a tool call arrives split across
         chunks, because the reader has to reassemble both and a single-chunk stream
-        would not test that.
+        would not test that. Asked for it, the prompt is read in front of the answer,
+        which is the shape `llama-server` sends and the long silence in a real run.
         """
 
         def frame(chunk: dict[str, Any]) -> str:
             return f"data: {json.dumps(chunk)}\n\n"
 
+        if progress:
+            for read in (0, self.prompt_tokens // 2, self.prompt_tokens):
+                yield frame(
+                    {
+                        "choices": [{"index": 0, "delta": {"content": None}}],
+                        "prompt_progress": {
+                            "total": self.prompt_tokens,
+                            "cache": 0,
+                            "processed": read,
+                            "time_ms": read,
+                        },
+                    }
+                )
         yield frame({"choices": [{"index": 0, "delta": {"role": "assistant"}}]})
         for piece in str(message.get("content") or ""):
             yield frame({"choices": [{"index": 0, "delta": {"content": piece}}]})
