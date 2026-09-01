@@ -14,6 +14,7 @@ from auger.jobs import diff_review
 from auger.llm import Gateway
 from auger.models import Remote, Repository
 from auger.net import Allowlist
+from auger.progress import Activity
 from auger.store import Store
 from auger.store.findings import list_findings
 from auger.store.runs import list_runs, reviewed_head
@@ -244,3 +245,28 @@ async def test_an_unreadable_answer_gets_one_more_chance(
     assert "could not be read" in fake.requests[1]["messages"][-1]["content"]
     assert outcome.run.status == "ok"
     assert outcome.findings
+
+
+async def test_a_review_says_where_it_has_got_to(
+    store: Store, gateway: Gateway, repository: Repository
+) -> None:
+    """A review spends minutes inside single steps. Between its start and its end the
+    window has nothing else to show, so each step has to name itself as it begins."""
+    git_commit(repository.path, {"reader.py": BUG}, "add a reader")
+    said: list[dict[str, object]] = []
+    activity = Activity(lambda _event, data: said.append(dict(data)))
+    watch = activity.begin(str(repository.path), repository.slug, diff_review.KIND)
+    outcome = await diff_review.review(store, gateway, repository, POLICY, watch=watch)
+    activity.end(watch)
+
+    assert outcome.run.status == "ok"
+    phases = [str(data["phase"]) for data in said]
+    # In this order: read the change, bring the index up to date, gather the context,
+    # ask the model, read what it said, write the findings down.
+    for phase in ("diff", "index", "retrieve", "asking", "parsing", "saving"):
+        assert phase in phases, f"{phase} was never reported: {phases}"
+    assert phases.index("diff") < phases.index("asking") < phases.index("saving")
+    assert phases[-1] == "done"
+    # The run row exists before the model is asked, so a finding can be reached from
+    # the step that is still running.
+    assert any(data["run"] == outcome.run.id for data in said)

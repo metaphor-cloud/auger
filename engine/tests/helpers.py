@@ -5,11 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import subprocess
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 DEFAULT_REMOTE = "git@github.com:acme/thing.git"
 
@@ -65,30 +66,22 @@ class FakeModelServer:
             return {"data": [{"id": name} for name in self.models]}
 
         @app.post("/v1/chat/completions")
-        async def chat(request: Request) -> JSONResponse:
+        async def chat(request: Request) -> Response:
             body = await self._record(request)
             if (early := self._failure()) is not None:
                 return early
-            if self.replies:
-                content = self.replies.pop(0)
-            else:
-                content = self.reply if self.reply is not None else f"answer:{body['model']}"
-            message: dict[str, Any] = {"role": "assistant", "content": content}
-            if self.tool_calls and self.tool_call_rounds > 0:
-                self.tool_call_rounds -= 1
-                # `{round}` anywhere in a call becomes the turn number, so a test can
-                # ask for a different call each turn rather than the same one again.
-                turn = str(self.rounds_served)
-                self.rounds_served += 1
-                message["tool_calls"] = json.loads(
-                    json.dumps(self.tool_calls).replace("{round}", turn)
+            message = self._message(body)
+            if not body.get("stream"):
+                return JSONResponse(
+                    {
+                        "choices": [{"message": message, "finish_reason": self.finish_reason}],
+                        "usage": {"prompt_tokens": 11, "completion_tokens": 7},
+                    }
                 )
-                message["content"] = ""
-            return JSONResponse(
-                {
-                    "choices": [{"message": message, "finish_reason": self.finish_reason}],
-                    "usage": {"prompt_tokens": 11, "completion_tokens": 7},
-                }
+            wants_usage = bool((body.get("stream_options") or {}).get("include_usage"))
+            return StreamingResponse(
+                self._deltas(message, wants_usage),
+                media_type="text/event-stream",
             )
 
         @app.post("/v1/embeddings")
@@ -101,7 +94,15 @@ class FakeModelServer:
                 for index, _ in enumerate(body["input"])
             ]
             # Out of order on purpose. The gateway must sort by index.
-            return JSONResponse({"data": list(reversed(rows))})
+            return JSONResponse(
+                {
+                    "data": list(reversed(rows)),
+                    "usage": {
+                        "prompt_tokens": 5 * len(rows),
+                        "total_tokens": 5 * len(rows),
+                    },
+                }
+            )
 
         @app.post("/v1/rerank")
         async def rerank(request: Request) -> JSONResponse:
@@ -112,9 +113,87 @@ class FakeModelServer:
                 {"index": index, "relevance_score": 1.0 / (index + 1)}
                 for index, _ in enumerate(body["documents"])
             ]
-            return JSONResponse({"results": list(reversed(results))})
+            return JSONResponse(
+                {
+                    "results": list(reversed(results)),
+                    "usage": {"prompt_tokens": 3 * len(results)},
+                }
+            )
 
         return app
+
+    def _message(self, body: dict[str, Any]) -> dict[str, Any]:
+        if self.replies:
+            content = self.replies.pop(0)
+        else:
+            content = self.reply if self.reply is not None else f"answer:{body['model']}"
+        message: dict[str, Any] = {"role": "assistant", "content": content}
+        if self.tool_calls and self.tool_call_rounds > 0:
+            self.tool_call_rounds -= 1
+            # `{round}` anywhere in a call becomes the turn number, so a test can ask
+            # for a different call each turn rather than the same one again.
+            turn = str(self.rounds_served)
+            self.rounds_served += 1
+            message["tool_calls"] = json.loads(json.dumps(self.tool_calls).replace("{round}", turn))
+            message["content"] = ""
+        return message
+
+    async def _deltas(self, message: dict[str, Any], wants_usage: bool) -> AsyncIterator[str]:
+        """The same answer, in pieces, the way a real server sends one.
+
+        The content arrives a character at a time and a tool call arrives split across
+        chunks, because the reader has to reassemble both and a single-chunk stream
+        would not test that.
+        """
+
+        def frame(chunk: dict[str, Any]) -> str:
+            return f"data: {json.dumps(chunk)}\n\n"
+
+        yield frame({"choices": [{"index": 0, "delta": {"role": "assistant"}}]})
+        for piece in str(message.get("content") or ""):
+            yield frame({"choices": [{"index": 0, "delta": {"content": piece}}]})
+        for index, call in enumerate(message.get("tool_calls") or []):
+            function = call.get("function") or {}
+            yield frame(
+                {
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {
+                                "tool_calls": [
+                                    {
+                                        "index": index,
+                                        "id": call.get("id", ""),
+                                        "type": "function",
+                                        "function": {"name": function.get("name", "")},
+                                    }
+                                ]
+                            },
+                        }
+                    ]
+                }
+            )
+            arguments = str(function.get("arguments") or "")
+            half = len(arguments) // 2
+            for part in (arguments[:half], arguments[half:]):
+                yield frame(
+                    {
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {
+                                    "tool_calls": [
+                                        {"index": index, "function": {"arguments": part}}
+                                    ]
+                                },
+                            }
+                        ]
+                    }
+                )
+        yield frame({"choices": [{"index": 0, "delta": {}, "finish_reason": self.finish_reason}]})
+        if wants_usage:
+            yield frame({"choices": [], "usage": {"prompt_tokens": 11, "completion_tokens": 7}})
+        yield "data: [DONE]\n\n"
 
     async def _record(self, request: Request) -> dict[str, Any]:
         body = await request.json()

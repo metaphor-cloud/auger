@@ -76,6 +76,19 @@ model = "whatever-you-loaded"
 Anything that speaks the OpenAI API works: `llama-server`, `mlx-openai-server`, LM
 Studio, Ollama's compatible endpoint.
 
+What a backend has to answer, by the job class the profile gives it:
+
+| Job class | Endpoint | Also needs |
+| -- | -- | -- |
+| `review`, `triage`, `verify` | `POST /chat/completions` | `stream: true`, and `response_format` for a JSON schema. Tool calls, if the repository turns tools on. |
+| `embed` | `POST /embeddings` | Nothing else. Without it, retrieval falls back to keyword search. |
+| `rerank` | `POST /rerank` | Nothing else. Without it, the candidates keep the order retrieval gave them. |
+
+Every answer is streamed, so a bar in the window can report the tokens as they arrive.
+A server that cannot stream cannot serve a chat job class here. A server that sends no
+`usage` block still works: the token counts are then a lower bound rather than a
+measurement.
+
 ## What managed means
 
 `managed = true` tells the rig to start that backend when nothing answers at its URL. It

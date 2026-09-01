@@ -202,3 +202,41 @@ async def test_the_queue_says_when_it_has_not_started_yet(
         after = await call(http, token, "GET", "/queue")
     assert after["ready"] is True
     assert after["paused"] is True
+
+
+async def test_activity_reports_a_run_in_flight(
+    http: httpx.AsyncClient, token: str, rig: Rig, tree: Path
+) -> None:
+    """A window opened in the middle of a run would otherwise show nothing at all
+    until the run ended, because the progress events it missed are gone."""
+    watch = rig.activity.begin(str(tree / "alpha"), "acme/alpha", "diff_review")
+    watch.phase("asking", detail="for the findings")
+    watch.tokens(120)
+    async with http:
+        body = await call(http, token, "GET", "/activity")
+        rig.activity.end(watch)
+        after = await call(http, token, "GET", "/activity")
+    step = body["steps"][0]
+    assert [one["slug"] for one in body["steps"]] == ["acme/alpha"]
+    assert step["phase"] == "asking"
+    assert step["detail"] == "for the findings"
+    assert step["tokens"] == 120
+    assert step["started"] > 0
+    assert after["steps"] == [], "a run that ended is no longer in flight"
+
+
+async def test_activity_says_what_finished_last(
+    http: httpx.AsyncClient, token: str, rig: Rig, tree: Path
+) -> None:
+    """With nothing running, "is it working" is answered by the last thing it did."""
+    from auger.store.runs import finish, start
+
+    run = start(rig.store, tree / "alpha", "diff_review", None, "HEAD")
+    run.status = "ok"
+    run.finding_count = 2
+    finish(rig.store, run)
+    async with http:
+        body = await call(http, token, "GET", "/activity")
+    assert body["steps"] == []
+    assert body["last"]["status"] == "ok"
+    assert body["last"]["finding_count"] == 2

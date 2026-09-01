@@ -2,6 +2,7 @@ import { Badge, Button, useThemeContext } from "@metaphor-cloud/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  getActivity,
   getModels,
   getOnboarding,
   getQueue,
@@ -13,8 +14,9 @@ import {
   stopModels,
 } from "./engine";
 import Logo from "./Logo";
+import Now from "./parts/Now";
 import { notify, onTrayAction, setTray, setTrayActions, type TrayAction } from "./host";
-import type { Queue, SetupProgress, System } from "./types";
+import type { Activity, Queue, SetupProgress, Step, System } from "./types";
 import Work from "./views/Work";
 import OnboardingView from "./views/Onboarding";
 import Runs from "./views/Runs";
@@ -56,6 +58,7 @@ export default function App() {
   const [view, setView] = useState<View>("Work");
   const [system, setSystem] = useState<System | null>(null);
   const [queue, setQueue] = useState<Queue | null>(null);
+  const [activity, setActivity] = useState<Activity | null>(null);
   const [version, setVersion] = useState(0);
   const [setup, setSetup] = useState<SetupProgress | null>(null);
   const [onboarded, setOnboarded] = useState<boolean | null>(null);
@@ -66,6 +69,17 @@ export default function App() {
       setQueue(await getQueue());
     } catch {
       // The queue is a detail. A failure here must not blank the window.
+    }
+  }, []);
+
+  // Asked for once on connect, and once more whenever a run ends. In between, the
+  // progress events keep it current, because a window that polled for this would be a
+  // second behind whatever it is meant to be showing.
+  const refreshActivity = useCallback(async () => {
+    try {
+      setActivity(await getActivity());
+    } catch {
+      // The bar is a detail. A failure here must not blank the window.
     }
   }, []);
 
@@ -87,7 +101,22 @@ export default function App() {
         setSystem(await getSystem());
         setOnboarded((await getOnboarding()).done);
         await refreshQueue();
+        await refreshActivity();
         await readEvents((event) => {
+          if (event.kind === "run.progress") {
+            // The engine names one step at a time. The bar holds the rest, so two
+            // repositories reviewed at once do not take turns disappearing.
+            const step = event.data as unknown as Step;
+            setActivity((current) => {
+              const base = current ?? { steps: [], pending: 0, paused: false, ready: true, workers: 1, last: null };
+              const rest = base.steps.filter((one) => one.id !== step.id);
+              return {
+                ...base,
+                steps: step.phase === "done" ? rest : [...rest, step].sort((a, b) => a.id - b.id),
+              };
+            });
+            return;
+          }
           if (event.kind.startsWith("queue.") || event.kind === "scan.finished") {
             void refreshQueue();
             setVersion((value) => value + 1);
@@ -100,6 +129,7 @@ export default function App() {
           if (event.kind === "image.state") void getSystem().then(setSystem);
           if (event.kind === "run.finished" || event.kind === "run.skipped") {
             void refreshQueue();
+            void refreshActivity();
             setVersion((value) => value + 1);
           }
           if (event.kind === "finding.new") {
@@ -121,7 +151,7 @@ export default function App() {
 
     void connect();
     return () => abort.abort();
-  }, [refreshQueue]);
+  }, [refreshQueue, refreshActivity]);
 
   const [refused, setRefused] = useState<string | null>(null);
 
@@ -288,21 +318,26 @@ export default function App() {
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 overflow-hidden overscroll-none">
-        {view === "Work" && (
-          <Work version={version} onCounts={setTray} onOpenRuns={() => setView("Runs")} />
-        )}
-        {view === "Transcript" && <TranscriptView version={version} />}
-        {view === "Runs" && (
-          <div className="h-full overscroll-none overflow-auto px-5 py-5">
-            <Runs version={version} />
-          </div>
-        )}
-        {view === "Settings" && (
-          <div className="h-full overscroll-none overflow-auto px-5 py-5">
-            <SettingsView version={version} setup={setup} system={system} />
-          </div>
-        )}
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden overscroll-none">
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {view === "Work" && (
+            <Work version={version} onCounts={setTray} onOpenRuns={() => setView("Runs")} />
+          )}
+          {view === "Transcript" && <TranscriptView version={version} />}
+          {view === "Runs" && (
+            <div className="h-full overscroll-none overflow-auto px-5 py-5">
+              <Runs version={version} />
+            </div>
+          )}
+          {view === "Settings" && (
+            <div className="h-full overscroll-none overflow-auto px-5 py-5">
+              <SettingsView version={version} setup={setup} system={system} />
+            </div>
+          )}
+        </div>
+        {/* Below the view, not inside it: "is it working" is not a question about the
+            page you happen to be on. */}
+        <Now activity={activity} />
       </main>
     </div>
   );

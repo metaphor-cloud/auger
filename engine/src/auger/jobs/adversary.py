@@ -25,6 +25,7 @@ from auger.jobs.parse import as_response_format
 from auger.jobs.verdicts import VERDICT_SCHEMA, parse_verdicts
 from auger.llm import Gateway, Message, ModelError
 from auger.log import Logger, create_logger
+from auger.progress import Watch, nowhere
 from auger.store import Store
 from auger.store.findings import Finding, set_triage
 
@@ -127,21 +128,26 @@ async def argue(
     findings: list[Finding],
     policy: Policy,
     log: Logger | None = None,
+    watch: Watch | None = None,
 ) -> Argument:
     """Have the other model judge these findings. Never raises."""
     log = (log or create_logger("jobs")).bind(component="adversary")
+    watch = watch or nowhere()
     outcome = Argument(problems=[])
     if not findings:
         return outcome
 
+    watch.phase("verifying", total=len(findings))
     for start in range(0, len(findings), BATCH):
         batch = findings[start : start + BATCH]
+        watch.advance(start, detail=f"{len(findings)} findings")
         try:
             completion = await gateway.complete(
                 JobClass.VERIFY,
                 messages_for(batch),
                 profile=policy.model_profile,
                 response_format=as_response_format(VERDICT_SCHEMA, "verdicts"),
+                watch=watch,
             )
         except ModelError as error:
             # An unjudged finding still shows. Losing it would be worse than showing it.
@@ -161,6 +167,7 @@ async def argue(
                 outcome.rejected += 1
             else:
                 outcome.uncertain += 1
+        watch.advance(min(start + BATCH, len(findings)))
 
     log.info(
         "argument finished",

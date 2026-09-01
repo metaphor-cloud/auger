@@ -34,6 +34,7 @@ from auger.mcp import Access as McpAccess
 from auger.mcp import McpRegistry, OAuthError, sign_in
 from auger.models import Repository, RepositoryView
 from auger.net import Allowlist, Destination, EgressProxy
+from auger.progress import Activity
 from auger.sandbox import ImageState, Selection, select
 from auger.schedule import (
     Scheduler,
@@ -63,6 +64,9 @@ class Rig:
         self.settings = settings
         self.log = log or create_logger("rig", settings.log_level)
         self.bus = EventBus()
+        # What every run in flight is doing. A run publishes when it starts and when it
+        # finishes; between those two the window would otherwise have nothing to show.
+        self.activity = Activity(lambda event, data: self.bus.publish(Event(event, data)))
         self.config_path = ensure_config(config_path(settings.home), self.log)
         loaded = load_result(self.config_path, self.log)
         self.config: Config = loaded.config
@@ -489,7 +493,14 @@ class Rig:
             if not self.health.get(verify, Health(name=verify, url="", up=False)).up:
                 self.log.warn("verify model did not start", reason="no_model", backend=verify)
                 return Argument()
-            outcome = await argue(self.store, self.gateway, waiting, policy, self.log)
+            # `watch` is a watcher function in this module, so the handle is a step.
+            step = self.activity.begin("", f"{len(waiting)} findings", "verify")
+            try:
+                outcome = await argue(
+                    self.store, self.gateway, waiting, policy, self.log, watch=step
+                )
+            finally:
+                self.activity.end(step)
         finally:
             # Give the memory back either way. The reviewer starts again when a review
             # needs it, which is what `ensure_models` is for.

@@ -37,6 +37,7 @@ from auger.jobs.semgrep import scan
 from auger.llm import Gateway, Message, ModelError
 from auger.log import Logger, create_logger
 from auger.models import Repository
+from auger.progress import Watch, nowhere
 from auger.sandbox import Sandbox
 from auger.store import Store
 from auger.store.findings import Finding, close_missing, record
@@ -301,14 +302,18 @@ async def audit(
     log: Logger | None = None,
     sandbox: Sandbox | None = None,
     image: str = "",
+    watch: Watch | None = None,
 ) -> AuditOutcome:
     """Audit one repository. Never raises."""
     log = (log or create_logger("jobs")).bind(repo=repository.slug, kind=KIND)
+    watch = watch or nowhere()
     started = time.monotonic()
     run = start(store, repository.path, KIND, None, None)
     log = log.bind(run=run.id)
+    watch.names_run(run.id)
 
-    await reindex(store, gateway, repository.path, policy.model_profile, log)
+    await reindex(store, gateway, repository.path, policy.model_profile, log, watch=watch)
+    watch.phase("outline")
     shape = outline(store, repository.path)
     if not shape.strip():
         run.status = "skipped"
@@ -324,6 +329,7 @@ async def audit(
     # --- Semgrep, as a place to look and nothing more ---------------------------------
     matches: list[Finding] = []
     if sandbox is not None and image:
+        watch.phase("scan")
         found = await asyncio.to_thread(scan, sandbox, str(repository.path), image, run.id, log=log)
         matches = found.findings
         if found.errors:
@@ -331,6 +337,7 @@ async def audit(
         log.info("scan finished", matched=len(matches), files=len({one.file for one in matches}))
 
     # --- pass one: which files are worth reading -------------------------------------
+    watch.phase("asking", detail="which files to read")
     try:
         choice = await gateway.complete(
             JobClass.TRIAGE,
@@ -350,6 +357,7 @@ async def audit(
             ],
             profile=policy.model_profile,
             response_format=as_response_format(CHOICE_SCHEMA),
+            watch=watch,
         )
     except ModelError as error:
         return _failed(store, run, log, "model_failed", str(error), started)
@@ -394,16 +402,19 @@ async def audit(
             content=f"Repository: {repository.slug}{hints}\n\n{source}",
         ),
     ]
+    watch.phase("asking", detail=f"{len(read)} files")
     try:
         completion = await gateway.complete(
             JobClass.REVIEW,
             messages,
             profile=policy.model_profile,
             response_format=as_response_format(FINDINGS_SCHEMA),
+            watch=watch,
         )
     except ModelError as error:
         return _failed(store, run, log, "model_failed", str(error), started)
 
+    watch.phase("parsing")
     raw, problems = parse_findings(completion.text)
     findings = [
         Finding(
@@ -424,6 +435,7 @@ async def audit(
         # A finding about a file nobody read is a finding about nothing.
         if item.file.strip() in read
     ]
+    watch.phase("saving", total=len(findings))
     record(store, findings)
     # Only the files this audit read are settled by it. Closing a finding in a file
     # this run never opened would clear it because nobody looked, which is not the same

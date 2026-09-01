@@ -24,6 +24,7 @@ from auger.config.schema import JobClass
 from auger.context import codegraph
 from auger.llm import Gateway, ModelError
 from auger.log import Logger, create_logger
+from auger.progress import Watch, nowhere
 from auger.store import Store
 from auger.store.index import Hit, chunks_in_file, search_text, search_vectors
 
@@ -216,9 +217,12 @@ async def context_for_diff(
     limit: int = 12,
     graph: CodeGraphConfig | None = None,
     log: Logger | None = None,
+    watch: Watch | None = None,
 ) -> ReviewContext:
     """Gather the code around a diff. Never raises: a failure returns less context."""
     log = (log or create_logger("context")).bind(component="retrieve")
+    watch = watch or nowhere()
+    watch.phase("retrieve")
     changes = changed_ranges(diff)
     if not changes:
         return ReviewContext()
@@ -251,6 +255,10 @@ async def context_for_diff(
 
     reranks = gateway is not None and gateway.available(JobClass.RERANK, profile)
     if reranks and gateway is not None and len(candidates) > limit:
+        # A cross encoder scores each chunk on its own, in batches. On a large candidate
+        # set that is a run of requests, so it gets a phase of its own rather than
+        # looking like the same one stalled.
+        watch.phase("rerank", total=len(candidates))
         try:
             scores = await gateway.rerank(
                 rerank_query(names), [hit.text for hit in candidates], profile

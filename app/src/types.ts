@@ -207,6 +207,35 @@ export type Queue = {
   models_reason: string | null;
 };
 
+/** One run in flight, and where it has got to. */
+export type Step = {
+  id: number;
+  repo: string;
+  slug: string;
+  kind: string;
+  /** Seconds since the epoch. Elapsed time is worked out here, against this clock. */
+  started: number;
+  phase: string;
+  phase_started: number;
+  detail: string;
+  /** 0 total means the phase cannot be counted, which is most of them. */
+  done: number;
+  total: number;
+  /** Pieces of the answer so far, while a model is writing one. */
+  tokens: number;
+  tokens_started: number;
+  run: string;
+};
+
+export type Activity = {
+  steps: Step[];
+  pending: number;
+  paused: boolean;
+  ready: boolean;
+  workers: number;
+  last: Run | null;
+};
+
 export type Forge = {
   name: string;
   kind: string;

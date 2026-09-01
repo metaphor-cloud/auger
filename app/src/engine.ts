@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { takeEvents, type ServerEvent } from "./sse";
 import type {
+  Activity,
   BackendList,
   Catalog,
   Dashboard,
@@ -196,6 +197,14 @@ export async function getRuns(repo?: string, limit = 100): Promise<RunList> {
   const query = new URLSearchParams({ limit: String(limit) });
   if (repo) query.set("repo", repo);
   return request(`/runs?${query}`);
+}
+
+/** What is happening now.
+ *
+ * Progress arrives on the event stream, so this is asked for once when the window
+ * opens: a window opened in the middle of a run has missed those events for good. */
+export async function getActivity(): Promise<Activity> {
+  return request<Activity>("/activity");
 }
 
 export async function getQueue(): Promise<Queue> {

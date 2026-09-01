@@ -31,6 +31,7 @@ from auger.llm import Gateway, Message, ModelError
 from auger.log import Logger, create_logger
 from auger.mcp import McpRegistry
 from auger.models import Repository
+from auger.progress import Watch, nowhere
 from auger.store import Store
 from auger.store.findings import Finding, record
 from auger.store.runs import Run, finish, set_reviewed_head, start
@@ -126,13 +127,17 @@ async def review(
     graph: CodeGraphConfig | None = None,
     log: Logger | None = None,
     shell: Shell | None = None,
+    watch: Watch | None = None,
 ) -> ReviewOutcome:
     """Review one change. Never raises: a failure is recorded on the run."""
     log = (log or create_logger("jobs")).bind(repo=repository.slug, kind=KIND)
+    watch = watch or nowhere()
     started = time.monotonic()
     head = target if target != "WORKTREE" else "WORKTREE"
     run = start(store, repository.path, KIND, base, head)
     log = log.bind(run=run.id)
+    watch.names_run(run.id)
+    watch.phase("diff")
 
     try:
         diff_text, subject, branch = collect_diff(repository.path, base, target)
@@ -150,7 +155,7 @@ async def review(
     # A commit that touched one file costs one file. Retrieval needs the embedding
     # model, so it fails the same way a review does when no model answers.
     try:
-        await reindex(store, gateway, repository.path, policy.model_profile, log)
+        await reindex(store, gateway, repository.path, policy.model_profile, log, watch=watch)
         context = await context_for_diff(
             store,
             gateway,
@@ -159,6 +164,7 @@ async def review(
             policy.model_profile,
             graph=graph,
             log=log,
+            watch=watch,
         )
     except ModelError as error:
         return _failed(store, run, log, "model_failed", str(error), started)
@@ -193,12 +199,15 @@ async def review(
             shell=shell,
             lookup=Lookup(store, repository.path, graph) if policy.code_tools else None,
             budget=budget,
+            watch=watch,
         )
     except ModelError as error:
         return _failed(store, run, log, "model_failed", str(error), started)
 
+    watch.phase("parsing")
     raw_findings, problems = parse_findings(completion.text)
     if problems and not raw_findings:
+        watch.phase("repairing")
         # A schema makes this rare rather than impossible: a model can still answer with
         # an empty object it fills badly. One more turn costs less than a lost review.
         try:
@@ -211,6 +220,7 @@ async def review(
                 ],
                 profile=policy.model_profile,
                 response_format=ANSWER_FORMAT,
+                watch=watch,
             )
         except ModelError as error:
             log.warn("repair failed", reason="model_failed", error=error)
@@ -220,6 +230,7 @@ async def review(
                 log.info("answer repaired", findings=len(second), was=problems[:2])
                 raw_findings, problems = second, still_bad
                 completion = repaired
+    watch.phase("saving", total=len(raw_findings))
     findings = [to_finding(raw, repository, diff_text, run.id) for raw in raw_findings]
     record(store, findings)
     if target != "WORKTREE":

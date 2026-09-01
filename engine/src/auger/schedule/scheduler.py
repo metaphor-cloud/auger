@@ -22,6 +22,7 @@ from auger.jobs import JobOutcome, audit, diff_review, pr_review
 from auger.jobs.shell import Shell
 from auger.log import Logger, create_logger
 from auger.models import Repository
+from auger.progress import Watch
 from auger.schedule.protocol import RigLike
 from auger.store.runs import record_skip
 from auger.watch import busy, idle
@@ -214,7 +215,7 @@ class Scheduler:
         health = await self.rig.ensure_backend(name)
         return None if health.up else "model_down"
 
-    async def _execute(self, task: Task) -> JobOutcome | None:
+    async def _execute(self, task: Task, watch: Watch) -> JobOutcome | None:
         rig = self.rig
         if task.kind == pr_review.KIND and task.pull is not None:
             found = rig.forges.for_repository(task.repository)
@@ -237,6 +238,7 @@ class Scheduler:
                 tools=rig.tools,
                 log=self.log,
                 shell=self._shell(task),
+                watch=watch,
             )
         if task.kind == audit.KIND:
             return await audit.audit(
@@ -247,6 +249,7 @@ class Scheduler:
                 log=self.log,
                 sandbox=rig.selection.sandbox,
                 image=rig.config.image,
+                watch=watch,
             )
         return await diff_review.review(
             store=rig.store,
@@ -259,6 +262,7 @@ class Scheduler:
             graph=rig.config.codegraph,
             log=self.log,
             shell=self._shell(task),
+            watch=watch,
         )
 
     def _shell(self, task: Task) -> Shell | None:
@@ -370,9 +374,11 @@ class Scheduler:
         # The transcript labels each exchange with the work it belongs to.
         rig.gateway.subject = task.repository.slug
         rig.publish("run.started", repo=str(path), slug=task.repository.slug, kind=task.kind)
+        watch = rig.activity.begin(str(path), task.repository.slug, task.kind)
         try:
-            outcome = await self._execute(task)
+            outcome = await self._execute(task, watch)
         finally:
+            rig.activity.end(watch)
             self._in_flight.discard(path)
         if outcome is None:
             return

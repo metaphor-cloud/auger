@@ -16,6 +16,7 @@ from auger.context.chunker import Chunk, chunk_file
 from auger.context.languages import indexable
 from auger.llm import Gateway, ModelError
 from auger.log import Logger, create_logger
+from auger.progress import Watch, nowhere
 from auger.store import Store
 from auger.store.index import (
     chunk_count,
@@ -64,11 +65,14 @@ async def reindex(
     repository: Path,
     profile: str = "balanced",
     log: Logger | None = None,
+    watch: Watch | None = None,
 ) -> IndexOutcome:
     """Bring one repository's index up to date. Never raises."""
     log = (log or create_logger("context")).bind(component="indexer")
+    watch = watch or nowhere()
     started = time.monotonic()
     outcome = IndexOutcome()
+    watch.phase("index")
     try:
         current, changed, removed = changed_files(store, repository)
     except git.GitError as error:
@@ -81,7 +85,11 @@ async def reindex(
 
     pending_ids: list[int] = []
     pending_texts: list[str] = []
-    for path in changed:
+    # A first index reads every file in the repository, which is the slowest thing the
+    # rig ever does to a repository it has just found. Count it.
+    watch.phase("index", total=len(changed))
+    for seen, path in enumerate(changed, start=1):
+        watch.advance(seen, detail=path)
         full = repository / path
         try:
             size = full.stat().st_size
@@ -104,7 +112,7 @@ async def reindex(
 
     if gateway is not None and pending_texts and gateway.available(JobClass.EMBED, profile):
         outcome.chunks_embedded = await _embed(
-            store, gateway, pending_ids, pending_texts, profile, log
+            store, gateway, pending_ids, pending_texts, profile, log, watch
         )
 
     outcome.duration_ms = int((time.monotonic() - started) * 1000)
@@ -128,11 +136,17 @@ async def _embed(
     texts: list[str],
     profile: str,
     log: Logger,
+    watch: Watch | None = None,
 ) -> int:
     written = 0
+    watch = watch or nowhere()
+    # One request per batch, and a repository nobody has indexed yet is thousands of
+    # chunks. This is the loop that looks like nothing is happening, so it is counted.
+    watch.phase("embed", total=len(texts))
     for start in range(0, len(texts), BATCH):
         batch_ids = ids[start : start + BATCH]
         batch_texts = texts[start : start + BATCH]
+        watch.advance(start)
         try:
             vectors = await gateway.embed(batch_texts, profile=profile)
         except ModelError as error:
@@ -146,4 +160,5 @@ async def _embed(
             log.warn("vectors unavailable", reason="no_vector_table")
             return written
         written += store_vectors(store, batch_ids, vectors)
+        watch.advance(min(start + BATCH, len(texts)))
     return written

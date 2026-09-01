@@ -19,6 +19,7 @@ from auger.llm import Gateway, Health
 from auger.mcp import McpRegistry
 from auger.models import Remote, Repository, RepositoryView
 from auger.net import Allowlist
+from auger.progress import Activity
 from auger.sandbox import select
 from auger.schedule import Scheduler, Task
 from auger.store import Store
@@ -41,6 +42,7 @@ class StubRig:
         self.tools = McpRegistry(config)
         self.selection = select()
         self.events: list[tuple[str, dict[str, object]]] = []
+        self.activity = Activity(lambda event, data: self.events.append((event, data)))
         #: Whether the model server answers. A test can put it down.
         self.backend_up = True
         self.ensured: list[str] = []
@@ -125,7 +127,10 @@ async def test_a_review_runs_and_the_events_say_so(rig: StubRig, tmp_path: Path)
     await drain(scheduler)
     await scheduler.stop()
 
-    assert [event for event, _ in rig.events][:2] == ["run.started", "run.finished"]
+    # Progress events interleave with these two by design, so the shape of the run is
+    # read from the events that mark its ends.
+    marks = [event for event, _ in rig.events if event != "run.progress"]
+    assert marks[:2] == ["run.started", "run.finished"]
     assert rig.kinds("run.finished")[0]["status"] == "ok"
     assert rig.kinds("finding.new")[0]["severity"] == "high"
 

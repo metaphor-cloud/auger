@@ -27,6 +27,7 @@ from auger.llm import Gateway, ModelError
 from auger.log import Logger, create_logger
 from auger.mcp import McpRegistry
 from auger.models import Repository
+from auger.progress import Watch, nowhere
 from auger.store import Store
 from auger.store.findings import Finding, record
 from auger.store.runs import Run, finish, start
@@ -99,16 +100,20 @@ async def review_pull(
     tools: McpRegistry | None = None,
     log: Logger | None = None,
     shell: Shell | None = None,
+    watch: Watch | None = None,
 ) -> PullOutcome:
     """Review one pull request and post the result. Never raises."""
     log = (log or create_logger("jobs")).bind(repo=repository.slug, kind=KIND, pull=pull.number)
+    watch = watch or nowhere()
     started = time.monotonic()
     run = start(store, repository.path, KIND, pull.base_ref, pull.head_sha)
     log = log.bind(run=run.id)
+    watch.names_run(run.id)
 
     if policy.mode == "off":
         return _stop(store, run, log, "mode_off", "", started)
 
+    watch.phase("diff", detail=f"pull request #{pull.number}")
     try:
         diff = await entry.forge.diff(repo, pull.number)
     except ForgeError as error:
@@ -140,10 +145,12 @@ async def review_pull(
             shell=shell,
             lookup=Lookup(store, repository.path) if policy.code_tools else None,
             budget=budget,
+            watch=watch,
         )
     except ModelError as error:
         return _stop(store, run, log, "model_failed", str(error), started, failed=True)
 
+    watch.phase("parsing")
     raw, problems = parse_findings(completion.text)
     findings = [
         Finding(
@@ -162,9 +169,11 @@ async def review_pull(
         )
         for item in raw
     ]
+    watch.phase("saving", total=len(findings))
     record(store, findings)
 
     posted: PostedReview | None = None
+    watch.phase("posting", detail=policy.mode)
     try:
         posted = await entry.forge.post_review(
             repo,

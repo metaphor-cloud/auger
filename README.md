@@ -73,6 +73,13 @@ your code, so a restart starts it empty.
 **Settings** holds the rest, in the order a first run needs it: where to look, models,
 review, tools, forges, system, advanced.
 
+Under all four is a bar that says what is happening this second, and it is the same bar
+whichever place you are on. Each repository being reviewed names its step - reading the
+change, indexing, gathering related code, asking the model, running a tool, writing
+findings down - with how long that step has been running, how far through it is when
+that can be counted, and the answer's tokens arriving as the model writes them. With
+nothing running it says so, how much is waiting, and what finished last.
+
 The first time it opens, it walks you through the two things it cannot guess: a directory
 to watch, and a model to review with.
 

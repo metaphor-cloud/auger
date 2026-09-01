@@ -14,6 +14,7 @@ from auger.forge.github import GitHub
 from auger.llm import Gateway, Health
 from auger.mcp import McpRegistry
 from auger.models import Remote, Repository, RepositoryView
+from auger.progress import Activity
 from auger.sandbox import select
 from auger.schedule import Scheduler, poll_pull_requests
 from auger.store import Store
@@ -34,6 +35,7 @@ class StubRig:
         self.gateway: Gateway = None  # type: ignore[assignment]
         self.policy = policy
         self.events: list[tuple[str, dict[str, object]]] = []
+        self.activity = Activity(lambda event, data: self.events.append((event, data)))
 
     async def check_models(self) -> dict[str, Health]:
         return {}

@@ -34,6 +34,7 @@ from auger.jobs.shell import Shell
 from auger.llm import Completion, Gateway, Message
 from auger.log import Logger, create_logger
 from auger.mcp import McpError, McpRegistry, Tool, ToolAllowlist
+from auger.progress import Watch, nowhere
 
 ANSWER_NOW = (
     "Now give your answer for the change under review, using everything above. "
@@ -207,6 +208,7 @@ async def complete_with_tools(
     shell: Shell | None = None,
     lookup: Lookup | None = None,
     budget: int = 0,
+    watch: Watch | None = None,
 ) -> tuple[Completion, ToolRun]:
     """Ask the model, and answer its tool calls until it stops or the budget runs out.
 
@@ -224,6 +226,7 @@ async def complete_with_tools(
     long loop ends with a small working set rather than a large stale one.
     """
     log = (log or create_logger("jobs")).bind(component="tools")
+    watch = watch or nowhere()
     allowlist = ToolAllowlist(policy.tools)
     run = ToolRun()
     available: list[Tool] = []
@@ -231,9 +234,14 @@ async def complete_with_tools(
         available = registry.tools_for(allowlist)
 
     if not available and shell is None and lookup is None:
+        watch.phase("asking")
         return (
             await gateway.complete(
-                job_class, messages, profile=policy.model_profile, response_format=answer
+                job_class,
+                messages,
+                profile=policy.model_profile,
+                response_format=answer,
+                watch=watch,
             ),
             run,
         )
@@ -252,7 +260,10 @@ async def complete_with_tools(
         schema.append(shell.schema())
 
     exchanges: list[Exchange] = []
-    completion = await gateway.complete(job_class, head, profile=policy.model_profile, tools=schema)
+    watch.phase("asking")
+    completion = await gateway.complete(
+        job_class, head, profile=policy.model_profile, tools=schema, watch=watch
+    )
     limit = policy.max_tool_calls or None
     while completion.tool_calls and (limit is None or run.calls < limit):
         exchange = Exchange(
@@ -266,6 +277,10 @@ async def complete_with_tools(
                 break
             run.calls += 1
             run.names.append(call.name)
+            # A tool turn runs a command in the sandbox or a call over the network, and
+            # can take as long as the answer did. Say which one.
+            watch.phase("tool", detail=call.name)
+            watch.advance(run.calls)
             exchange.keys.append(_key(call.name, call.arguments))
             exchange.results.append(
                 Message(
@@ -306,8 +321,9 @@ async def complete_with_tools(
                 characters=_length(turn),
                 budget=budget,
             )
+        watch.phase("asking", detail=f"after {run.calls} tool calls")
         completion = await gateway.complete(
-            job_class, turn, profile=policy.model_profile, tools=schema
+            job_class, turn, profile=policy.model_profile, tools=schema, watch=watch
         )
 
     if completion.tool_calls:
@@ -326,8 +342,9 @@ async def complete_with_tools(
         run.dropped += before - len(exchanges)
         turn.append(Message(role="assistant", content=completion.text))
         turn.append(Message(role="user", content=ANSWER_NOW))
+        watch.phase("asking", detail="for the findings")
         completion = await gateway.complete(
-            job_class, turn, profile=policy.model_profile, response_format=answer
+            job_class, turn, profile=policy.model_profile, response_format=answer, watch=watch
         )
     return completion, run
 

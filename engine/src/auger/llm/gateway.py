@@ -20,6 +20,7 @@ from auger.config.schema import Backend, Config, JobClass, Profile, ProfileEntry
 from auger.llm.transcript import Transcript
 from auger.log import Logger, create_logger
 from auger.net import Allowlist, EgressRefused, guarded_client
+from auger.progress import Watch
 
 RETRY_DELAYS = (0.5, 2.0, 5.0)
 #: Documents per rerank request. A larger batch is refused by the server.
@@ -317,19 +318,36 @@ class Gateway:
             return {}
         return {"Authorization": f"Bearer {key}"}
 
-    async def _post(self, resolved: Resolved, path: str, payload: dict[str, Any]) -> Any:
+    async def _post(
+        self,
+        resolved: Resolved,
+        path: str,
+        payload: dict[str, Any],
+        watch: Watch | None = None,
+    ) -> Any:
+        """Send one request and return the body.
+
+        A payload that asks for a stream is read as one and assembled into the shape a
+        whole answer has, so there is one parser for both and a streamed answer cannot
+        drift from a returned one.
+        """
         url = resolved.backend.url.rstrip("/") + path
         usage = self.usage.setdefault(resolved.name, Usage())
+        streaming = bool(payload.get("stream"))
         last: Exception | None = None
         async with self._limit(resolved.name, resolved.backend):
             for attempt, delay in enumerate((*RETRY_DELAYS, None)):
                 try:
-                    response = await self._client.post(
-                        url, json=payload, headers=self._headers(resolved.backend)
-                    )
-                    response.raise_for_status()
+                    if streaming:
+                        body = await self._collect(url, resolved, payload, watch)
+                    else:
+                        response = await self._client.post(
+                            url, json=payload, headers=self._headers(resolved.backend)
+                        )
+                        response.raise_for_status()
+                        body = response.json()
                     usage.requests += 1
-                    return response.json()
+                    return body
                 except EgressRefused as refused:
                     # The allowlist refused it. A retry cannot help and must not happen.
                     usage.failures += 1
@@ -359,6 +377,69 @@ class Gateway:
         )
         raise ModelError(f"{resolved.name} did not answer: {last}") from last
 
+    async def _collect(
+        self,
+        url: str,
+        resolved: Resolved,
+        payload: dict[str, Any],
+        watch: Watch | None,
+    ) -> dict[str, Any]:
+        """Read a streamed answer, reporting it as it arrives.
+
+        A local model writes a long answer slowly. Waiting for the whole thing before
+        anything is said about it is what makes a working rig look like a stalled one,
+        so the pieces are counted as they land and the watcher is told.
+
+        A stream that breaks part way through is a failed request, not a short answer:
+        the error leaves this, the caller retries, and the partial text is dropped.
+        """
+        text: list[str] = []
+        thinking: list[str] = []
+        calls: dict[int, dict[str, Any]] = {}
+        finish = ""
+        counts: dict[str, Any] = {}
+        pieces = 0
+        async with self._client.stream(
+            "POST", url, json=payload, headers=self._headers(resolved.backend)
+        ) as response:
+            if response.status_code >= 400:
+                # The body carries the server's reason, and a streamed response has to
+                # be read before it can be looked at.
+                await response.aread()
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                chunk = _chunk(line)
+                if chunk is None:
+                    continue
+                if isinstance(chunk.get("usage"), dict):
+                    counts = chunk["usage"]
+                choices = chunk.get("choices") or []
+                if not choices:
+                    continue
+                first = choices[0]
+                delta = first.get("delta") or {}
+                for key, into in (("content", text), ("reasoning_content", thinking)):
+                    piece = delta.get(key) or ""
+                    if piece:
+                        into.append(str(piece))
+                        pieces += 1
+                for entry in delta.get("tool_calls") or []:
+                    _merge_call(calls, entry)
+                if first.get("finish_reason"):
+                    finish = str(first["finish_reason"])
+                if watch is not None and pieces:
+                    watch.tokens(pieces)
+        message: dict[str, Any] = {"role": "assistant", "content": "".join(text)}
+        if thinking:
+            message["reasoning_content"] = "".join(thinking)
+        if calls:
+            message["tool_calls"] = [calls[index] for index in sorted(calls)]
+        if not counts and pieces:
+            # A server that sends no usage still sent one piece per token, near enough.
+            # A lower bound beats a zero, which reads as a model that cost nothing.
+            counts = {"completion_tokens": pieces}
+        return {"choices": [{"message": message, "finish_reason": finish}], "usage": counts}
+
     def swap(self, on: bool) -> None:
         """Trade the review and verify backends for the next calls, or stop."""
         self.swapped = frozenset({JobClass.REVIEW, JobClass.VERIFY}) if on else frozenset()
@@ -375,13 +456,17 @@ class Gateway:
         profile: str = "balanced",
         response_format: dict[str, Any] | None = None,
         tools: list[dict[str, Any]] | None = None,
+        watch: Watch | None = None,
     ) -> Completion:
         resolved = self.resolve(self._routed(job_class), profile)
         payload: dict[str, Any] = {
             "model": resolved.backend.model,
             "messages": [message.as_dict() for message in messages],
             "temperature": resolved.entry.temperature,
-            "stream": False,
+            "stream": True,
+            # Without this an OpenAI-compatible server sends no counts at all when it
+            # streams, and every run would report nothing spent.
+            "stream_options": {"include_usage": True},
         }
         ceiling = self.answer_limit(resolved)
         if ceiling:
@@ -393,7 +478,7 @@ class Gateway:
             payload["tool_choice"] = "auto"
         started = time.monotonic()
         try:
-            body = await self._post(resolved, "/chat/completions", payload)
+            body = await self._post(resolved, "/chat/completions", payload, watch=watch)
         except ModelError as error:
             self.transcript.add(
                 backend=resolved.name,
@@ -439,11 +524,29 @@ class Gateway:
         body = await self._post(
             resolved, "/embeddings", {"model": resolved.backend.model, "input": texts}
         )
+        self._counted(resolved, body)
         try:
             rows = sorted(body["data"], key=lambda row: row.get("index", 0))
             return [list(row["embedding"]) for row in rows]
         except (KeyError, TypeError) as error:
             raise ModelError(f"{resolved.name} returned no embedding") from error
+
+    def _counted(self, resolved: Resolved, body: Any) -> None:
+        """Add what an embedding or a rerank cost to the backend's total.
+
+        Only the chat path used to do this, so a backend that does nothing but embed
+        read as hundreds of requests and no tokens at all, which says the work was free.
+        A server that sends no counts still adds nothing: a made-up number would be
+        worse than an obvious gap.
+        """
+        counts = body.get("usage") if isinstance(body, dict) else None
+        if not isinstance(counts, dict):
+            return
+        spent = counts.get("prompt_tokens") or counts.get("total_tokens") or 0
+        try:
+            self.usage.setdefault(resolved.name, Usage()).prompt_tokens += int(spent)
+        except (TypeError, ValueError):
+            return
 
     async def rerank(
         self, query: str, documents: list[str], profile: str = "balanced"
@@ -469,8 +572,53 @@ class Gateway:
                 "/rerank",
                 {"model": resolved.backend.model, "query": query, "documents": batch},
             )
+            self._counted(resolved, body)
             scores.extend(_scores_of(body, len(batch), resolved))
         return scores
+
+
+def _chunk(line: str) -> dict[str, Any] | None:
+    """One server-sent line as the object it carries, or None for anything else.
+
+    A keepalive, a comment, and the end marker all arrive on the same channel as the
+    answer, so the reader has to be able to say "not this one".
+    """
+    if not line.startswith("data:"):
+        return None
+    data = line[5:].strip()
+    if not data or data == "[DONE]":
+        return None
+    try:
+        parsed = json.loads(data)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _merge_call(calls: dict[int, dict[str, Any]], entry: dict[str, Any]) -> None:
+    """Fold one tool-call delta into the call it belongs to.
+
+    A streamed call arrives in pieces keyed by position: the name in one chunk, then the
+    arguments a few characters at a time. Only the position ties them together.
+    """
+    if not isinstance(entry, dict):
+        return
+    try:
+        index = int(entry.get("index", len(calls)))
+    except (TypeError, ValueError):
+        index = len(calls)
+    call = calls.setdefault(
+        index, {"id": "", "type": "function", "function": {"name": "", "arguments": ""}}
+    )
+    if entry.get("id"):
+        call["id"] = str(entry["id"])
+    if entry.get("type"):
+        call["type"] = str(entry["type"])
+    function = entry.get("function") or {}
+    if function.get("name"):
+        call["function"]["name"] = str(function["name"])
+    if function.get("arguments"):
+        call["function"]["arguments"] += str(function["arguments"])
 
 
 def _scores_of(body: Any, count: int, resolved: Resolved) -> list[float]:

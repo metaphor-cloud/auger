@@ -174,6 +174,45 @@ class RunList(BaseModel):
     runs: list[RunOut]
 
 
+class StepOut(BaseModel):
+    """One run in flight, and where it has got to."""
+
+    id: int
+    repo: str
+    slug: str
+    kind: str
+    #: Seconds since the epoch. The window subtracts them from its own clock, so a
+    #: phase that has been running for a while reads as one.
+    started: float
+    phase: str
+    phase_started: float
+    detail: str
+    #: 0 for a phase that cannot be counted, which is most of them.
+    done: int
+    total: int
+    #: Pieces of the answer so far, while a model is writing one.
+    tokens: int
+    tokens_started: float
+    run: str
+
+
+class ActivityOut(BaseModel):
+    """What is happening now.
+
+    The window asks for this once when it opens, because a window opened in the middle
+    of a run would otherwise show nothing until the run ended. After that the progress
+    events carry the same fields.
+    """
+
+    steps: list[StepOut]
+    pending: int
+    paused: bool
+    ready: bool
+    workers: int
+    #: The last run to finish, so a stopped rig still says what it did.
+    last: RunOut | None = None
+
+
 class QueueOut(BaseModel):
     pending: int
     in_flight: list[str]

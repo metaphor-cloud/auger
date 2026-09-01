@@ -24,6 +24,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from auger import __version__
 from auger.api.describe import describe
 from auger.api.models import (
+    ActivityOut,
     BackendList,
     BackendOut,
     CatalogOut,
@@ -72,6 +73,7 @@ from auger.api.models import (
     SetupOut,
     SetupRequest,
     StatusRequest,
+    StepOut,
     SystemOut,
     ToolList,
     ToolOut,
@@ -273,6 +275,18 @@ def _index_out(rig: Rig) -> IndexOut:
         chunks=chunk_count(rig.store),
         vectors=rig.store.vectors,
         embedded=embedded,
+    )
+
+
+def _activity_out(rig: Rig) -> ActivityOut:
+    finished = [run for run in list_runs(rig.store, limit=1) if run.finished_at]
+    return ActivityOut(
+        steps=[StepOut(**step.as_dict()) for step in rig.activity.steps()],
+        pending=rig.scheduler.pending,
+        paused=rig.scheduler.paused,
+        ready=rig.scheduler.running,
+        workers=rig.config.schedule.max_concurrent_reviews,
+        last=RunOut.of(finished[0]) if finished else None,
     )
 
 
@@ -905,6 +919,11 @@ def create_app(rig: Rig) -> FastAPI:
     async def runs(repo: str | None = None, limit: int = 100) -> RunList:
         rows = await asyncio.to_thread(list_runs, rig.store, repo, limit)
         return RunList(runs=[RunOut.of(run) for run in rows])
+
+    @router.get("/activity")
+    async def activity() -> ActivityOut:
+        """What is happening now, for a window that opened mid-run."""
+        return _activity_out(rig)
 
     @router.get("/queue")
     async def queue() -> QueueOut:

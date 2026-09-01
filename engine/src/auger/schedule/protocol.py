@@ -13,6 +13,7 @@ from auger.forge import Registry
 from auger.llm import Gateway, Health
 from auger.mcp import McpRegistry
 from auger.models import RepositoryView
+from auger.progress import Activity
 from auger.sandbox import Selection
 from auger.store import Store
 
@@ -24,6 +25,7 @@ class RigLike(Protocol):
     forges: Registry
     tools: McpRegistry
     selection: Selection
+    activity: Activity
 
     def publish(self, event: str, **data: object) -> None: ...
 

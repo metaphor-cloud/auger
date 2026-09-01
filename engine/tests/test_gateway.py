@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 import pytest
 
 from auger.config.schema import Backend, Config, JobClass, Profile, ProfileEntry
 from auger.llm import EgressBlockedError, Gateway, Message, ModelError
-from auger.llm.gateway import MINIMUM_ANSWER_TOKENS, MissingBackendError
+from auger.llm.gateway import MINIMUM_ANSWER_TOKENS, MissingBackendError, Usage
 from auger.net import Allowlist
+from auger.progress import EVERY, Activity
 from tests.helpers import FakeModelServer
 
 Serve = Callable[[object], Awaitable[str]]
@@ -249,3 +251,102 @@ async def test_the_scores_come_back_in_the_order_the_documents_were_given(
     # The fake scores each batch as 1, 1/2, 1/3, so every batch restarts at 1.0.
     assert scores[0] == 1.0
     assert len(scores) == len(documents)
+
+
+async def test_an_answer_is_streamed(gateway: Gateway, fake: FakeModelServer) -> None:
+    """A local model writes slowly. Waiting for the whole answer before reporting any
+    of it is what makes a working rig look like a stalled one."""
+    fake.reply = "the whole answer"
+    completion = await gateway.complete(JobClass.REVIEW, HELLO)
+    assert completion.text == "the whole answer"
+    assert fake.requests[0]["stream"] is True
+    assert fake.requests[0]["stream_options"] == {"include_usage": True}
+
+
+async def test_a_streamed_answer_still_reports_what_it_cost(
+    gateway: Gateway, fake: FakeModelServer
+) -> None:
+    """Usage arrives in a chunk of its own, after the answer and with no choices in it.
+    A reader that stops at the first empty choices list loses every token count."""
+    completion = await gateway.complete(JobClass.REVIEW, HELLO)
+    assert (completion.prompt_tokens, completion.completion_tokens) == (11, 7)
+    assert gateway.usage["review"].prompt_tokens == 11
+    assert gateway.usage["review"].completion_tokens == 7
+
+
+async def test_a_tool_call_split_across_chunks_is_reassembled(
+    gateway: Gateway, fake: FakeModelServer
+) -> None:
+    """A streamed call arrives as a name in one chunk and its arguments a few
+    characters at a time. Only the index ties the pieces together."""
+    fake.tool_calls = [
+        {
+            "id": "call-1",
+            "type": "function",
+            "function": {"name": "read_file", "arguments": '{"path": "reader.py"}'},
+        }
+    ]
+    fake.tool_call_rounds = 1
+    completion = await gateway.complete(JobClass.REVIEW, HELLO, tools=[{"type": "function"}])
+    assert [call.name for call in completion.tool_calls] == ["read_file"]
+    assert completion.tool_calls[0].arguments == {"path": "reader.py"}
+    assert completion.tool_calls[0].id == "call-1"
+
+
+async def test_a_streamed_answer_that_hit_the_ceiling_says_so(
+    gateway: Gateway, fake: FakeModelServer
+) -> None:
+    fake.finish_reason = "length"
+    completion = await gateway.complete(JobClass.REVIEW, HELLO)
+    assert completion.truncated
+
+
+async def test_the_watcher_is_told_the_answer_as_it_arrives(
+    gateway: Gateway, fake: FakeModelServer
+) -> None:
+    said: list[dict[str, object]] = []
+    # A clock that moves on every read, so the bounded rate does not hide the reports
+    # this test is about. A real answer from a local model takes minutes.
+    ticking = itertools.count(1000.0, EVERY).__next__
+    activity = Activity(lambda _event, data: said.append(dict(data)), ticking)
+    watch = activity.begin("/repo/alpha", "acme/alpha", "diff_review")
+    watch.phase("asking")
+    fake.reply = "x" * 200
+    await gateway.complete(JobClass.REVIEW, HELLO, watch=watch)
+    assert watch.step.tokens > 0, "the count must rise while the answer arrives"
+    assert any(data["tokens"] for data in said), "and be published, not only held"
+    counts = [int(data["tokens"]) for data in said if data["tokens"]]  # type: ignore[call-overload]
+    assert counts == sorted(counts), "and only ever rise"
+
+
+async def test_embedding_tokens_are_counted(gateway: Gateway) -> None:
+    """A backend that only embeds used to read as hundreds of requests and no tokens,
+    which says the work was free."""
+    await gateway.embed(["one", "two", "three"])
+    assert gateway.usage["embed"].requests == 1
+    assert gateway.usage["embed"].prompt_tokens == 15
+
+
+async def test_rerank_tokens_are_counted(gateway: Gateway) -> None:
+    await gateway.rerank("query", ["one", "two"])
+    assert gateway.usage["rerank"].prompt_tokens == 6
+
+
+async def test_a_server_that_sends_no_counts_adds_nothing(
+    fake: FakeModelServer, serve: Serve
+) -> None:
+    """A made-up number is worse than an obvious gap."""
+    base = await serve(fake.app())
+    config = Config(
+        backend={"embed": Backend(url=f"{base}/v1", model="embed-model")},
+        profile={"balanced": Profile(embed=ProfileEntry(backend="embed"))},
+    )
+    gateway = Gateway(config, Allowlist.from_values([base]))
+    try:
+        gateway.usage["embed"] = Usage()
+        await gateway.embed(["one"])
+        assert gateway.usage["embed"].prompt_tokens == 5
+        gateway._counted(gateway.resolve(JobClass.EMBED, "balanced"), {"data": []})
+        assert gateway.usage["embed"].prompt_tokens == 5
+    finally:
+        await gateway.aclose()
