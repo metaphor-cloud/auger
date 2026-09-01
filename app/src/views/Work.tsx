@@ -37,6 +37,8 @@ const PER_REPO = 50;
 const RUN_LIMIT = 400;
 
 const CATEGORY_NAMES = Object.keys(CATEGORY);
+/** The severities the tray shouts about. */
+const LOUD = new Set(["critical", "high"]);
 const STATE_NAMES = ["open", "doing", "resolved", "suppressed"];
 
 function repoName(path: string) {
@@ -210,31 +212,53 @@ export default function Work({
     setFindings(findingBody.findings);
     setRuns(runBody.runs);
     setReadAt(Date.now());
-    onCounts(
-      findingBody.counts.total ?? 0,
-      (findingBody.counts.critical ?? 0) + (findingBody.counts.high ?? 0),
-    );
-  }, [onCounts]);
+  }, []);
 
   useEffect(() => {
     void load();
   }, [load, version]);
 
+  /** The repositories whose findings belong on this list.
+   *
+   * A repository the user excluded, and one that has dropped out of the roots since it
+   * was reviewed, are both the same to the reader: not here any more. Their findings
+   * stay in the database and stay off this list.
+   */
+  const watched = useMemo(
+    () => new Set(repositories.filter((one) => one.policy.enabled).map((one) => one.path)),
+    [repositories],
+  );
+
+  // Filtered by what the user asked for, and by what this list will actually draw. The
+  // count above the list has to count the same findings the list holds: a header that
+  // says seven over an empty page is a bug report waiting to be written.
   const shown = useMemo(
-    () => findings.filter((one) => matches(one, { categories, states, dismissed, search })),
-    [findings, categories, states, dismissed, search],
+    () =>
+      findings.filter(
+        (one) =>
+          watched.has(one.repo_path) && matches(one, { categories, states, dismissed, search }),
+      ),
+    [findings, watched, categories, states, dismissed, search],
+  );
+
+  // The tray counts what the Work list would show, not what the database holds. The
+  // filter chips are the reader's own view and do not belong in a badge, so this counts
+  // every open finding in a watched repository regardless of them.
+  useEffect(() => {
+    const mine = findings.filter((one) => watched.has(one.repo_path) && one.status === "open");
+    onCounts(mine.length, mine.filter((one) => LOUD.has(one.severity)).length);
+  }, [findings, watched, onCounts]);
+
+  /** How many findings belong to repositories that are no longer watched. */
+  const orphaned = useMemo(
+    () => findings.filter((one) => !watched.has(one.repo_path)).length,
+    [findings, watched],
   );
 
   /** Grouped by repository, worst first, and inside a group the same rule again. */
   const groups = useMemo(() => {
-    // An excluded repository is one the user has said they do not want to see. Its
-    // findings stay in the database, and they stay out of this list.
-    const watched = new Set(
-      repositories.filter((one) => one.policy.enabled).map((one) => one.path),
-    );
     const byRepo = new Map<string, Finding[]>();
     for (const one of shown) {
-      if (!watched.has(one.repo_path)) continue;
       const list = byRepo.get(one.repo_path) ?? [];
       list.push(one);
       byRepo.set(one.repo_path, list);
@@ -259,7 +283,7 @@ export default function Work({
           second.findings.length - first.findings.length ||
           first.name.localeCompare(second.name),
       );
-  }, [shown, repositories]);
+  }, [shown]);
 
   async function pick(finding: Finding) {
     setChosen(finding);
@@ -371,7 +395,11 @@ export default function Work({
                 ? "Every kind is switched off. Turn one on."
                 : states.size === 0
                   ? "Every state is switched off. Turn one on."
-                  : "Nothing under these filters."}
+                  : orphaned > 0
+                    ? `Nothing here. ${orphaned} ${
+                        orphaned === 1 ? "finding belongs" : "findings belong"
+                      } to repositories that are not under your roots any more.`
+                    : "Nothing under these filters."}
           </p>
         )}
         {groups.map((group) => (
