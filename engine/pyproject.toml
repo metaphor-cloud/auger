@@ -1,6 +1,6 @@
 [project]
 name = "auger"
-version = "0.5.0"
+version = "0.6.0"
 description = "Background code review engine for auger"
 readme = "README.md"
 license = "Apache-2.0"
