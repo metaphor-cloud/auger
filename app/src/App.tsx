@@ -221,10 +221,12 @@ export default function App() {
         <div className="space-y-2 border-t border-border px-3 py-3">
           {queue && !queue.ready && (
             // The first walk takes seconds. Until the workers exist there is nothing
-            // to start or stop, and a button that says otherwise is a lie.
+            // to start or stop, and a button that says otherwise is a lie. It does not
+            // say "Starting" either: this button says "Start" once it works, and the
+            // same word for the state and for the action reads as work in progress.
             <Button size="sm" variant="ghost" className="w-full justify-start" disabled>
               <span className="w-3 text-center opacity-70">·</span>
-              Starting
+              Loading
             </Button>
           )}
           {queue?.ready && (
