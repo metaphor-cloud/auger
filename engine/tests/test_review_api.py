@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -240,3 +241,31 @@ async def test_activity_says_what_finished_last(
     assert body["steps"] == []
     assert body["last"]["status"] == "ok"
     assert body["last"]["finding_count"] == 2
+
+
+async def test_activity_says_what_is_held_back_and_why(
+    http: httpx.AsyncClient, token: str, rig: Rig, tree: Path
+) -> None:
+    """Eight tasks on a retry timer with every worker free is not "waiting for a free
+    worker", and the window can only say so if this endpoint does."""
+    rig.config.schedule.retry_seconds = 300
+    await rig.scheduler.start(workers=2)
+    rig.scheduler.resume()
+    # A lock in the git directory is what a busy repository looks like from outside.
+    (tree / "alpha" / ".git" / "index.lock").write_text("", encoding="utf-8")
+    async with http:
+        await call(http, token, "POST", "/scan")
+        await call(http, token, "POST", "/review", json={"path": str(tree / "alpha")})
+        for _ in range(200):
+            if rig.scheduler.waiting:
+                break
+            await asyncio.sleep(0.02)
+        body = await call(http, token, "GET", "/activity")
+    await rig.scheduler.stop()
+
+    assert body["steps"] == [], "nothing is running"
+    assert len(body["waiting"]) == 1, body
+    held = body["waiting"][0]
+    assert held["reason"] == "git_operation"
+    assert held["kind"] == "diff_review"
+    assert held["until"] > 0

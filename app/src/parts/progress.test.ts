@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import type { Activity, Run, Step } from "../types";
-import { counted, fraction, kindOf, line, phaseOf, rate, reading, resting, since } from "./progress";
+import type { Activity, Run, Step, Waiting } from "../types";
+import {
+  commonest,
+  counted,
+  fraction,
+  heldFor,
+  kindOf,
+  line,
+  phaseOf,
+  rate,
+  reading,
+  resting,
+  since,
+} from "./progress";
 
 const NOW = 1_700_000_000;
 
@@ -25,7 +37,27 @@ function step(over: Partial<Step> = {}): Step {
 }
 
 function activity(over: Partial<Activity> = {}): Activity {
-  return { steps: [], pending: 0, paused: false, ready: true, workers: 2, last: null, ...over };
+  return {
+    steps: [],
+    pending: 0,
+    paused: false,
+    ready: true,
+    workers: 2,
+    waiting: [],
+    last: null,
+    ...over,
+  };
+}
+
+function waiting(over: Partial<Waiting> = {}): Waiting {
+  return {
+    slug: "example.com/acme/alpha",
+    kind: "diff_review",
+    reason: "agent_running",
+    detail: "claude(20248)",
+    until: NOW + 120,
+    ...over,
+  };
 }
 
 function run(over: Partial<Run> = {}): Run {
@@ -127,8 +159,41 @@ describe("resting", () => {
     expect(resting(activity({ paused: true, pending: 4 }), NOW)).toBe("Stopped · 4 waiting");
   });
 
-  it("says a queue is waiting for a worker rather than saying nothing", () => {
+  it("says a queue is waiting for a worker only when that is what it is waiting for", () => {
     expect(resting(activity({ pending: 7 }), NOW)).toBe("7 waiting for a free worker");
+  });
+
+  it("says why work is held back rather than blaming a busy worker", () => {
+    // Every worker was free. The repositories had coding agents in them, which the
+    // engine knew and the bar did not say.
+    const said = resting(
+      activity({ pending: 8, waiting: [waiting(), waiting(), waiting()] }),
+      NOW,
+    );
+    expect(said).toBe("3 held back: an agent is working in them, retry in 2m 00s · 5 queued");
+  });
+
+  it("does not count down to a retry that is already due", () => {
+    const said = resting(
+      activity({ pending: 1, waiting: [waiting({ until: NOW - 5 })] }),
+      NOW,
+    );
+    expect(said).toBe("1 held back: an agent is working in them");
+  });
+
+  it("names the commonest reason when they differ", () => {
+    const said = resting(
+      activity({
+        pending: 3,
+        waiting: [
+          waiting({ reason: "machine_in_use" }),
+          waiting({ reason: "machine_in_use" }),
+          waiting({ reason: "agent_running" }),
+        ],
+      }),
+      NOW,
+    );
+    expect(said).toContain("somebody is at the keyboard");
   });
 
   it("says what finished last when there is nothing to review", () => {
@@ -170,5 +235,27 @@ describe("reading the prompt", () => {
 
   it("does not claim a countable phase elsewhere is a prompt", () => {
     expect(reading(step({ phase: "embed", done: 3, total: 9 }))).toBe(false);
+  });
+});
+
+describe("held back", () => {
+  it("has words for every reason the engine reports", () => {
+    for (const reason of [
+      "agent_running",
+      "busy",
+      "machine_in_use",
+      "model_down",
+      "in_flight",
+    ]) {
+      expect(heldFor(reason)).not.toBe(reason);
+    }
+  });
+
+  it("shows a reason it has no words for rather than nothing", () => {
+    expect(heldFor("some_new_reason")).toBe("some new reason");
+  });
+
+  it("has nothing to say about an empty list", () => {
+    expect(commonest([])).toBeNull();
   });
 });

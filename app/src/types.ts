@@ -284,12 +284,25 @@ export type Step = {
   run: string;
 };
 
+/** One task on a retry timer, and what it is waiting for. */
+export type Waiting = {
+  slug: string;
+  kind: string;
+  /** busy | agent_running | machine_in_use | model_down | in_flight */
+  reason: string;
+  detail: string;
+  /** Seconds since the epoch, to count down to. */
+  until: number;
+};
+
 export type Activity = {
   steps: Step[];
   pending: number;
   paused: boolean;
   ready: boolean;
   workers: number;
+  /** What is on a retry timer rather than waiting for a worker. */
+  waiting: Waiting[];
   last: Run | null;
 };
 

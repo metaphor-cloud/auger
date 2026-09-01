@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import itertools
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -28,6 +29,23 @@ from auger.store.runs import record_skip
 from auger.watch import busy, idle
 
 _sequence = itertools.count()
+
+
+@dataclass(frozen=True)
+class Waiting:
+    """One task on a retry timer, and what it is waiting for.
+
+    A queue with nothing running looks identical to a hung one unless something says
+    which of the two it is. Most of the time it is neither: the repository is busy, or
+    the machine is, and the task is coming back.
+    """
+
+    slug: str
+    kind: str
+    reason: str
+    detail: str
+    #: Wall clock, for the window to count down to.
+    until: float
 
 
 @dataclass(order=True)
@@ -92,6 +110,8 @@ class Scheduler:
         self._deferred: set[asyncio.Task[None]] = set()
         self._in_flight: set[Path] = set()
         self._queued: set[tuple[Path, str, str]] = set()
+        #: What each deferred task is waiting for, so "nothing is running" can say why.
+        self._waiting: dict[tuple[Path, str, str], Waiting] = {}
         self._resumed = asyncio.Event()
         self._resumed.set()
         self.running = False
@@ -131,15 +151,30 @@ class Scheduler:
         self.queue.put_nowait(task)
         return True
 
-    def _defer(self, task: Task, seconds: float) -> None:
-        """Put a task back after a wait, without holding a worker."""
+    def _defer(self, task: Task, seconds: float, reason: str = "", detail: str = "") -> None:
+        """Put a task back after a wait, without holding a worker.
+
+        The reason is held for as long as the wait lasts. A queue that is not moving is
+        the state people read as a hang, and it is nearly always a wait with a cause.
+        """
+        key = self.key(task)
+        if reason:
+            self._waiting[key] = Waiting(
+                slug=task.repository.slug,
+                kind=task.kind,
+                reason=reason,
+                detail=detail,
+                until=time.time() + seconds,
+            )
 
         async def later() -> None:
             try:
                 await asyncio.sleep(seconds)
+                self._waiting.pop(key, None)
                 self.queue.put_nowait(task)
             except asyncio.CancelledError:
-                self._queued.discard(self.key(task))
+                self._queued.discard(key)
+                self._waiting.pop(key, None)
                 raise
 
         handle = asyncio.create_task(later())
@@ -149,6 +184,11 @@ class Scheduler:
     @property
     def pending(self) -> int:
         return self.queue.qsize() + len(self._deferred)
+
+    @property
+    def waiting(self) -> list[Waiting]:
+        """Every task on a retry timer, soonest first."""
+        return sorted(self._waiting.values(), key=lambda one: one.until)
 
     @property
     def in_flight(self) -> list[str]:
@@ -290,7 +330,7 @@ class Scheduler:
         path = task.repository.path
         if path in self._in_flight:
             # Another worker holds this repository. Come back to it.
-            self._defer(task, 5.0)
+            self._defer(task, 5.0, "in_flight", "another review of it is running")
             return
 
         schedule = rig.config.schedule
@@ -317,7 +357,12 @@ class Scheduler:
                 )
                 task.attempts += 1
                 self._queued.add(self.key(task))
-                self._defer(task, float(schedule.retry_seconds))
+                self._defer(
+                    task,
+                    float(schedule.retry_seconds),
+                    "machine_in_use",
+                    f"idle for {machine.seconds:.0f}s of {schedule.idle_after_seconds}s",
+                )
                 return
 
         state = await asyncio.to_thread(
@@ -343,7 +388,12 @@ class Scheduler:
             )
             task.attempts += 1
             self._queued.add(self.key(task))
-            self._defer(task, float(rig.config.schedule.retry_seconds))
+            self._defer(
+                task,
+                float(rig.config.schedule.retry_seconds),
+                state.reason or "busy",
+                state.detail,
+            )
             return
 
         blocked = await self._model_ready(task)
@@ -366,7 +416,7 @@ class Scheduler:
             )
             task.attempts += 1
             self._queued.add(self.key(task))
-            self._defer(task, float(rig.config.schedule.retry_seconds))
+            self._defer(task, float(rig.config.schedule.retry_seconds), blocked, detail)
             return
 
         self._in_flight.add(path)

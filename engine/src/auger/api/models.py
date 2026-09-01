@@ -269,6 +269,18 @@ class StepOut(BaseModel):
     run: str
 
 
+class WaitingOut(BaseModel):
+    """One task on a retry timer, and what it is waiting for."""
+
+    slug: str
+    kind: str
+    #: A code to group on: busy, agent_running, machine_in_use, model_down, in_flight.
+    reason: str
+    detail: str
+    #: Seconds since the epoch, for the window to count down to.
+    until: float
+
+
 class ActivityOut(BaseModel):
     """What is happening now.
 
@@ -282,6 +294,9 @@ class ActivityOut(BaseModel):
     paused: bool
     ready: bool
     workers: int
+    #: What is on a retry timer rather than waiting for a worker. Without this, a queue
+    #: that is deliberately holding back is indistinguishable from one that has hung.
+    waiting: list[WaitingOut] = []
     #: The last run to finish, so a stopped rig still says what it did.
     last: RunOut | None = None
 

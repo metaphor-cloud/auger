@@ -108,7 +108,17 @@ export default function App() {
             // repositories reviewed at once do not take turns disappearing.
             const step = event.data as unknown as Step;
             setActivity((current) => {
-              const base = current ?? { steps: [], pending: 0, paused: false, ready: true, workers: 1, last: null };
+              const base =
+                current ??
+                {
+                  steps: [],
+                  pending: 0,
+                  paused: false,
+                  ready: true,
+                  workers: 1,
+                  waiting: [],
+                  last: null,
+                };
               const rest = base.steps.filter((one) => one.id !== step.id);
               return {
                 ...base,

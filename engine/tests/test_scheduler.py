@@ -415,3 +415,35 @@ def test_a_review_has_a_tool_ceiling_by_default() -> None:
     need never end. It stays available to anyone who sets it deliberately."""
     assert Policy().max_tool_calls == 4
     assert Policy(max_tool_calls=0).max_tool_calls == 0
+
+
+async def test_a_deferred_task_says_what_it_is_waiting_for(rig: StubRig, tmp_path: Path) -> None:
+    """A queue that is not moving reads as a hang. It nearly always is not moving for a
+    reason the scheduler already knows, and "waiting for a free worker" when every
+    worker is free is the sentence that makes a working rig look broken."""
+    repository = make_repository(tmp_path, "alpha")
+    (repository.path / ".git" / "index.lock").write_text("", encoding="utf-8")
+    rig.config.schedule.retry_seconds = 300
+    scheduler = Scheduler(rig)
+    await scheduler.start(workers=2)
+    scheduler.submit(Task.review(repository, Policy()))
+    await drain(scheduler)
+    await asyncio.sleep(0.05)
+
+    held = scheduler.waiting
+    assert scheduler.pending == 1
+    assert scheduler.in_flight == [], "no worker is holding it"
+    assert [one.reason for one in held] == ["git_operation"]
+    assert held[0].slug == repository.slug
+    assert held[0].kind == "diff_review"
+    assert held[0].until > 0
+    await scheduler.stop()
+    # Stopping cancels the retry, so nothing claims to be waiting for one.
+    assert scheduler.waiting == []
+
+
+async def test_nothing_waiting_when_the_queue_is_simply_empty(rig: StubRig, tmp_path: Path) -> None:
+    scheduler = Scheduler(rig)
+    await scheduler.start(workers=1)
+    assert scheduler.waiting == []
+    await scheduler.stop()

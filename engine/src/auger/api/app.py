@@ -84,6 +84,7 @@ from auger.api.models import (
     ToolOut,
     TranscriptOut,
     TurnOut,
+    WaitingOut,
 )
 from auger.config import Config
 from auger.config.schema import JobClass
@@ -327,6 +328,16 @@ def _activity_out(rig: Rig) -> ActivityOut:
         paused=rig.scheduler.paused,
         ready=rig.scheduler.running,
         workers=rig.config.schedule.max_concurrent_reviews,
+        waiting=[
+            WaitingOut(
+                slug=one.slug,
+                kind=one.kind,
+                reason=one.reason,
+                detail=one.detail,
+                until=one.until,
+            )
+            for one in rig.scheduler.waiting
+        ],
         last=RunOut.of(finished[0]) if finished else None,
     )
 

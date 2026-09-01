@@ -7,7 +7,7 @@
  * It is plain because it is tested. The component draws what this returns.
  */
 
-import type { Activity, Step } from "../types";
+import type { Activity, Step, Waiting } from "../types";
 
 /** What each phase is called, in the words a person would use.
  *
@@ -109,16 +109,50 @@ export function line(step: Step, now: number): string {
   return parts.join(" · ");
 }
 
+/** Why a task is being held back, in the words a person would use. */
+export const HELD: Record<string, string> = {
+  agent_running: "an agent is working in them",
+  busy: "they are being worked in",
+  machine_in_use: "somebody is at the keyboard",
+  model_down: "no model is answering",
+  in_flight: "another review of them is running",
+};
+
+export function heldFor(reason: string): string {
+  return HELD[reason] ?? reason.replace(/_/g, " ");
+}
+
+/** The reason the most tasks are waiting for, and how many. */
+export function commonest(waiting: Waiting[]): { reason: string; count: number } | null {
+  if (waiting.length === 0) return null;
+  const counts = new Map<string, number>();
+  for (const one of waiting) counts.set(one.reason, (counts.get(one.reason) ?? 0) + 1);
+  const [reason, count] = [...counts.entries()].sort((first, second) => second[1] - first[1])[0];
+  return { reason, count };
+}
+
 /** What the bar says when nothing is in flight.
  *
  * Stopped is a state the user chose, so it is said plainly rather than dressed up as
- * activity. Waiting with a queue is the case that used to read as a hang.
+ * activity. The case that reads as a hang is a queue that is not moving, and it nearly
+ * always is not moving for a reason the engine already knows: a coding agent is in the
+ * repository, or somebody is at the keyboard. Saying "waiting for a free worker" when
+ * every worker is free is the sentence that makes a working rig look broken.
  */
 export function resting(activity: Activity | null, now: number): string {
   if (activity === null) return "Connecting";
   if (!activity.ready) return "Starting up";
   if (activity.paused) {
     return activity.pending > 0 ? `Stopped · ${activity.pending} waiting` : "Stopped";
+  }
+  const waiting = activity.waiting ?? [];
+  const held = commonest(waiting);
+  if (held !== null) {
+    const soonest = Math.min(...waiting.map((one) => one.until));
+    const again = soonest > now ? `, retry in ${since(now, soonest)}` : "";
+    const rest = activity.pending - waiting.length;
+    const others = rest > 0 ? ` · ${rest} queued` : "";
+    return `${held.count} held back: ${heldFor(held.reason)}${again}${others}`;
   }
   if (activity.pending > 0) return `${activity.pending} waiting for a free worker`;
   return `Watching · nothing to review${lastly(activity, now)}`;
